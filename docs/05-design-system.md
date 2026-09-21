@@ -80,3 +80,36 @@ Ogni pagina è progettata in 5 stati, non solo quello pieno:
 **empty** (con next-action chiara) · **loading** (skeleton, non spinner) · **partial** (job in corso) ·
 **error** (causa + rimedio + retry) · **full**.
 Gli stati vuoti sono la prima cosa che l'utente vede: sono schermate di onboarding travestite.
+
+## 8. Mockup di riferimento
+**[StudyHub Interface — mockup completo](https://claude.ai/artifact/BFcYbQ67tF5DuaFbPnNSEu)**
+(artifact HTML statico navigabile, generato dal [prompt di design](design/prompt-mockup.md))
+
+È la **fonte di verità visiva** di questo documento: dove testo e mockup divergono, prima si decide, poi si
+allinea il perdente. Contiene 15 viste, selezionabili dal navigatore in basso a destra:
+
+| # | Vista | # | Vista |
+|---|---|---|---|
+| 00 | Style guide (token + componenti in tutti gli stati) | 08 | Materia · Appunti con selezione attiva |
+| 01 | Dashboard | 09 | Review queue artefatti |
+| 02 | Upload materiali | 10 | Sessione di ripasso (full-screen) |
+| 03 | Triage documenti | 11 | Planner · Anteprima e fattibilità |
+| 04 | Verifica trascrizione schema | 12 | Revisione e conferma del piano |
+| 05 | Materie | 13 | Calendario · vista mese |
+| 06 | Materia · Panoramica | 14 | Stati e sistema |
+| 07 | Materia · Schemi (mappa dei grafi) | | |
+
+La vista `00 Style guide` è quella da consultare in fase di implementazione: mostra ogni componente core
+(§4) nei suoi stati default / hover / active / focus / disabled / loading / error.
+
+### Scostamenti noti dal testo di questo documento
+Il mockup è più recente; questi punti vanno riconciliati quando si scrive il codice:
+- **Griglia tecnica**: il mockup usa 24px, qui è scritto 32px.
+- **Hairline attivo**: nel mockup è un `box-shadow: inset 0 0 0 1px var(--accent)` pieno, non un glow al 30%.
+- **Mono**: il mockup usa JetBrains Mono anche per i numeri; qui l'alternativa era Geist Mono.
+- **Densità**: il mockup realizza solo il livello `compact`; i tre livelli (§5) restano da progettare.
+- **Sidebar**: nel mockup è fissa a 240px; il collasso a 56px (§4) non è mockuppato.
+
+### Non ancora prodotto
+Varianti opzionali elencate in fondo al prompt: **tema light**, **PWA mobile 390×844**,
+**flusso di cattura schemi da telefono**, e la conversione della style guide in **componenti React + Tailwind**.
