@@ -3,6 +3,10 @@
 Copia tutto il blocco sottostante in una conversazione dedicata al design.
 È autosufficiente: non richiede di aver letto il resto della knowledge base.
 
+> **Risultato prodotto**: [StudyHub Interface](https://claude.ai/artifact/BFcYbQ67tF5DuaFbPnNSEu) — style guide + tutte e 14 le schermate.
+> Indice delle viste e scostamenti noti in [Design System §8](../05-design-system.md#8-mockup-di-riferimento).
+> Le *varianti utili* in fondo a questa pagina non sono ancora state prodotte.
+
 ---
 
 ## PROMPT

@@ -20,6 +20,7 @@ Local-first: le materie sono cartelle reali su disco, l'AI è un worker eseguibi
 | [Miglioramenti proposti](docs/06-miglioramenti.md) | Estensioni ordinate per valore/costo + anti-obiettivi |
 | [Fasi di sviluppo](docs/fasi/README.md) | F0→F7, una KB per fase con criteri di accettazione |
 | [Prompt mockup](docs/design/prompt-mockup.md) | Prompt pronto per generare i mockup dell'hub |
+| [**Mockup completo**](https://claude.ai/artifact/BFcYbQ67tF5DuaFbPnNSEu) | Artifact navigabile: style guide + 14 schermate (fonte di verità visiva) |
 
 ## Percorso consigliato di lettura
 `00-vision` → `fasi/README` → `01-architettura` → la fase su cui stai lavorando.
