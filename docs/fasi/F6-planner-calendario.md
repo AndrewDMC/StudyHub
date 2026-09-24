@@ -89,13 +89,18 @@ Cosa c'è, con test reali:
   **Non esiste una Fase C**: i titoli/descrizioni delle task (`"Studia X — pp. 51–68"`) sono template
   stringa dentro `schedule.ts` stesso, non una chiamata AI separata come previsto da `docs/04-planner.md`
   §1 — la "narrazione" è più semplice di quanto la spec ipotizzasse, e non è mai stato un problema.
-- **Unità di pianificazione = documenti, non argomenti**: il Planner pianifica sui `documents` con
-  `status: parsed`, esattamente il fallback già previsto dal commento su `PlannerTopic` in `types.ts`
-  ("a document standing in for one"). **Aggiornamento (2026-09-24)**: `document_topics` esiste ora
-  (docs/fasi/F2-materie.md "Stato") — il collegamento documento→argomento non è più il blocco. Questo
-  file _non_ è stato ancora aggiornato per usarlo: farlo bene richiede decidere come trattare un
-  documento taggato con più argomenti (un documento non può contare due volte nel piano) senza
-  rischiare di regredire una Fase B già ben testata — rimandato come passo successivo esplicito.
+- **Aggiornamento (2026-09-24) — unità di pianificazione = argomenti taggati, quando esistono**: il
+  Planner ora pianifica su `topics` reali quando i documenti sono taggati (`document_topics`, F2), e
+  torna al fallback per-documento solo per i documenti non taggati (`buildPlanningUnits` in
+  `generatePlan.ts`) — nessuna regressione per le materie che non taggano nulla, stesso comportamento
+  di prima, testato esplicitamente. Un documento taggato con più argomenti conta per uno solo, il suo
+  argomento _primario_ (l'argomento collegato con `orderIndex` più basso — l'ordine che l'utente vede
+  già nel pannello Argomenti, non un criterio arbitrario nuovo): il materiale dei suoi documenti si
+  somma sotto quell'unico argomento, mai duplicato su due. **Bonus non pianificato**: la `mastery` reale
+  di un argomento (scritta da F5 dopo un drill) alimenta ora `PlannerTopic.mastery` per la prima volta
+  — un argomento già padroneggiato riceve una prima lettura più breve (`learningMinutes` in
+  `schedule.ts`, già scritto per questo in F6 ma senza mai un dato reale da consumare finora). 3 test
+  nuovi: raggruppamento multi-documento, assegnazione al primario, riduzione minuti da mastery reale.
   Niente prerequisiti dedotti da grafi di schemi (§7-F1 "grafo nodi/archi" non esiste): `prerequisites`
   è sempre vuoto col `FakeProvider`.
 - **Schema DB**: `study_plans` (`draft|active|superseded`) e `tasks` (`proposed|todo|doing|done|skipped|moved`),

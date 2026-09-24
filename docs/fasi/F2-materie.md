@@ -84,9 +84,8 @@ documento, valida che documento e argomenti appartengano alla materia), route
 (`apps/web/test/documentTopics.test.ts`) + 4 sullo schema (cascata, chiave composita, molti-a-molti).
 
 Sblocca concretamente lo scope `topicIds` di F3 (vedi `docs/fasi/F3-ai-core.md` "Stato") — la
-`ScopeNotSupportedError` menzionata sopra non esiste più. **Non ancora fatto**: il Planner (F6)
-continua a pianificare sui `documents`, non sui `topics` collegati — vedi
-`docs/fasi/F6-planner-calendario.md` "Stato" per il motivo (rischio di regressione su una logica di
-scheduling già ben testata, rimandato come passo successivo esplicito, non dimenticato). Nessuna
-proposta AI di tag: `document_topics.source` distingue già `'user'`/`'ai'` nello schema, ma solo
-l'utente può crearli in questa slice.
+`ScopeNotSupportedError` menzionata sopra non esiste più. Sblocca anche il Planner (F6, aggiornato
+nella stessa giornata): pianifica ora sugli argomenti taggati quando esistono, coi documenti non
+taggati come fallback — vedi `docs/fasi/F6-planner-calendario.md` "Stato". Nessuna proposta AI di
+tag: `document_topics.source` distingue già `'user'`/`'ai'` nello schema, ma solo l'utente può
+crearli in questa slice.

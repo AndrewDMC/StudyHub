@@ -5,11 +5,13 @@ import { createTestDb } from '@studyhub/db/testDb';
 import {
   artifacts,
   chunks,
+  documentTopics,
   documents,
   flashcards,
   studyPlans,
   subjects,
   tasks,
+  topics,
 } from '@studyhub/db';
 import { FakeProvider } from '@studyhub/ai';
 import { processGeneratePlan } from '../src/processors/planner/generatePlan.js';
@@ -62,17 +64,15 @@ describe('processGeneratePlan', () => {
       status: 'parsed',
       pages,
     });
-    await db
-      .insert(chunks)
-      .values({
-        id: randomUUID(),
-        documentId: docId,
-        pageFrom: 1,
-        pageTo: 1,
-        ord: 0,
-        text,
-        tokens: 50,
-      });
+    await db.insert(chunks).values({
+      id: randomUUID(),
+      documentId: docId,
+      pageFrom: 1,
+      pageTo: 1,
+      ord: 0,
+      text,
+      tokens: 50,
+    });
     return docId;
   }
 
@@ -206,5 +206,87 @@ describe('processGeneratePlan', () => {
     const result = await processGeneratePlan(db, baseInput(), new FakeProvider());
     const taskRows = await db.select().from(tasks).where(eq(tasks.planId, result.planId));
     expect(taskRows.some((t) => t.date === '2026-01-05')).toBe(false);
+  });
+
+  it('groups documents tagged to the same topic into one planning unit, and persists the real topic id on tasks', async () => {
+    const docA = await addParsedDocument(20);
+    const docB = await addParsedDocument(20);
+    const topicId = randomUUID();
+    await db
+      .insert(topics)
+      .values({ id: topicId, subjectId, name: 'Termodinamica', slug: 'termodinamica' });
+    await db.insert(documentTopics).values([
+      { documentId: docA, topicId },
+      { documentId: docB, topicId },
+    ]);
+
+    const result = await processGeneratePlan(db, baseInput(), new FakeProvider());
+    const taskRows = await db.select().from(tasks).where(eq(tasks.planId, result.planId));
+
+    const readTasks = taskRows.filter((t) => t.kind === 'read');
+    expect(readTasks.length).toBeGreaterThan(0);
+    expect(readTasks.every((t) => t.topicId === topicId)).toBe(true);
+
+    // Both documents' material is covered across the topic's reading sessions — neither is left planless.
+    const citedDocIds = new Set(
+      readTasks.flatMap((t) => t.payload.material?.map((m) => m.docId) ?? []),
+    );
+    expect(citedDocIds).toEqual(new Set([docA, docB]));
+  });
+
+  it('assigns a document tagged to two topics to its primary (lowest orderIndex) topic only', async () => {
+    const doc = await addParsedDocument(20);
+    const primaryTopicId = randomUUID();
+    const secondaryTopicId = randomUUID();
+    await db.insert(topics).values([
+      { id: primaryTopicId, subjectId, name: 'Meccanica', slug: 'meccanica', orderIndex: 0 },
+      { id: secondaryTopicId, subjectId, name: 'Cinematica', slug: 'cinematica', orderIndex: 1 },
+    ]);
+    await db.insert(documentTopics).values([
+      { documentId: doc, topicId: secondaryTopicId },
+      { documentId: doc, topicId: primaryTopicId },
+    ]);
+
+    const result = await processGeneratePlan(db, baseInput(), new FakeProvider());
+    const taskRows = await db.select().from(tasks).where(eq(tasks.planId, result.planId));
+
+    expect(taskRows.some((t) => t.topicId === primaryTopicId)).toBe(true);
+    expect(taskRows.some((t) => t.topicId === secondaryTopicId)).toBe(false);
+  });
+
+  it('feeds a topic’s real mastery into the estimate, shortening the first-pass reading time relative to an unmastered topic', async () => {
+    const masteredDoc = await addParsedDocument(20);
+    const freshDoc = await addParsedDocument(20);
+    const masteredTopicId = randomUUID();
+    const freshTopicId = randomUUID();
+    await db.insert(topics).values([
+      {
+        id: masteredTopicId,
+        subjectId,
+        name: 'Argomento noto',
+        slug: 'argomento-noto',
+        mastery: 0.9,
+      },
+      {
+        id: freshTopicId,
+        subjectId,
+        name: 'Argomento nuovo',
+        slug: 'argomento-nuovo',
+        mastery: null,
+      },
+    ]);
+    await db.insert(documentTopics).values([
+      { documentId: masteredDoc, topicId: masteredTopicId },
+      { documentId: freshDoc, topicId: freshTopicId },
+    ]);
+
+    const result = await processGeneratePlan(db, baseInput(), new FakeProvider());
+    const taskRows = await db.select().from(tasks).where(eq(tasks.planId, result.planId));
+
+    const minutesFor = (topicId: string) =>
+      taskRows
+        .filter((t) => t.kind === 'read' && t.topicId === topicId)
+        .reduce((s, t) => s + t.minutes, 0);
+    expect(minutesFor(masteredTopicId)).toBeLessThan(minutesFor(freshTopicId));
   });
 });

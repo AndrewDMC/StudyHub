@@ -11,10 +11,10 @@ Local-first: le materie sono cartelle reali su disco, l'AI è un worker eseguibi
 > correzione formativa, **planner** con scheduling deterministico reale, bozza/revisione/commit del
 > piano e **calendario mensile cross-materia** (niente ancora ICS), **dashboard** cross-materia con
 > command palette (`⌘K`), **`studyhub backup`/`restore`** reali, e **tagging documento↔argomento**
-> (`document_topics`, sblocca lo scope `topicIds` della generazione AI). Niente ancora tema light,
-> densità, distribuzione Docker; il Planner non usa ancora gli argomenti taggati. 387 test
-> (`pnpm turbo run test`), tutti verdi. Dettagli e limiti dichiarati nella sezione "Stato" di ogni
-> `docs/fasi/F*.md`; roadmap completa in [docs/fasi/README.md](docs/fasi/README.md).
+> (`document_topics`) che il Planner usa già per pianificare sugli argomenti taggati, non solo sui
+> documenti. Niente ancora tema light, densità, distribuzione Docker. 390 test (`pnpm turbo run test`),
+> tutti verdi. Dettagli e limiti dichiarati nella sezione "Stato" di ogni `docs/fasi/F*.md`; roadmap
+> completa in [docs/fasi/README.md](docs/fasi/README.md).
 
 ## Sviluppo locale
 

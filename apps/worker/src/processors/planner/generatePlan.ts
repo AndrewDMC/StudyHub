@@ -3,12 +3,14 @@ import { and, eq, inArray, lt, ne } from 'drizzle-orm';
 import {
   artifacts,
   chunks,
+  documentTopics,
   documents,
   exams,
   flashcards,
   studyPlans,
   subjects,
   tasks,
+  topics,
   type Flashcard,
   type NewTask,
 } from '@studyhub/db';
@@ -43,17 +45,92 @@ export interface GeneratePlanResult {
   usage: { inputTokens: number; outputTokens: number };
 }
 
+interface PlanningUnit {
+  /** A real `topics.id` when the unit is a tagged topic, else the document's own id. */
+  key: string;
+  topicId: string | null;
+  name: string;
+  pages: number;
+  /** Real `topics.mastery` when the unit is a tagged topic — the first time this Planner ever sees real mastery data. */
+  mastery: number | null;
+  docs: { id: string; pages: number }[];
+}
+
+/**
+ * Groups eligible documents into planning units (docs/fasi/F2-materie.md
+ * "Stato": `document_topics`, unblocked). A document tagged with more than
+ * one topic is assigned to exactly one — its *primary* topic, the tagged
+ * topic with the lowest `orderIndex` (ties broken by id) — so it is never
+ * double-counted across two units. An untagged document is still its own
+ * unit, exactly as before (`PlannerTopic`'s own doc comment: "a document
+ * standing in for one") — subjects that haven't tagged anything yet see no
+ * change at all.
+ */
+async function buildPlanningUnits(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  subjectId: string,
+  eligibleDocs: { id: string; originalName: string; pages: number }[],
+): Promise<PlanningUnit[]> {
+  if (eligibleDocs.length === 0) return [];
+  const docIds = eligibleDocs.map((d) => d.id);
+
+  const linkRows: {
+    documentId: string;
+    topicId: string;
+    topicName: string;
+    orderIndex: number;
+    mastery: number | null;
+  }[] = await db
+    .select({
+      documentId: documentTopics.documentId,
+      topicId: topics.id,
+      topicName: topics.name,
+      orderIndex: topics.orderIndex,
+      mastery: topics.mastery,
+    })
+    .from(documentTopics)
+    .innerJoin(topics, eq(documentTopics.topicId, topics.id))
+    .where(and(eq(topics.subjectId, subjectId), inArray(documentTopics.documentId, docIds)));
+
+  const linksByDoc = new Map<string, typeof linkRows>();
+  for (const link of linkRows)
+    linksByDoc.set(link.documentId, [...(linksByDoc.get(link.documentId) ?? []), link]);
+
+  const units = new Map<string, PlanningUnit>();
+  for (const doc of eligibleDocs) {
+    const links = linksByDoc.get(doc.id);
+    const primary =
+      links && links.length > 0
+        ? [...links].sort(
+            (a, b) => a.orderIndex - b.orderIndex || a.topicId.localeCompare(b.topicId),
+          )[0]!
+        : null;
+    const unitKey = primary ? primary.topicId : doc.id;
+
+    const existing = units.get(unitKey);
+    if (existing) {
+      existing.pages += doc.pages;
+      existing.docs.push({ id: doc.id, pages: doc.pages });
+    } else {
+      units.set(unitKey, {
+        key: unitKey,
+        topicId: primary ? primary.topicId : null,
+        name: primary ? primary.topicName : doc.originalName,
+        pages: doc.pages,
+        mastery: primary ? primary.mastery : null,
+        docs: [{ id: doc.id, pages: doc.pages }],
+      });
+    }
+  }
+  return [...units.values()];
+}
+
 /**
  * `generate_plan` (docs/04-planner.md §1-5): Fase A (AI estimate) + Fase B
  * (pure scheduling) in one job, producing a fresh `draft` study_plans row
  * with `proposed` tasks — invisible to the rest of the app until committed
  * (`apps/web/src/lib/plan.ts::commitPlan`, docs/04 §9.1).
- *
- * Planning units are **documents**, not `topics` rows: no document->topic
- * link exists yet (docs/fasi/F2-materie.md "Stato" — `document_topics` is
- * deferred), and `PlannerTopic`'s own doc comment anticipates exactly this
- * fallback ("a document standing in for one"). See docs/fasi/F6-planner-calendario.md
- * "Stato" for what a real topic-level plan would need on top of this.
  */
 export async function processGeneratePlan(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -87,7 +164,9 @@ export async function processGeneratePlan(
   let resultModel = 'none';
   let promptVersion = ESTIMATE_TOPICS_PROMPT_VERSION;
 
-  if (eligibleDocs.length > 0) {
+  const units = await buildPlanningUnits(db, input.subjectId, eligibleDocs);
+
+  if (units.length > 0) {
     const docIds = eligibleDocs.map((d) => d.id);
     const chunkRows: { documentId: string; ord: number; text: string }[] = await db
       .select({ documentId: chunks.documentId, ord: chunks.ord, text: chunks.text })
@@ -100,17 +179,24 @@ export async function processGeneratePlan(
         .filter((c) => c.documentId === doc.id)
         .sort((a, b) => a.ord - b.ord)
         .map((c) => c.text);
-      excerptByDoc.set(doc.id, truncate(parts.join(' '), EXCERPT_MAX_CHARS));
+      excerptByDoc.set(doc.id, parts.join(' '));
+    }
+    const excerptByUnit = new Map<string, string>();
+    for (const unit of units) {
+      excerptByUnit.set(
+        unit.key,
+        truncate(unit.docs.map((d) => excerptByDoc.get(d.id) ?? '').join(' '), EXCERPT_MAX_CHARS),
+      );
     }
 
     const result = await provider.estimateTopics(
       {
         subjectName: subject.name,
-        units: eligibleDocs.map((d) => ({
-          key: d.id,
-          name: d.originalName,
-          excerpt: excerptByDoc.get(d.id) ?? '',
-          pages: d.pages,
+        units: units.map((u) => ({
+          key: u.key,
+          name: u.name,
+          excerpt: excerptByUnit.get(u.key) ?? '',
+          pages: u.pages,
         })),
       },
       model,
@@ -120,18 +206,18 @@ export async function processGeneratePlan(
     promptVersion = result.promptVersion;
 
     const estByKey = new Map<string, TopicEstimate>(result.data.topics.map((t) => [t.key, t]));
-    plannerTopics = eligibleDocs.map((d) => {
-      const est = estByKey.get(d.id);
+    plannerTopics = units.map((u) => {
+      const est = estByKey.get(u.key);
       return {
-        key: d.id,
-        topicId: null, // no document->topic link yet (see function doc comment)
-        name: d.originalName,
-        estimatedMinutes: est?.estimatedMinutes ?? Math.max(20, Math.round(d.pages * 3.5)),
+        key: u.key,
+        topicId: u.topicId,
+        name: u.name,
+        estimatedMinutes: est?.estimatedMinutes ?? Math.max(20, Math.round(u.pages * 3.5)),
         difficulty: est?.difficulty ?? 3,
-        examWeight: est?.examWeight ?? 1 / eligibleDocs.length,
+        examWeight: est?.examWeight ?? 1 / units.length,
         prerequisites: est?.prerequisites.filter((p) => estByKey.has(p)) ?? [],
-        mastery: null,
-        material: [{ docId: d.id, pageFrom: 1, pageTo: d.pages }],
+        mastery: u.mastery,
+        material: u.docs.map((d) => ({ docId: d.id, pageFrom: 1, pageTo: d.pages })),
       };
     });
   }
