@@ -1,0 +1,28 @@
+node_modules/
+dist/
+.next/
+coverage/
+.turbo/
+*.tsbuildinfo
+.impeccable/hook.cache.json
+
+# env
+.env
+.env.local
+
+# data volume (local dev)
+/data/
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# editor
+.vscode/*
+!.vscode/extensions.json
+.idea/

@@ -1,0 +1,37 @@
+{
+  "name": "@studyhub/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./lib": "./src/lib.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@studyhub/ai": "workspace:*",
+    "@studyhub/contracts": "workspace:*",
+    "@studyhub/core": "workspace:*",
+    "@studyhub/db": "workspace:*",
+    "bullmq": "^5.34.5",
+    "drizzle-orm": "^0.38.3",
+    "ioredis": "^5.4.2",
+    "pdfjs-dist": "^4.10.38",
+    "pino": "^9.6.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.2.15",
+    "pdf-lib": "^1.17.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": ["apps/web/src/components/SubjectCard.tsx"],
+        "createdAt": "2026-09-22T17:06:01.642Z",
+        "reason": "docs/05-design-system.md §2 explicitly specifies subject identity color as a left card border ('bordo sinistro card'); this is the documented pattern, not an incidental AI-UI tell"
+      }
+    ]
+  }
+}

@@ -1,0 +1,49 @@
+# syntax=docker/dockerfile:1
+# apps/worker + apps/cli (same code, "invocato one-shot" per
+# docs/01-architettura.md §1) — multi-stage, non-root, healthcheck.
+# Build from the repo root: docker build -f docker/Dockerfile.worker -t studyhub/worker .
+
+FROM node:22-alpine AS base
+RUN corepack enable
+WORKDIR /app
+
+# --- prune -------------------------------------------------------------
+FROM base AS pruner
+RUN apk add --no-cache libc6-compat
+COPY . .
+RUN npx turbo prune @studyhub/worker @studyhub/cli --docker
+
+# --- deps ----------------------------------------------------------------
+FROM base AS deps
+COPY --from=pruner /app/out/json/ .
+RUN pnpm install --frozen-lockfile
+
+# --- build -----------------------------------------------------------------
+FROM base AS build
+COPY --from=deps /app/ .
+COPY --from=pruner /app/out/full/ .
+RUN npx turbo run build --filter=@studyhub/worker --filter=@studyhub/cli
+# Drop dev dependencies (tsx, vitest, typescript, ...) before shipping.
+RUN pnpm install --frozen-lockfile --prod
+
+# --- runtime -----------------------------------------------------------
+FROM node:22-alpine AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+
+RUN addgroup -g 1000 studyhub && adduser -u 1000 -G studyhub -s /bin/sh -D studyhub
+
+COPY --from=build --chown=studyhub:studyhub /app .
+
+# `studyhub` on PATH -> apps/cli/dist/index.js (docs/01-architettura.md: cli
+# is the worker's own code invoked one-shot).
+RUN printf '#!/bin/sh\nexec node /app/apps/cli/dist/index.js "$@"\n' > /usr/local/bin/studyhub \
+  && chmod +x /usr/local/bin/studyhub
+
+USER studyhub
+ENV STUDYHUB_DATA_DIR=/data
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+  CMD node -e "const fs=require('fs');try{const t=parseInt(fs.readFileSync('/tmp/studyhub-worker-heartbeat','utf8'),10);process.exit(Date.now()-t<60000?0:1)}catch(e){process.exit(1)}"
+
+CMD ["node", "apps/worker/dist/index.js"]
