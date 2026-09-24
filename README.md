@@ -10,10 +10,11 @@ Local-first: le materie sono cartelle reali su disco, l'AI è un worker eseguibi
 > `ANTHROPIC_API_KEY`), ripasso con **FSRS-5 reale**, simulazioni d'esame con modalità esame e
 > correzione formativa, **planner** con scheduling deterministico reale, bozza/revisione/commit del
 > piano e **calendario mensile cross-materia** (niente ancora ICS), **dashboard** cross-materia con
-> command palette (`⌘K`) e **`studyhub backup`/`restore`** reali. Niente ancora tema light, densità,
-> distribuzione Docker. 394 test (`pnpm turbo run test`), tutti verdi. Dettagli e limiti dichiarati
-> nella sezione "Stato" di ogni `docs/fasi/F*.md`; roadmap completa in
-> [docs/fasi/README.md](docs/fasi/README.md).
+> command palette (`⌘K`), **`studyhub backup`/`restore`** reali, e **tagging documento↔argomento**
+> (`document_topics`, sblocca lo scope `topicIds` della generazione AI). Niente ancora tema light,
+> densità, distribuzione Docker; il Planner non usa ancora gli argomenti taggati. 387 test
+> (`pnpm turbo run test`), tutti verdi. Dettagli e limiti dichiarati nella sezione "Stato" di ogni
+> `docs/fasi/F*.md`; roadmap completa in [docs/fasi/README.md](docs/fasi/README.md).
 
 ## Sviluppo locale
 

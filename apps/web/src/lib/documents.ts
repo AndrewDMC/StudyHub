@@ -1,7 +1,7 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
-import { eq, and } from 'drizzle-orm';
-import { documents, subjects, type Document } from '@studyhub/db';
+import { eq, and, inArray } from 'drizzle-orm';
+import { documentTopics, documents, subjects, type Document } from '@studyhub/db';
 import {
   generateStoredFilename,
   resolveDocumentSourcePath,
@@ -22,7 +22,7 @@ export class UploadError extends Error {
   }
 }
 
-function toDto(row: Document): DocumentDto {
+function toDto(row: Document, topicIds: string[] = []): DocumentDto {
   return {
     id: row.id,
     subjectId: row.subjectId,
@@ -36,6 +36,7 @@ function toDto(row: Document): DocumentDto {
     mdPath: row.mdPath,
     verificationStatus: row.verificationStatus,
     createdAt: row.createdAt.toISOString(),
+    topicIds,
   };
 }
 
@@ -94,7 +95,10 @@ export async function uploadDocument(
     .from(documents)
     .where(and(eq(documents.subjectId, subject.id), eq(documents.sha256, sha256)));
   if (existing) {
-    return { document: toDto(existing), duplicate: true };
+    return {
+      document: toDto(existing, await getDocumentTopicIds(db, existing.id)),
+      duplicate: true,
+    };
   }
 
   const storedFilename = generateStoredFilename(mime);
@@ -118,6 +122,15 @@ export async function uploadDocument(
   return { document: toDto(row), duplicate: false };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getDocumentTopicIds(db: any, documentId: string): Promise<string[]> {
+  const rows: { topicId: string }[] = await db
+    .select({ topicId: documentTopics.topicId })
+    .from(documentTopics)
+    .where(eq(documentTopics.documentId, documentId));
+  return rows.map((r) => r.topicId);
+}
+
 export async function listDocuments(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any,
@@ -132,5 +145,20 @@ export async function listDocuments(
     .from(documents)
     .where(eq(documents.subjectId, subject.id))
     .orderBy(documents.createdAt);
-  return rows.map(toDto);
+  if (rows.length === 0) return [];
+
+  const linkRows: { documentId: string; topicId: string }[] = await db
+    .select({ documentId: documentTopics.documentId, topicId: documentTopics.topicId })
+    .from(documentTopics)
+    .where(
+      inArray(
+        documentTopics.documentId,
+        rows.map((r) => r.id),
+      ),
+    );
+  const topicsByDoc = new Map<string, string[]>();
+  for (const link of linkRows)
+    topicsByDoc.set(link.documentId, [...(topicsByDoc.get(link.documentId) ?? []), link.topicId]);
+
+  return rows.map((r) => toDto(r, topicsByDoc.get(r.id) ?? []));
 }

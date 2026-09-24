@@ -9,10 +9,12 @@ import {
   artifactSources,
   artifacts,
   chunks,
+  documentTopics,
   documents,
   flashcards,
   settings,
   subjects,
+  topics,
 } from '@studyhub/db';
 import { createManifest, scaffoldSubject } from '@studyhub/core';
 import {
@@ -23,10 +25,7 @@ import {
 } from '@studyhub/ai';
 import type { FlashcardsOutput, SummaryOutput } from '@studyhub/ai';
 import { processGenerateFlashcards } from '../src/processors/generation/generateFlashcards.js';
-import {
-  BudgetExceededError,
-  ScopeNotSupportedError,
-} from '../src/processors/generation/shared.js';
+import { BudgetExceededError } from '../src/processors/generation/shared.js';
 import { runJob } from '../src/jobRunner.js';
 
 const SAMPLE_TEXT =
@@ -262,7 +261,56 @@ describe('processGenerateFlashcards', () => {
     expect(result.cardCount).toBe(1);
   });
 
-  it('rejects a topicIds-only scope with a clear error (document_topics tagging not built yet)', async () => {
+  it('resolves a topicIds-only scope via document_topics to the tagged documents’ chunks', async () => {
+    const topicId = randomUUID();
+    await db
+      .insert(topics)
+      .values({ id: topicId, subjectId, name: 'Termodinamica', slug: 'termodinamica' });
+    await db.insert(documentTopics).values({ documentId: docId, topicId });
+
+    const result = await processGenerateFlashcards(
+      db,
+      dataRoot,
+      {
+        subjectId,
+        scope: { topicIds: [topicId] },
+        count: 1,
+        types: ['basic'],
+        difficulty: 2,
+        lang: 'it',
+        force: false,
+      },
+      new FakeProvider(),
+    );
+
+    expect(result.cardCount).toBeGreaterThan(0);
+  });
+
+  it('rejects a topicIds scope for a topic with no documents tagged', async () => {
+    const topicId = randomUUID();
+    await db
+      .insert(topics)
+      .values({ id: topicId, subjectId, name: 'Elettromagnetismo', slug: 'elettromagnetismo' });
+
+    await expect(
+      processGenerateFlashcards(
+        db,
+        dataRoot,
+        {
+          subjectId,
+          scope: { topicIds: [topicId] },
+          count: 1,
+          types: ['basic'],
+          difficulty: 2,
+          lang: 'it',
+          force: false,
+        },
+        new FakeProvider(),
+      ),
+    ).rejects.toThrow(/Nessun documento collegato/);
+  });
+
+  it('rejects a topicIds scope for an unknown topic id', async () => {
     await expect(
       processGenerateFlashcards(
         db,
@@ -278,7 +326,7 @@ describe('processGenerateFlashcards', () => {
         },
         new FakeProvider(),
       ),
-    ).rejects.toBeInstanceOf(ScopeNotSupportedError);
+    ).rejects.toThrow(/Argomenti non trovati/);
   });
 
   it('throws for an unknown subject', async () => {

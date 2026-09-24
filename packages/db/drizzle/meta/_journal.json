@@ -50,6 +50,13 @@
       "when": 1790263237674,
       "tag": "0006_study_plans_tasks",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790280823130,
+      "tag": "0007_document_topics",
+      "breakpoints": true
     }
   ]
 }

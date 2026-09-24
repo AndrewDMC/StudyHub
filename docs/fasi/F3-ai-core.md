@@ -76,10 +76,15 @@ Cosa è reale, non simulato (190 test nel monorepo, `pnpm turbo run test`):
 - **Review queue reale**: `/materie/[slug]/artifacts/[artifactId]` — accetta/scarta card per card
   con citazione a fianco, "approva il mazzo" imposta `status: approved`.
 
+**Aggiornamento (2026-09-24)**: lo scope per `topicIds` è ora reale, non più rifiutato. La tabella
+`document_topics` (docs/fasi/F2-materie.md "Stato") collega documenti e argomenti;
+`resolveScopeChunks` (`apps/worker/src/processors/generation/shared.ts`) risolve `topicIds` ai
+documenti taggati e da lì ai chunk, con lo stesso controllo di appartenenza alla materia già usato
+per `docIds` — testato (`apps/worker/test/generateFlashcards.test.ts`), incluso il caso di un
+argomento senza documenti collegati (errore chiaro, non uno scope vuoto silenzioso).
+
 **Non implementato** in questa slice (limiti dichiarati, non nascosti):
 
-- **Scope per `topicIds`**: accettato dallo schema per compatibilità futura, ma rifiutato a runtime
-  con `ScopeNotSupportedError` — serve una tabella `document_topics` che non esiste ancora.
 - **`generate_schema`, `generate_simulation`, `extract_topics`**: non implementati. Seguono lo
   stesso pattern di `generate_flashcards`/`generate_summary` (provider adapter + validazione +
   persistenza) e sono il prossimo passo naturale, non un redesign.

@@ -5,6 +5,8 @@ import { createTestDb } from '../src/testDb.js';
 import {
   artifacts,
   attemptItemResults,
+  documentTopics,
+  documents,
   examProfiles,
   exams,
   flashcards,
@@ -630,5 +632,75 @@ describe('F6 tables: study_plans, tasks', () => {
     const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId));
     expect(task).toBeDefined();
     expect(task?.topicId).toBeNull();
+  });
+});
+
+describe('document_topics table', () => {
+  async function fixture(db: Awaited<ReturnType<typeof createTestDb>>) {
+    const subjectId = randomUUID();
+    await db.insert(subjects).values({
+      id: subjectId,
+      slug: 'fisica-1',
+      name: 'Fisica 1',
+      color: 'blue',
+      folderPath: '/data/subjects/fisica-1',
+    });
+    const documentId = randomUUID();
+    await db.insert(documents).values({
+      id: documentId,
+      subjectId,
+      type: 'appunti',
+      originalName: 'lezione.pdf',
+      storedPath: '/irrelevant',
+      mime: 'application/pdf',
+      bytes: 10,
+      sha256: 'a'.repeat(64),
+    });
+    const topicId = randomUUID();
+    await db
+      .insert(topics)
+      .values({ id: topicId, subjectId, name: 'Meccanica', slug: 'meccanica' });
+    return { subjectId, documentId, topicId };
+  }
+
+  it('links a document to a topic, defaulting source to user', async () => {
+    const db = await createTestDb();
+    const { documentId, topicId } = await fixture(db);
+    await db.insert(documentTopics).values({ documentId, topicId });
+
+    const rows = await db.select().from(documentTopics);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ documentId, topicId, source: 'user', confidence: null });
+  });
+
+  it('rejects a duplicate link (composite primary key)', async () => {
+    const db = await createTestDb();
+    const { documentId, topicId } = await fixture(db);
+    await db.insert(documentTopics).values({ documentId, topicId });
+    await expect(db.insert(documentTopics).values({ documentId, topicId })).rejects.toThrow();
+  });
+
+  it('allows the same document linked to two different topics', async () => {
+    const db = await createTestDb();
+    const { documentId, topicId, subjectId } = await fixture(db);
+    const topicId2 = randomUUID();
+    await db
+      .insert(topics)
+      .values({ id: topicId2, subjectId, name: 'Termodinamica', slug: 'termodinamica' });
+    await db.insert(documentTopics).values([
+      { documentId, topicId },
+      { documentId, topicId: topicId2 },
+    ]);
+    const rows = await db.select().from(documentTopics);
+    expect(rows).toHaveLength(2);
+  });
+
+  it('cascades delete from either side: deleting the document removes the link, deleting the topic removes the link', async () => {
+    const db = await createTestDb();
+    const { documentId, topicId } = await fixture(db);
+    await db.insert(documentTopics).values({ documentId, topicId });
+
+    await db.delete(documents).where(eq(documents.id, documentId));
+    expect(await db.select().from(documentTopics)).toHaveLength(0);
   });
 });

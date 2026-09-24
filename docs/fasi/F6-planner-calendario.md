@@ -89,11 +89,15 @@ Cosa c'è, con test reali:
   **Non esiste una Fase C**: i titoli/descrizioni delle task (`"Studia X — pp. 51–68"`) sono template
   stringa dentro `schedule.ts` stesso, non una chiamata AI separata come previsto da `docs/04-planner.md`
   §1 — la "narrazione" è più semplice di quanto la spec ipotizzasse, e non è mai stato un problema.
-- **Unità di pianificazione = documenti, non argomenti**: non esiste ancora un collegamento
-  documento→argomento (`document_topics`, rimandato fin da F2/F3 — vedi i rispettivi "Stato"). Il Planner
-  pianifica sui `documents` con `status: parsed`, esattamente il fallback già previsto dal commento su
-  `PlannerTopic` in `types.ts` ("a document standing in for one"). Niente prerequisiti dedotti da grafi di
-  schemi (§7-F1 "grafo nodi/archi" non esiste): `prerequisites` è sempre vuoto col `FakeProvider`.
+- **Unità di pianificazione = documenti, non argomenti**: il Planner pianifica sui `documents` con
+  `status: parsed`, esattamente il fallback già previsto dal commento su `PlannerTopic` in `types.ts`
+  ("a document standing in for one"). **Aggiornamento (2026-09-24)**: `document_topics` esiste ora
+  (docs/fasi/F2-materie.md "Stato") — il collegamento documento→argomento non è più il blocco. Questo
+  file _non_ è stato ancora aggiornato per usarlo: farlo bene richiede decidere come trattare un
+  documento taggato con più argomenti (un documento non può contare due volte nel piano) senza
+  rischiare di regredire una Fase B già ben testata — rimandato come passo successivo esplicito.
+  Niente prerequisiti dedotti da grafi di schemi (§7-F1 "grafo nodi/archi" non esiste): `prerequisites`
+  è sempre vuoto col `FakeProvider`.
 - **Schema DB**: `study_plans` (`draft|active|superseded`) e `tasks` (`proposed|todo|doing|done|skipped|moved`),
   migrazione `0006_study_plans_tasks.sql` — verificata con le migrazioni reali via pglite
   (`packages/db/test/schema.test.ts`), non solo con una DDL scritta a mano.

@@ -19,6 +19,8 @@ export const DocumentDtoSchema = z.object({
   mdPath: z.string().nullable(),
   verificationStatus: VerificationStatusSchema,
   createdAt: z.string().datetime(),
+  /** Argomenti a cui il documento è collegato (docs/fasi/F2-materie.md "Stato": document_topics). */
+  topicIds: z.array(z.string().uuid()),
 });
 export type DocumentDto = z.infer<typeof DocumentDtoSchema>;
 
@@ -27,3 +29,9 @@ export const UploadDocumentResponseSchema = z.object({
   duplicate: z.boolean(),
 });
 export type UploadDocumentResponse = z.infer<typeof UploadDocumentResponseSchema>;
+
+/** PUT body: replaces the full set of topics a document is tagged with. */
+export const SetDocumentTopicsRequestSchema = z.object({
+  topicIds: z.array(z.string().uuid()),
+});
+export type SetDocumentTopicsRequest = z.infer<typeof SetDocumentTopicsRequestSchema>;

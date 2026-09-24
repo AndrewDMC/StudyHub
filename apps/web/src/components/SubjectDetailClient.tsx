@@ -101,7 +101,7 @@ export function SubjectDetailClient({ slug }: { slug: string }) {
               </div>
             )}
             {documentsQuery.isSuccess && documentsQuery.data.length > 0 && (
-              <DocumentList documents={documentsQuery.data} />
+              <DocumentList subjectSlug={slug} documents={documentsQuery.data} />
             )}
           </section>
         </main>

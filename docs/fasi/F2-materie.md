@@ -71,3 +71,22 @@ Verificato in browser reale (senza Postgres, come in F1): nessun errore di rende
 nuove pagine/componenti nel percorso di errore; il flusso funzionale completo (creare argomento,
 esame, archiviare, eliminare) è coperto solo dai test automatici con pglite, non da un click reale
 in browser — richiederebbe un Postgres raggiungibile che non è disponibile in questo ambiente.
+
+## Aggiornamento — `document_topics` (2026-09-24)
+
+Il collegamento documento→argomento, rimandato da questa fase fin dall'inizio, è ora implementato:
+tabella `document_topics` (many-to-many, migrazione `0007_document_topics.sql`, cascade da entrambi
+i lati — cancellare un documento o un argomento ripulisce solo i suoi link, non l'altra entità),
+`apps/web/src/lib/documentTopics.ts::setDocumentTopics` (sostituisce l'intero set di tag di un
+documento, valida che documento e argomenti appartengano alla materia), route
+`PUT /api/subjects/:slug/documents/:documentId/topics`, e un tagger inline su ogni riga di
+`DocumentList.tsx` (chip per argomento, toggle immediato). 10 test nuovi
+(`apps/web/test/documentTopics.test.ts`) + 4 sullo schema (cascata, chiave composita, molti-a-molti).
+
+Sblocca concretamente lo scope `topicIds` di F3 (vedi `docs/fasi/F3-ai-core.md` "Stato") — la
+`ScopeNotSupportedError` menzionata sopra non esiste più. **Non ancora fatto**: il Planner (F6)
+continua a pianificare sui `documents`, non sui `topics` collegati — vedi
+`docs/fasi/F6-planner-calendario.md` "Stato" per il motivo (rischio di regressione su una logica di
+scheduling già ben testata, rimandato come passo successivo esplicito, non dimenticato). Nessuna
+proposta AI di tag: `document_topics.source` distingue già `'user'`/`'ai'` nello schema, ma solo
+l'utente può crearli in questa slice.

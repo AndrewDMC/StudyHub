@@ -6,6 +6,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   real,
   text,
   timestamp,
@@ -168,6 +169,32 @@ export const topics = pgTable('topics', {
   mastery: real('mastery'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Document→topic tagging (docs/fasi/F2-materie.md / F3-ai-core.md "Stato":
+ * deferred since F2). Many-to-many on purpose — a chapter can genuinely
+ * belong to more than one topic — but consumers that need one material set
+ * per topic (the Planner's Fase A) treat a document's *first* linked topic
+ * as primary; see `apps/worker/src/processors/planner/generatePlan.ts`.
+ */
+export const documentTopics = pgTable(
+  'document_topics',
+  {
+    documentId: uuid('document_id')
+      .notNull()
+      .references(() => documents.id, { onDelete: 'cascade' }),
+    topicId: uuid('topic_id')
+      .notNull()
+      .references(() => topics.id, { onDelete: 'cascade' }),
+    source: text('source').$type<TopicSource>().notNull().default('user'),
+    confidence: real('confidence'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.documentId, table.topicId] }),
+    index('document_topics_topic_idx').on(table.topicId),
+  ],
+);
 
 /**
  * F3 scope (docs/fasi/F3-ai-core.md), simulated-provider slice: generation
@@ -522,3 +549,5 @@ export type StudyPlan = typeof studyPlans.$inferSelect;
 export type NewStudyPlan = typeof studyPlans.$inferInsert;
 export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
+export type DocumentTopic = typeof documentTopics.$inferSelect;
+export type NewDocumentTopic = typeof documentTopics.$inferInsert;

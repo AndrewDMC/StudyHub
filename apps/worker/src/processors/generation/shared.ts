@@ -1,15 +1,16 @@
 import { createHash } from 'node:crypto';
 import { and, eq, gte, inArray, sql } from 'drizzle-orm';
-import { chunks, documents, jobs, settings, type JobCost } from '@studyhub/db';
+import {
+  chunks,
+  documentTopics,
+  documents,
+  jobs,
+  settings,
+  topics,
+  type JobCost,
+} from '@studyhub/db';
 import type { GenerationScope } from '@studyhub/contracts';
 import type { ChunkRef } from '@studyhub/ai';
-
-export class ScopeNotSupportedError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ScopeNotSupportedError';
-  }
-}
 
 export class BudgetExceededError extends Error {
   constructor(
@@ -26,31 +27,67 @@ export class BudgetExceededError extends Error {
 }
 
 /**
- * Resolves a generation scope to the chunks it covers. Only `docIds` is
- * implemented: `topicIds` needs a `document_topics` tagging table that
- * doesn't exist yet (docs/fasi/F3-ai-core.md "Stato" addendum) — accepted by
- * the contract schema for forward compatibility, but rejected here with a
- * clear message rather than silently resolving to nothing or to everything.
+ * Resolves `scope.topicIds` to the document ids tagged with any of them
+ * (docs/fasi/F2-materie.md "Stato": `document_topics`, unblocked here).
+ * Validates the topics themselves belong to the subject first, so a foreign
+ * or unknown topic id fails with a clear message instead of silently
+ * resolving to zero documents.
  */
+async function resolveTopicScopeDocIds(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  subjectId: string,
+  topicIds: string[],
+): Promise<string[]> {
+  const topicRows: { id: string; subjectId: string }[] = await db
+    .select({ id: topics.id, subjectId: topics.subjectId })
+    .from(topics)
+    .where(inArray(topics.id, topicIds));
+
+  const foundTopicIds = new Set(topicRows.map((t) => t.id));
+  const missingTopics = topicIds.filter((id) => !foundTopicIds.has(id));
+  if (missingTopics.length > 0) {
+    throw new Error(`Argomenti non trovati: ${missingTopics.join(', ')}`);
+  }
+  const foreignTopics = topicRows.filter((t) => t.subjectId !== subjectId);
+  if (foreignTopics.length > 0) {
+    throw new Error(
+      `Argomenti non appartenenti alla materia richiesta: ${foreignTopics.map((t) => t.id).join(', ')}`,
+    );
+  }
+
+  const linkRows: { documentId: string }[] = await db
+    .select({ documentId: documentTopics.documentId })
+    .from(documentTopics)
+    .where(inArray(documentTopics.topicId, topicIds));
+  const docIds = [...new Set(linkRows.map((r) => r.documentId))];
+  if (docIds.length === 0) {
+    throw new Error(
+      'Nessun documento collegato agli argomenti indicati: taggali prima dalla pagina materia.',
+    );
+  }
+  return docIds;
+}
+
+/** Resolves a generation scope (`docIds` and/or `topicIds`) to the chunks it covers. */
 export async function resolveScopeChunks(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any,
   subjectId: string,
   scope: GenerationScope,
 ): Promise<ChunkRef[]> {
-  if (!scope.docIds || scope.docIds.length === 0) {
-    throw new ScopeNotSupportedError(
-      'Scope per topicIds non ancora supportato: manca il tagging documento->argomento (F3+).',
-    );
-  }
+  const docIds =
+    scope.docIds && scope.docIds.length > 0
+      ? scope.docIds
+      : await resolveTopicScopeDocIds(db, subjectId, scope.topicIds ?? []);
 
   const docRows: { id: string; subjectId: string }[] = await db
     .select({ id: documents.id, subjectId: documents.subjectId })
     .from(documents)
-    .where(inArray(documents.id, scope.docIds));
+    .where(inArray(documents.id, docIds));
 
   const foundIds = new Set(docRows.map((d) => d.id));
-  const missing = scope.docIds.filter((id) => !foundIds.has(id));
+  const missing = docIds.filter((id) => !foundIds.has(id));
   if (missing.length > 0) {
     throw new Error(`Documenti non trovati: ${missing.join(', ')}`);
   }
@@ -64,7 +101,7 @@ export async function resolveScopeChunks(
   const rows: { documentId: string; pageFrom: number; text: string }[] = await db
     .select({ documentId: chunks.documentId, pageFrom: chunks.pageFrom, text: chunks.text })
     .from(chunks)
-    .where(inArray(chunks.documentId, scope.docIds))
+    .where(inArray(chunks.documentId, docIds))
     .orderBy(chunks.documentId, chunks.ord);
 
   if (rows.length === 0) {
@@ -114,8 +151,8 @@ const AI_JOB_TYPES = [
  * today's successful AI-job costs and throws if adding this job would
  * exceed it, unless the caller passed `force`.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function checkBudget(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any,
   estimatedCostEur: number,
   force: boolean,
