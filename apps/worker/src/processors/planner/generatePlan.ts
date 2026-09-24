@@ -3,14 +3,13 @@ import { and, eq, inArray, lt, ne } from 'drizzle-orm';
 import {
   artifacts,
   chunks,
-  documentTopics,
   documents,
   exams,
   flashcards,
+  resolvePrimaryTopics,
   studyPlans,
   subjects,
   tasks,
-  topics,
   type Flashcard,
   type NewTask,
 } from '@studyhub/db';
@@ -74,38 +73,11 @@ async function buildPlanningUnits(
 ): Promise<PlanningUnit[]> {
   if (eligibleDocs.length === 0) return [];
   const docIds = eligibleDocs.map((d) => d.id);
-
-  const linkRows: {
-    documentId: string;
-    topicId: string;
-    topicName: string;
-    orderIndex: number;
-    mastery: number | null;
-  }[] = await db
-    .select({
-      documentId: documentTopics.documentId,
-      topicId: topics.id,
-      topicName: topics.name,
-      orderIndex: topics.orderIndex,
-      mastery: topics.mastery,
-    })
-    .from(documentTopics)
-    .innerJoin(topics, eq(documentTopics.topicId, topics.id))
-    .where(and(eq(topics.subjectId, subjectId), inArray(documentTopics.documentId, docIds)));
-
-  const linksByDoc = new Map<string, typeof linkRows>();
-  for (const link of linkRows)
-    linksByDoc.set(link.documentId, [...(linksByDoc.get(link.documentId) ?? []), link]);
+  const primaryByDoc = await resolvePrimaryTopics(db, subjectId, docIds);
 
   const units = new Map<string, PlanningUnit>();
   for (const doc of eligibleDocs) {
-    const links = linksByDoc.get(doc.id);
-    const primary =
-      links && links.length > 0
-        ? [...links].sort(
-            (a, b) => a.orderIndex - b.orderIndex || a.topicId.localeCompare(b.topicId),
-          )[0]!
-        : null;
+    const primary = primaryByDoc.get(doc.id) ?? null;
     const unitKey = primary ? primary.topicId : doc.id;
 
     const existing = units.get(unitKey);

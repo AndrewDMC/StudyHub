@@ -165,7 +165,9 @@ export const topics = pgTable('topics', {
   confidence: real('confidence'),
   source: text('source').$type<TopicSource>().notNull().default('user'),
   // 0..1, computed from FSRS retrievability + simulation accuracy + coverage
-  // (docs/02-filesystem-e-dati.md §5) — null until F4/F5 exist to feed it.
+  // (docs/02-filesystem-e-dati.md §5) by `recomputeTopicMastery`
+  // (packages/db/src/mastery.ts) — null only for a topic with none of the
+  // three yet (no reviewed cards, no simulation, no material assigned).
   mastery: real('mastery'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

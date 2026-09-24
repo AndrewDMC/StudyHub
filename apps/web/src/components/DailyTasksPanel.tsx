@@ -2,13 +2,20 @@
 
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { TaskDto } from '@studyhub/contracts';
+import type { DriftReportDto, TaskDto } from '@studyhub/contracts';
 
 async function fetchToday(slug: string): Promise<TaskDto[]> {
   const res = await fetch(`/api/subjects/${slug}/plan/today`);
   const body = await res.json();
   if (!res.ok) throw new Error(body.error?.message ?? 'Impossibile caricare le task di oggi');
   return body.tasks as TaskDto[];
+}
+
+async function fetchDrift(slug: string): Promise<DriftReportDto | null> {
+  const res = await fetch(`/api/subjects/${slug}/plan/drift`);
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error?.message ?? 'Impossibile verificare lo scostamento');
+  return body.drift as DriftReportDto | null;
 }
 
 async function setStatus(slug: string, taskId: string, status: 'done' | 'skipped') {
@@ -35,6 +42,10 @@ export function DailyTasksPanel({ subjectSlug }: { subjectSlug: string }) {
     queryKey: ['daily-tasks', subjectSlug],
     queryFn: () => fetchToday(subjectSlug),
   });
+  const driftQuery = useQuery({
+    queryKey: ['plan-drift', subjectSlug],
+    queryFn: () => fetchDrift(subjectSlug),
+  });
 
   const mutate = useMutation({
     mutationFn: ({ taskId, status }: { taskId: string; status: 'done' | 'skipped' }) =>
@@ -53,6 +64,19 @@ export function DailyTasksPanel({ subjectSlug }: { subjectSlug: string }) {
           Piano →
         </Link>
       </div>
+
+      {driftQuery.data?.shouldRecalculate && (
+        <div className="mx-1 mb-2 rounded-[var(--radius-control)] border border-warn/40 bg-bg-inset px-2.5 py-1.5 text-xs text-warn">
+          Il piano è indietro ({driftQuery.data.reason}).{' '}
+          <Link
+            href={`/materie/${subjectSlug}/piano`}
+            className="underline underline-offset-2 hover:text-warn"
+          >
+            Rigenera il piano
+          </Link>
+          .
+        </div>
+      )}
 
       <div className="space-y-2 px-1 text-xs">
         {query.isLoading && <p className="text-fg-muted">Caricamento…</p>}

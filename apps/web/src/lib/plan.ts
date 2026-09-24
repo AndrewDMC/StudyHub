@@ -2,10 +2,19 @@ import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import { and, eq, inArray } from 'drizzle-orm';
-import { exams, studyPlans, subjects, tasks, type StudyPlan, type Task } from '@studyhub/db';
+import {
+  exams,
+  recomputeTopicMastery,
+  studyPlans,
+  subjects,
+  tasks,
+  type StudyPlan,
+  type Task,
+} from '@studyhub/db';
 import {
   buildCapacity,
   computeLoadPerDay,
+  detectDrift,
   diffPlans,
   moveTask as coreMoveTask,
   resolveSubjectSubpath,
@@ -13,6 +22,7 @@ import {
 } from '@studyhub/core';
 import type {
   CreateManualTaskRequest,
+  DriftReportDto,
   GeneratePlanRequest,
   PlanDiffDto,
   PlanDto,
@@ -392,6 +402,14 @@ export async function setTaskStatus(
     .set({ status, updatedAt: new Date() })
     .where(eq(tasks.id, taskId))
     .returning();
+
+  // Coverage (docs/02-filesystem-e-dati.md §5) is driven by material actually
+  // read, not scheduled — a completed reading session is the only signal for
+  // it, so mastery only needs a nudge here, not on every status change.
+  if (status === 'done' && updated.kind === 'read' && updated.topicId) {
+    await recomputeTopicMastery(db, updated.topicId);
+  }
+
   return toTaskDto(updated);
 }
 
@@ -424,6 +442,26 @@ export async function getPlanDiff(
     draft.tasks.map(toTaskLike),
     reason,
     topicNames,
+  );
+}
+
+/**
+ * "Al rientro il sistema propone un ricalcolo" (docs/04-planner.md,
+ * docs/fasi/F6-planner-calendario.md "Stato": `detectDrift` existed but
+ * nothing called it). `null` when there's no active plan to drift from —
+ * not "no drift", there's simply nothing to check yet.
+ */
+export async function getPlanDrift(
+  db: AnyDb,
+  subjectSlug: string,
+  today: string,
+): Promise<DriftReportDto | null> {
+  const subject = await requireSubject(db, subjectSlug);
+  const active = await loadPlanByStatus(db, subject.id, 'active');
+  if (!active) return null;
+  return detectDrift(
+    active.tasks.map((t) => ({ key: t.taskKey, date: t.date, status: t.status })),
+    today,
   );
 }
 

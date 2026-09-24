@@ -181,3 +181,16 @@ export const PlanDiffDtoSchema = z.object({
   summary: z.array(z.string()),
 });
 export type PlanDiffDto = z.infer<typeof PlanDiffDtoSchema>;
+
+/**
+ * "Al rientro il sistema propone un ricalcolo" (docs/04-planner.md) —
+ * `detectDrift` (`packages/core/src/planner/adapt.ts`) compared against the
+ * active plan's own tasks, docs/fasi/F6-planner-calendario.md "Stato".
+ */
+export const DriftReportDtoSchema = z.object({
+  overdueKeys: z.array(z.string()),
+  missedDays: z.array(IsoDateSchema),
+  shouldRecalculate: z.boolean(),
+  reason: z.string().nullable(),
+});
+export type DriftReportDto = z.infer<typeof DriftReportDtoSchema>;

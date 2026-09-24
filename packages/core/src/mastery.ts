@@ -3,11 +3,13 @@
  * (docs/02-filesystem-e-dati.md §5 — "formula esplicitata e mostrata all'utente: niente numeri magici").
  *
  * A component with no data yet (no reviewed cards, no simulation on the
- * topic, no reading tracking) is *absent*, not zero: its weight is dropped
- * and the remaining weights are renormalized. Otherwise a topic with perfect
- * simulations but no flashcards would be capped at 0.3 — punishing the user
- * for a feature they didn't use. Coverage has no data source yet (reading
- * isn't tracked), so today it is always absent.
+ * topic, no material assigned to the topic) is *absent*, not zero: its
+ * weight is dropped and the remaining weights are renormalized. Otherwise a
+ * topic with perfect simulations but no flashcards would be capped at 0.3 —
+ * punishing the user for a feature they didn't use. Coverage (fraction of
+ * the topic's assigned material actually read) is computed in
+ * `packages/db/src/mastery.ts::recomputeTopicMastery` from `done` `read`
+ * tasks — absent only for a topic with no material tagged to it at all.
  */
 export const MASTERY_WEIGHTS = {
   retrievability: 0.5,

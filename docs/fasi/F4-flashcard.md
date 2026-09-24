@@ -90,6 +90,13 @@ un valore, pesato 100% su retrievability, invece di restare `null` in attesa di 
 rinormalizzati, card sospese/nuove ignorate) + 2 in `apps/web/test/review.test.ts` (submitReview
 aggiorna mastery del topic taggato, non tocca nulla se la card non è taggata).
 
-La copertura del materiale letto resta l'unica componente senza fonte dati (nessun tracking di
-lettura effettiva, solo task "read" completati dal Planner — non lo stesso concetto): resta assente,
-non zero.
+La copertura del materiale letto (l'ultima delle tre componenti) è stata implementata lo stesso
+giorno — vedi "Aggiornamento — copertura del materiale letto" qui sotto.
+
+## Aggiornamento — copertura del materiale letto, formula completa (2026-09-24)
+
+La formula di mastery aveva ancora una componente sempre assente: la copertura. Ora
+`packages/db/src/mastery.ts::recomputeTopicMastery` la calcola davvero — vedi
+`docs/fasi/F6-planner-calendario.md` "Stato" per come i task "read" del Planner alimentano il dato.
+Le tre componenti sono ora tutte reali; la formula resta `null` solo per un argomento senza alcun
+dato in nessuna delle tre (nessuna card, nessuna simulazione, nessun materiale taggato).

@@ -4,6 +4,7 @@ import { createDb } from '@studyhub/db';
 import { resolveDataRoot, SUBJECT_COLORS, type SubjectColor } from '@studyhub/core';
 import { reconcileSubjects } from '@studyhub/worker/lib';
 import { addSubject, listSubjectRows } from './commands/subject.js';
+import { generatePlanCli, listPlansCli } from './commands/plan.js';
 import { backupData, restoreData } from './backup.js';
 
 const program = new Command();
@@ -49,6 +50,87 @@ subject
     }
     for (const row of rows) {
       console.log(`${row.slug}\t${row.name}\t${row.color}`);
+    }
+  });
+
+const plan = program.command('plan').description('Piano di studio (docs/04-planner.md)');
+
+plan
+  .command('generate')
+  .description('Genera una bozza di piano (Fase A+B, nessun Redis richiesto: gira in-process)')
+  .argument('<subjectSlug>', 'Slug della materia')
+  .requiredOption('--start <date>', 'Data di inizio (YYYY-MM-DD)')
+  .requiredOption('--target <date>', 'Data obiettivo/esame (YYYY-MM-DD)')
+  .requiredOption(
+    '--weekly <minutes>',
+    'Minuti disponibili per giorno, 7 valori separati da virgola (dom..sab), es. 0,120,120,120,120,120,0',
+  )
+  .option('--session-length <minutes>', 'Durata di una sessione', (v) => parseInt(v, 10), 50)
+  .option('--intensity <intensity>', 'sostenibile|standard|sprint', 'standard')
+  .option('--exam <examId>', 'Esame collegato')
+  .option('--force', 'Ignora il tetto di spesa giornaliero', false)
+  .action(
+    async (
+      subjectSlug: string,
+      opts: {
+        start: string;
+        target: string;
+        weekly: string;
+        sessionLength: number;
+        intensity: 'sostenibile' | 'standard' | 'sprint';
+        exam?: string;
+        force: boolean;
+      },
+    ) => {
+      const weekly = opts.weekly.split(',').map((v) => parseInt(v.trim(), 10));
+      if (weekly.length !== 7 || weekly.some((n) => Number.isNaN(n))) {
+        console.error('--weekly deve avere esattamente 7 numeri separati da virgola.');
+        process.exitCode = 1;
+        return;
+      }
+      const db = createDb();
+      try {
+        const result = await generatePlanCli(db, {
+          subjectSlug,
+          startDate: opts.start,
+          targetDate: opts.target,
+          weekly,
+          sessionLength: opts.sessionLength,
+          intensity: opts.intensity,
+          ...(opts.exam !== undefined ? { examId: opts.exam } : {}),
+          force: opts.force,
+        });
+        console.log(`Bozza generata: ${result.planId}`);
+        console.log(`Task: ${result.taskCount} · fattibile: ${result.feasible ? 'sì' : 'no'}`);
+        if (result.warnings.length > 0) console.log('Avvisi:', result.warnings);
+        console.log(`Costo: €${result.costEur.toFixed(4)}`);
+      } catch (err) {
+        console.error(err instanceof Error ? err.message : err);
+        process.exitCode = 1;
+      }
+    },
+  );
+
+plan
+  .command('ls')
+  .description('Elenca i piani (draft/active/superseded) di una materia')
+  .argument('<subjectSlug>', 'Slug della materia')
+  .action(async (subjectSlug: string) => {
+    const db = createDb();
+    try {
+      const rows = await listPlansCli(db, subjectSlug);
+      if (rows.length === 0) {
+        console.log('Nessun piano ancora — usa "studyhub plan generate".');
+        return;
+      }
+      for (const row of rows) {
+        console.log(
+          `${row.id}\t${row.status}\t${row.startDate} → ${row.targetDate}\t${row.taskCount} task`,
+        );
+      }
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      process.exitCode = 1;
     }
   });
 

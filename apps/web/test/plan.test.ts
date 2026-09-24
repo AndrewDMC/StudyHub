@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { createTestDb } from '@studyhub/db/testDb';
-import { studyPlans, tasks } from '@studyhub/db';
+import { documentTopics, documents, studyPlans, tasks, topics } from '@studyhub/db';
 import { createSubject } from '../src/lib/subjects';
 import {
   commitPlan,
@@ -17,6 +17,7 @@ import {
   getCurrentPlan,
   getDailyTasks,
   getPlanDiff,
+  getPlanDrift,
   MoveRefusedError,
   moveTaskInPlan,
   NoDraftPlanError,
@@ -279,6 +280,40 @@ describe('plan draft/commit lifecycle', () => {
     expect(updated.status).toBe('done');
   });
 
+  it('marking a read task done recomputes its topic’s mastery (coverage component)', async () => {
+    const docId = randomUUID();
+    await db.insert(documents).values({
+      id: docId,
+      subjectId,
+      type: 'appunti',
+      originalName: 'doc.pdf',
+      storedPath: '/irrelevant',
+      mime: 'application/pdf',
+      bytes: 10,
+      sha256: 'a'.repeat(64),
+      status: 'parsed',
+      pages: 10,
+    });
+    const topicId = randomUUID();
+    await db.insert(topics).values({ id: topicId, subjectId, name: 'Entropia', slug: 'entropia' });
+    await db.insert(documentTopics).values({ documentId: docId, topicId });
+
+    const draftId = await insertDraftPlan();
+    const taskId = await insertTask(draftId, {
+      topicId,
+      payload: { action: 'read', material: [{ docId, pageFrom: 1, pageTo: 10 }], topicId },
+    });
+    await commitPlan(db, dataRoot, subjectSlug, draftId);
+
+    let [topic] = await db.select().from(topics).where(eq(topics.id, topicId));
+    expect(topic?.mastery).toBeNull();
+
+    await setTaskStatus(db, subjectSlug, taskId, 'done');
+
+    [topic] = await db.select().from(topics).where(eq(topics.id, topicId));
+    expect(topic?.mastery).toBe(1); // full document read, no other component to renormalize against
+  });
+
   it('getDailyTasks returns only todo/doing tasks from the active plan, up to today', async () => {
     const draftId = await insertDraftPlan();
     await insertTask(draftId, { date: '2026-01-06' });
@@ -305,6 +340,39 @@ describe('plan draft/commit lifecycle', () => {
     expect(diff!.unchanged).toBe(1);
     expect(diff!.rows.some((r) => r.change === 'added' && r.key === 'read:doc:new')).toBe(true);
     void keptTaskId;
+  });
+
+  it('getPlanDrift is null with no active plan (nothing to check yet, not "no drift")', async () => {
+    expect(await getPlanDrift(db, subjectSlug, '2026-01-10')).toBeNull();
+    const draftId = await insertDraftPlan(); // a draft alone isn't active yet
+    await insertTask(draftId, { date: '2026-01-06' });
+    expect(await getPlanDrift(db, subjectSlug, '2026-01-10')).toBeNull();
+  });
+
+  it('getPlanDrift does not flag a plan whose past tasks are all done', async () => {
+    const draftId = await insertDraftPlan();
+    await insertTask(draftId, { date: '2026-01-06', status: 'done' });
+    await insertTask(draftId, { date: '2026-01-07', status: 'done' });
+    // Both tasks are already 'done' (not 'proposed'), so commitPlan's status
+    // flip leaves them untouched — only the plan itself becomes active.
+    await commitPlan(db, dataRoot, subjectSlug, draftId);
+
+    const drift = await getPlanDrift(db, subjectSlug, '2026-01-10');
+    expect(drift?.shouldRecalculate).toBe(false);
+    expect(drift?.missedDays).toEqual([]);
+  });
+
+  it('getPlanDrift flags two entirely-missed days in the last week for a recalculation', async () => {
+    const draftId = await insertDraftPlan();
+    await insertTask(draftId, { taskKey: 'read:a', date: '2026-01-06' });
+    await insertTask(draftId, { taskKey: 'read:b', date: '2026-01-07' });
+    await commitPlan(db, dataRoot, subjectSlug, draftId);
+    // Both days' tasks are still 'todo' by "today" — two fully-missed days.
+
+    const drift = await getPlanDrift(db, subjectSlug, '2026-01-10');
+    expect(drift?.shouldRecalculate).toBe(true);
+    expect(drift?.missedDays).toEqual(['2026-01-06', '2026-01-07']);
+    expect(drift?.reason).toContain('giorni saltati');
   });
 
   it('discardDraft removes the draft plan and its tasks without touching the active one', async () => {

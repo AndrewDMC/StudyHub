@@ -12,12 +12,14 @@ Local-first: le materie sono cartelle reali su disco, l'AI è un worker eseguibi
 > piano e **calendario mensile cross-materia** (niente ancora ICS), **dashboard** cross-materia con
 > command palette (`⌘K`), **`studyhub backup`/`restore`** reali, e **tagging documento↔argomento**
 > (`document_topics`) che il Planner usa già per pianificare sugli argomenti taggati, non solo sui
-> documenti, e **`topics.mastery` reale** ricalcolata sia dopo ogni review FSRS sia dopo ogni
-> simulazione corretta (0.5·retrievability + 0.3·accuratezza simulazioni + 0.2·copertura, pesi
-> rinormalizzati sulle componenti con dati), con **heatmap nell'albero Argomenti** (tooltip con
-> formula per esteso). Niente ancora tema light, densità, distribuzione Docker.
-> 395 test (`pnpm turbo run test`), tutti verdi. Dettagli e limiti dichiarati nella sezione "Stato" di
-> ogni `docs/fasi/F*.md`; roadmap completa in [docs/fasi/README.md](docs/fasi/README.md).
+> documenti, e **`topics.mastery` reale con formula completa** — retrievability (review FSRS),
+> accuratezza simulazioni e **copertura del materiale letto** (task "read" completati) — con
+> **heatmap nell'albero Argomenti** (tooltip con formula per esteso). Il Planner ora avvisa anche
+> quando **il piano è indietro** (`detectDrift` collegato: 2+ giorni saltati o 30%+ task scadute →
+> banner con link per rigenerare). **`studyhub plan generate`/`ls`** in CLI, in-process senza Redis.
+> Niente ancora tema light, densità, distribuzione Docker. 407 test (`pnpm turbo run test`), tutti
+> verdi. Dettagli e limiti dichiarati nella sezione "Stato" di ogni `docs/fasi/F*.md`; roadmap
+> completa in [docs/fasi/README.md](docs/fasi/README.md).
 
 ## Sviluppo locale
 

@@ -37,8 +37,10 @@ Spec funzionale completa: `docs/04-planner.md`.
 - [x] Due esami ravvicinati: nessun giorno supera i minuti disponibili (con la materia che genera per
       seconda che rispetta i minuti già occupati dalla prima — non un solver congiunto, vedi "Stato").
 - [ ] Il feed ICS si apre correttamente in Google Calendar e si aggiorna.
-- [ ] Salto 3 giorni: al rientro il sistema propone un ricalcolo, non una lista di 30 task arretrate.
-      (`detectDrift` esiste ed è testato, ma non è collegato a nessuna route — vedi "Stato".)
+- [x] Salto 3 giorni: al rientro il sistema propone un ricalcolo, non una lista di 30 task arretrate.
+      (`GET .../plan/drift` + banner nel pannello "Oggi" — vedi "Aggiornamento" in fondo al file. La
+      soglia di `detectDrift` è ≥2 giorni interamente saltati o ≥30% di task scadute nell'ultima
+      settimana, non esattamente "3 giorni" testuale, ma il comportamento richiesto c'è.)
 
 ## Rischi
 
@@ -130,9 +132,8 @@ Cosa c'è, con test reali:
   di spostamento per ciascuna (campo data + bottone, non trascinamento del mouse). La nav non la marca più
   "Presto disponibile".
 - **Diff di ricalcolo** (`getPlanDiff`, riusa `adapt.ts::diffPlans`): confronta piano attivo e bozza
-  corrente, rispetta i `pin` — testato. `detectDrift` (salto giorni → serve un ricalcolo) è scritto e
-  testato in `packages/core` ma **non è collegato a nulla**: nessun cron/route lo invoca ancora, quindi
-  "al rientro il sistema propone un ricalcolo" non è vero in pratica, solo in libreria.
+  corrente, rispetta i `pin` — testato. `detectDrift` è ora collegato (vedi "Aggiornamento" in fondo
+  a questo file): "al rientro il sistema propone un ricalcolo" è vero in pratica, non solo in libreria.
 - **UI**: `/materie/[slug]/piano` (wizard a singola schermata, non i 4 step della spec; lista task
   raggruppata per giorno con carico/disponibilità, non un calendario) + pannello **Oggi**
   (`DailyTasksPanel`) sulla pagina materia. Verificato in browser reale (senza Postgres, come nelle fasi
@@ -155,5 +156,57 @@ Cosa c'è, con test reali:
   task scadute nella lista piatta di "Oggi", senza le azioni di triage previste.
 - **`starts_at`/`ends_at`** (fasce orarie): le task hanno una `date`, non un orario — nessuna vista
   Settimana avrebbe comunque senso senza questo.
-- **CLI**: nessun `studyhub plan ...`, stesso pattern di rimando di F3/F4/F5 (CLI insegue la UI quando serve).
+- **CLI**: `studyhub plan generate`/`ls` esistono ora (vedi "Aggiornamento" in fondo al file) — manca
+  ancora `studyhub plan commit` (il commit tocca il filesystem via `apps/web/src/lib/plan.ts`, non
+  condiviso col worker come `processGeneratePlan`; per ora si commit solo dalla UI).
 - **Dashboard (F7)**: il Daily Task esiste solo nella pagina materia, non ancora nella home.
+
+## Aggiornamento — i task "read" completati alimentano la copertura di mastery (2026-09-24)
+
+Ultima componente mancante della formula di mastery (`docs/02-filesystem-e-dati.md` §5): la
+"copertura del materiale letto". `apps/web/src/lib/plan.ts::setTaskStatus` ora chiama
+`recomputeTopicMastery` (`@studyhub/db`) quando un task `kind: 'read'` con `topicId` viene marcato
+`done` — non su ogni cambio di stato, solo su quello che segnala materiale davvero letto.
+
+`packages/db/src/mastery.ts::computeTopicCoverage` calcola la frazione: pagine coperte da task
+`read` `done` (dal `payload.material`, clampate alle pagine del documento per evitare che
+rigenerazioni di piano sovrapposte superino il 100%) diviso le pagine totali dei documenti il cui
+**argomento primario** (stesso criterio del Planner: `orderIndex` più basso) è quell'argomento.
+Assente, non zero, per un argomento senza alcun documento taggato.
+
+La risoluzione dell'argomento primario per documento — finora scritta solo dentro
+`generatePlan.ts::buildPlanningUnits` — è stata estratta in `packages/db/src/documentTopics.ts::
+resolvePrimaryTopics`, condivisa ora da Planner e mastery: stessa regola, una sola implementazione.
+5 test nuovi in `packages/db/test/mastery.test.ts` (parziale, non conta i task non `done`, clamp al
+100% con piani rigenerati sovrapposti, solo l'argomento primario conta), 1 in
+`apps/web/test/plan.test.ts` (`setTaskStatus('done')` su un task letto aggiorna la mastery).
+
+## Aggiornamento — `detectDrift` collegato: "il piano è indietro" (2026-09-24)
+
+L'ultimo pezzo scritto-ma-non-collegato di questa fase: `apps/web/src/lib/plan.ts::getPlanDrift`
+chiama `detectDrift` (`packages/core`) contro le task del piano **attivo**, e la nuova route
+`GET /api/subjects/:slug/plan/drift?date=YYYY-MM-DD` (default: oggi) la espone. `null` quando non
+c'è un piano attivo — non "nessuno scostamento", semplicemente niente da controllare ancora.
+`DailyTasksPanel.tsx` mostra un banner ambra con il motivo (`"2 giorni saltati"` o
+`"NN% delle task... non svolte"`) e un link a `/materie/[slug]/piano` per rigenerare, quando
+`shouldRecalculate` è vero.
+
+Nessun cron: il controllo è lato client, a ogni caricamento del pannello "Oggi" — non un vero
+"al rientro" proattivo (nessuna notifica push/email), ma il comportamento visibile richiesto dal
+criterio di accettazione c'è. 3 test nuovi in `apps/web/test/plan.test.ts` (null senza piano attivo,
+nessun drift con task tutte `done`, drift rilevato con 2 giorni interamente saltati).
+
+## Aggiornamento — `studyhub plan generate`/`ls` (2026-09-24)
+
+Primo comando CLI del Planner: `studyhub plan generate <slug> --start ... --target ... --weekly
+0,120,120,120,120,120,0 [--session-length] [--intensity] [--exam] [--force]` chiama
+`processGeneratePlan` **in-process**, esattamente come `reconcile` — nessun Redis/BullMQ richiesto,
+stesso principio "apps/cli è lo stesso codice del worker invocato one-shot" (docs/01-architettura.md
+§1). `studyhub plan ls <slug>` elenca i piani (draft/active/superseded) con conteggio task, più
+recenti prima. Validazione di `--weekly` (deve avere esattamente 7 numeri) prima di toccare il DB.
+
+`processGeneratePlan` è stato aggiunto a `apps/worker/src/lib.ts` (il barrel "reusable, side-effect-
+free exports for apps/cli") perché non c'era ancora bisogno di esporlo da lì. Manca ancora `plan
+commit`: il commit scrive anche su filesystem via `apps/web/src/lib/plan.ts`, non condiviso col
+worker — resta un'azione solo-UI per ora. 3 test nuovi in `apps/cli/test/plan.test.ts` (genera una
+bozza, errore chiaro per materia sconosciuta, `ls` in ordine e con conteggio task corretto).

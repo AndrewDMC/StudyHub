@@ -10,4 +10,5 @@ export * from './processors/generation/shared.js';
 export * from './processors/exam/extractExamProfile.js';
 export * from './processors/exam/generateSimulation.js';
 export * from './processors/exam/gradeAttempt.js';
+export * from './processors/planner/generatePlan.js';
 export * from './jobRunner.js';

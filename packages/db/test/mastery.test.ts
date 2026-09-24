@@ -5,13 +5,95 @@ import { createTestDb } from '../src/testDb.js';
 import {
   artifacts,
   attemptItemResults,
+  documentTopics,
+  documents,
   flashcards,
   recomputeTopicMastery,
   simulationAttempts,
   simulationItems,
+  studyPlans,
   subjects,
+  tasks,
   topics,
 } from '../src/index.js';
+
+async function addParsedDoc(
+  db: Awaited<ReturnType<typeof createTestDb>>,
+  subjectId: string,
+  pages: number,
+) {
+  const id = randomUUID();
+  await db.insert(documents).values({
+    id,
+    subjectId,
+    type: 'appunti',
+    originalName: `doc-${id.slice(0, 4)}.pdf`,
+    storedPath: '/irrelevant',
+    mime: 'application/pdf',
+    bytes: 10,
+    sha256: 'a'.repeat(64),
+    status: 'parsed',
+    pages,
+  });
+  return id;
+}
+
+async function addPlan(db: Awaited<ReturnType<typeof createTestDb>>, subjectId: string) {
+  const id = randomUUID();
+  await db.insert(studyPlans).values({
+    id,
+    subjectId,
+    startDate: '2026-01-05',
+    targetDate: '2026-02-04',
+    availability: { perWeekday: [0, 120, 120, 120, 120, 120, 0], blackoutDates: [] },
+    prefs: {
+      sessionLength: 50,
+      intensity: 'standard',
+      simulationCount: 'auto',
+      simulationMinutes: 90,
+      reviewMinutesPerCard: 0.5,
+    },
+    feasibility: {
+      feasible: true,
+      requiredMinutes: 0,
+      availableMinutes: 0,
+      shortfallMinutes: 0,
+      unscheduledTopicKeys: [],
+      strategies: [],
+    },
+    warnings: [],
+    model: 'fake-v1',
+    promptVersion: 'estimate_topics/v1',
+    status: 'active',
+  });
+  return id;
+}
+
+async function addReadTask(
+  db: Awaited<ReturnType<typeof createTestDb>>,
+  args: {
+    subjectId: string;
+    planId: string;
+    topicId: string;
+    material: { docId: string; pageFrom: number; pageTo: number }[];
+    status?: 'todo' | 'doing' | 'done' | 'skipped' | 'moved';
+  },
+) {
+  await db.insert(tasks).values({
+    id: randomUUID(),
+    subjectId: args.subjectId,
+    planId: args.planId,
+    taskKey: `read:${randomUUID().slice(0, 8)}`,
+    date: '2026-01-05',
+    kind: 'read',
+    topicId: args.topicId,
+    minutes: 30,
+    title: 'Studia',
+    description: '',
+    payload: { action: 'read', material: args.material, topicId: args.topicId },
+    status: args.status ?? 'done',
+  });
+}
 
 describe('recomputeTopicMastery', () => {
   let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -161,5 +243,95 @@ describe('recomputeTopicMastery', () => {
 
     const value = await recomputeTopicMastery(db, topicId);
     expect(value).toBeNull(); // neither counts, so no data at all
+  });
+
+  describe('coverage (fraction of the topic’s material actually read)', () => {
+    it('is absent, not zero, when no document is tagged to the topic', async () => {
+      const value = await recomputeTopicMastery(db, topicId);
+      expect(value).toBeNull();
+    });
+
+    it('is a partial fraction when only some pages have a done read task', async () => {
+      const docId = await addParsedDoc(db, subjectId, 20);
+      await db.insert(documentTopics).values({ documentId: docId, topicId });
+      const planId = await addPlan(db, subjectId);
+      await addReadTask(db, {
+        subjectId,
+        planId,
+        topicId,
+        material: [{ docId, pageFrom: 1, pageTo: 10 }], // half the document
+      });
+
+      const value = await recomputeTopicMastery(db, topicId);
+      expect(value).not.toBeNull();
+      expect(value!).toBeCloseTo(0.5, 1); // coverage is the only component with data
+    });
+
+    it('ignores a read task that is not yet done', async () => {
+      const docId = await addParsedDoc(db, subjectId, 20);
+      await db.insert(documentTopics).values({ documentId: docId, topicId });
+      const planId = await addPlan(db, subjectId);
+      await addReadTask(db, {
+        subjectId,
+        planId,
+        topicId,
+        material: [{ docId, pageFrom: 1, pageTo: 20 }],
+        status: 'todo',
+      });
+
+      const value = await recomputeTopicMastery(db, topicId);
+      expect(value).toBe(0); // material assigned, none of it read yet — a real zero, not absent
+    });
+
+    it('clamps coverage at 100% even with overlapping done tasks from more than one plan generation', async () => {
+      const docId = await addParsedDoc(db, subjectId, 10);
+      await db.insert(documentTopics).values({ documentId: docId, topicId });
+      const planA = await addPlan(db, subjectId);
+      const planB = await addPlan(db, subjectId);
+      await addReadTask(db, {
+        subjectId,
+        planId: planA,
+        topicId,
+        material: [{ docId, pageFrom: 1, pageTo: 10 }],
+      });
+      await addReadTask(db, {
+        subjectId,
+        planId: planB,
+        topicId,
+        material: [{ docId, pageFrom: 1, pageTo: 10 }],
+      });
+
+      const value = await recomputeTopicMastery(db, topicId);
+      expect(value).toBe(1);
+    });
+
+    it('only counts a document toward the coverage of its primary (lowest orderIndex) topic', async () => {
+      const secondaryTopicId = randomUUID();
+      await db.insert(topics).values({
+        id: secondaryTopicId,
+        subjectId,
+        name: 'Secondario',
+        slug: 'secondario',
+        orderIndex: 5,
+      });
+      const docId = await addParsedDoc(db, subjectId, 10);
+      // topicId (orderIndex default 0) is primary; secondaryTopicId is not.
+      await db.insert(documentTopics).values([
+        { documentId: docId, topicId: secondaryTopicId },
+        { documentId: docId, topicId },
+      ]);
+      const planId = await addPlan(db, subjectId);
+      await addReadTask(db, {
+        subjectId,
+        planId,
+        topicId,
+        material: [{ docId, pageFrom: 1, pageTo: 10 }],
+      });
+
+      const primaryValue = await recomputeTopicMastery(db, topicId);
+      expect(primaryValue).toBe(1);
+      const secondaryValue = await recomputeTopicMastery(db, secondaryTopicId);
+      expect(secondaryValue).toBeNull(); // no document is primarily tagged to it
+    });
   });
 });
