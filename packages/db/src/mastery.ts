@@ -1,12 +1,12 @@
 import { and, eq, inArray, ne } from 'drizzle-orm';
+import { computeMastery, retrievability } from '@studyhub/core';
 import {
   attemptItemResults,
   flashcards,
   simulationItems,
   topics,
   type Flashcard,
-} from '@studyhub/db';
-import { computeMastery, retrievability } from '@studyhub/core';
+} from './schema.js';
 
 /**
  * Recomputes `topics.mastery` from its inputs (docs/02-filesystem-e-dati.md
@@ -14,6 +14,11 @@ import { computeMastery, retrievability } from '@studyhub/core';
  * retrievability of the topic's reviewed flashcards + average accuracy of
  * every graded simulation item on the topic. Coverage has no data source
  * yet, so it's absent (renormalized away), never a silent zero.
+ *
+ * Lives in `@studyhub/db` (not `apps/worker`) because both `apps/worker`
+ * (after grading a simulation) and `apps/web` (after every flashcard
+ * review) need to trigger it — see docs/fasi/F4-flashcard.md and
+ * docs/fasi/F5-esami-simulazioni.md "Stato".
  */
 export async function recomputeTopicMastery(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

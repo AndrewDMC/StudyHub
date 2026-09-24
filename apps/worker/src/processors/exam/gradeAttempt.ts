@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import {
   attemptItemResults,
+  recomputeTopicMastery,
   simulationAttempts,
   simulationItems,
   type GradedCriterionData,
@@ -10,7 +11,6 @@ import {
 import { estimateCostEur, resolveProvider, type AiProvider } from '@studyhub/ai';
 import type { GradeAttemptJobInput } from '@studyhub/contracts';
 import { checkBudget } from '../generation/shared.js';
-import { recomputeTopicMastery } from './mastery.js';
 
 const MODEL_ROUTING_GRADE = 'claude-sonnet-5'; // docs/03 §4: simulation_grade
 /** An item scored below this ratio is "weak" and feeds `weak_topics[]` for the Planner. */

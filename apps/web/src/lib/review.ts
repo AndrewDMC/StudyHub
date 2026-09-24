@@ -1,6 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
-import { artifacts, flashcards, reviews, subjects, type Flashcard } from '@studyhub/db';
+import {
+  artifacts,
+  flashcards,
+  recomputeTopicMastery,
+  reviews,
+  subjects,
+  type Flashcard,
+} from '@studyhub/db';
 import {
   isDue,
   newCardSchedule,
@@ -147,6 +154,11 @@ export async function submitReview(
     prevStability: result.prevStability,
     newStability: result.newStability,
   });
+
+  // Every review shifts this card's retrievability, and the topic's mastery
+  // (docs/02-filesystem-e-dati.md §5) is an average over it — not just after
+  // simulation grading (docs/fasi/F5-esami-simulazioni.md "Stato").
+  if (card.topicId) await recomputeTopicMastery(db, card.topicId);
 
   return toDto(updated);
 }

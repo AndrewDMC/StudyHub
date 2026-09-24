@@ -83,7 +83,15 @@ BullMQ vera (`apps/worker/test/queue.test.ts`), verificato fallire col vecchio n
 
 - Input multimodale (pagine degli esami come immagini) — il profilo si basa solo sul testo estratto.
 - "Seconda opinione con modello superiore su singolo item": non esposta in UI.
-- Mastery aggiornata anche dopo le review FSRS (oggi si ricalcola alla correzione di una simulazione).
 - Tag dell'argomento sugli esercizi di una simulazione _completa_ (solo i drill ce l'hanno): per ora
   `weak_topics` nasce solo dai drill.
 - Confronto di trend per argomento in grafico: c'è lo storico per simulazione, non la vista per argomento.
+
+## Aggiornamento — mastery ricalcolata anche dopo ogni review FSRS (2026-09-24)
+
+Il gap "Mastery aggiornata anche dopo le review FSRS" qui sopra è chiuso: `recomputeTopicMastery` è
+stata spostata da `apps/worker/src/processors/exam/mastery.ts` a `packages/db/src/mastery.ts` (nessun
+cambio alla formula, solo di indirizzo — `packages/db` non dipendeva ancora da `@studyhub/core`, ora sì,
+nessun ciclo perché `@studyhub/core` non dipende da `@studyhub/db`), così sia `grade_attempt` (worker)
+sia `submitReview` (`apps/web/src/lib/review.ts`, F4) possono richiamarla senza che `apps/web` importi
+codice interno di un altro _app_. Vedi `docs/fasi/F4-flashcard.md` "Stato" per i test.

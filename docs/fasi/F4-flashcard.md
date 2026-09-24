@@ -76,3 +76,20 @@ Cosa c'è, con test reali:
   formule LaTeX (previste per `generate_summary`/schema) non sono ancora renderizzate lato client.
 - **`subject.profile` (stem/umanistica/...) per varianti di prompt**: non implementato — F3 usa un
   unico prompt per materia.
+
+## Aggiornamento — `topics.mastery` ricalcolata a ogni review (2026-09-24)
+
+`apps/web/src/lib/review.ts::submitReview` ora chiama `recomputeTopicMastery` (spostata da
+`apps/worker` a `@studyhub/db/src/mastery.ts`, condivisa con F5 — vedi anche `docs/fasi/F5
+-esami-simulazioni.md` "Stato") ogni volta che una card con `topicId` viene valutata, non solo dopo
+la correzione di una simulazione. La formula (`packages/core/src/mastery.ts`) resta
+`0.5·retrievability + 0.3·accuratezza simulazioni + 0.2·copertura` coi pesi rinormalizzati sulle sole
+componenti con dati: una materia con solo flashcard (nessuna simulazione ancora fatta) ottiene comunque
+un valore, pesato 100% su retrievability, invece di restare `null` in attesa di F5. 3 test nuovi in
+`packages/db/test/mastery.test.ts` (nessun dato → null, combinazione review+simulazione coi pesi
+rinormalizzati, card sospese/nuove ignorate) + 2 in `apps/web/test/review.test.ts` (submitReview
+aggiorna mastery del topic taggato, non tocca nulla se la card non è taggata).
+
+La copertura del materiale letto resta l'unica componente senza fonte dati (nessun tracking di
+lettura effettiva, solo task "read" completati dal Planner — non lo stesso concetto): resta assente,
+non zero.

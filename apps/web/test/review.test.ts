@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { createTestDb } from '@studyhub/db/testDb';
-import { artifacts, flashcards, reviews } from '@studyhub/db';
+import { artifacts, flashcards, reviews, topics } from '@studyhub/db';
 import { createSubject } from '../src/lib/subjects';
 import {
   FlashcardNotFoundError,
@@ -131,6 +131,29 @@ describe('review queue + submitReview + suspend', () => {
     const { cardId } = await seedDeckAndCard(db, subjectId);
     await submitReview(db, subjectSlug, cardId, { rating: 4, elapsedMs: 1000 }); // Easy -> due far out
     expect(await getReviewQueue(db, subjectSlug)).toEqual([]);
+  });
+
+  it('submitReview recomputes the card’s topic mastery, not just after simulation grading', async () => {
+    const topicId = randomUUID();
+    await db.insert(topics).values({ id: topicId, subjectId, name: 'Entropia', slug: 'entropia' });
+    const { cardId } = await seedDeckAndCard(db, subjectId, { topicId });
+
+    let [topic] = await db.select().from(topics).where(eq(topics.id, topicId));
+    expect(topic?.mastery).toBeNull(); // no data yet — absent, not a silent zero
+
+    await submitReview(db, subjectSlug, cardId, { rating: 3, elapsedMs: 2000 });
+
+    [topic] = await db.select().from(topics).where(eq(topics.id, topicId));
+    expect(topic?.mastery).not.toBeNull();
+    expect(topic!.mastery).toBeGreaterThanOrEqual(0);
+    expect(topic!.mastery).toBeLessThanOrEqual(1);
+  });
+
+  it('submitReview on an untagged card (topicId null) does not touch any topic', async () => {
+    const { cardId } = await seedDeckAndCard(db, subjectId); // no topicId
+    await expect(
+      submitReview(db, subjectSlug, cardId, { rating: 3, elapsedMs: 2000 }),
+    ).resolves.toBeTruthy();
   });
 
   it('throws FlashcardNotFoundError for an unknown card', async () => {
