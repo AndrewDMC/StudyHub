@@ -22,6 +22,33 @@ function buildTree(topics: TopicDto[]): Map<string | null, TopicDto[]> {
   return byParent;
 }
 
+// docs/02-filesystem-e-dati.md §5 — "niente numeri magici": la formula è
+// sempre visibile nel tooltip, non solo il numero finale.
+const MASTERY_FORMULA =
+  '0.5·retrievability media card + 0.3·accuratezza simulazioni + 0.2·copertura materiale letto (pesi rinormalizzati sulle componenti con dati)';
+
+function masteryColorClass(mastery: number | null): string {
+  if (mastery === null) return 'bg-fg-muted/30';
+  if (mastery < 0.4) return 'bg-danger';
+  if (mastery < 0.7) return 'bg-warn';
+  return 'bg-ok';
+}
+
+function MasteryDot({ mastery }: { mastery: number | null }) {
+  const title =
+    mastery === null
+      ? `Nessun dato ancora (né card ripassate né simulazioni su questo argomento). Formula: ${MASTERY_FORMULA}`
+      : `Mastery ${Math.round(mastery * 100)}%. Formula: ${MASTERY_FORMULA}`;
+  return (
+    <span
+      role="img"
+      aria-label={title}
+      title={title}
+      className={`inline-block h-2 w-2 shrink-0 rounded-full ${masteryColorClass(mastery)}`}
+    />
+  );
+}
+
 function TopicNode({
   topic,
   byParent,
@@ -40,7 +67,10 @@ function TopicNode({
         className="group flex items-center justify-between rounded-[var(--radius-control)] px-2 py-1 hover:bg-bg-raised"
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
       >
-        <span className="text-sm text-fg-primary">{topic.name}</span>
+        <span className="flex min-w-0 items-center gap-1.5 text-sm text-fg-primary">
+          <MasteryDot mastery={topic.mastery} />
+          <span className="truncate">{topic.name}</span>
+        </span>
         <button
           type="button"
           onClick={() => onDelete(topic.id)}

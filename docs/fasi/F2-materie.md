@@ -89,3 +89,15 @@ nella stessa giornata): pianifica ora sugli argomenti taggati quando esistono, c
 taggati come fallback — vedi `docs/fasi/F6-planner-calendario.md` "Stato". Nessuna proposta AI di
 tag: `document_topics.source` distingue già `'user'`/`'ai'` nello schema, ma solo l'utente può
 crearli in questa slice.
+
+## Aggiornamento — heatmap di mastery nell'albero Argomenti (2026-09-24)
+
+Il criterio di accettazione "albero Argomenti con heatmap di mastery" era rimasto vuoto perché fino
+ad ora `topics.mastery` era sempre `null` (nessun consumatore l'avesse mai scritto — vedi
+`docs/fasi/F4-flashcard.md`/`F5-esami-simulazioni.md` "Stato": ora si ricalcola a ogni review FSRS
+e a ogni simulazione corretta). `TopicsPanel.tsx` mostra ora un pallino colorato per argomento
+(rosso <40%, ambra 40–70%, verde ≥70%, grigio se il dato è assente) con un tooltip che riporta sia
+il valore sia la formula per esteso (`0.5·retrievability + 0.3·simulazioni + 0.2·copertura`,
+docs/02-filesystem-e-dati.md §5 — "niente numeri magici"). Nessuna modifica a contratto/API: `mastery`
+era già nel `TopicDto`, solo mai renderizzato. Non verificato in browser reale (stesso limite delle
+altre fasi: nessun Postgres raggiungibile in questo ambiente); typecheck/lint puliti.

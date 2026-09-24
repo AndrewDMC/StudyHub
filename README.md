@@ -14,7 +14,8 @@ Local-first: le materie sono cartelle reali su disco, l'AI è un worker eseguibi
 > (`document_topics`) che il Planner usa già per pianificare sugli argomenti taggati, non solo sui
 > documenti, e **`topics.mastery` reale** ricalcolata sia dopo ogni review FSRS sia dopo ogni
 > simulazione corretta (0.5·retrievability + 0.3·accuratezza simulazioni + 0.2·copertura, pesi
-> rinormalizzati sulle componenti con dati). Niente ancora tema light, densità, distribuzione Docker.
+> rinormalizzati sulle componenti con dati), con **heatmap nell'albero Argomenti** (tooltip con
+> formula per esteso). Niente ancora tema light, densità, distribuzione Docker.
 > 395 test (`pnpm turbo run test`), tutti verdi. Dettagli e limiti dichiarati nella sezione "Stato" di
 > ogni `docs/fasi/F*.md`; roadmap completa in [docs/fasi/README.md](docs/fasi/README.md).
 
