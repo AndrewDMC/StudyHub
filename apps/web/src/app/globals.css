@@ -1,0 +1,91 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens — "Calm Futurism" (docs/05-design-system.md §2).
+ * Dark-first; a light theme is planned but not yet implemented (F7).
+ */
+:root {
+  --bg-base: #0a0b0f;
+  --bg-surface: #111318;
+  --bg-raised: #171a21;
+  --bg-inset: #0d0e13;
+  --border: #22262f;
+  --border-strong: #2e3441;
+
+  --fg-primary: #e8eaf0;
+  --fg-secondary: #9ba3b4;
+  --fg-muted: #626b7d;
+
+  --accent: #5b8cff;
+  --accent-hover: #7aa2ff;
+  --accent-subtle: #5b8cff1a;
+
+  --ok: #3dd68c;
+  --warn: #f5b544;
+  --danger: #ff6b6b;
+  --info: #4ecdc4;
+
+  --radius-control: 6px;
+  --radius-card: 10px;
+  --radius-modal: 14px;
+
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@theme inline {
+  --color-bg-base: var(--bg-base);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-raised: var(--bg-raised);
+  --color-bg-inset: var(--bg-inset);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-fg-primary: var(--fg-primary);
+  --color-fg-secondary: var(--fg-secondary);
+  --color-fg-muted: var(--fg-muted);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-subtle: var(--accent-subtle);
+
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+}
+
+html,
+body {
+  background: var(--bg-base);
+  color: var(--fg-primary);
+}
+
+body {
+  font-size: 14px;
+  font-family: var(--font-sans);
+}
+
+* {
+  border-color: var(--border);
+}
+
+/* The one permitted "futuristic" effect: a faint technical grid on empty surfaces. */
+.bg-technical-grid {
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--fg-primary) 3%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--fg-primary) 3%, transparent) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

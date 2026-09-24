@@ -1,0 +1,206 @@
+import type {
+  AiProvider,
+  EstimateTopicsPromptInput,
+  ExamProfilePromptInput,
+  FlashcardsPromptInput,
+  GeneratedWithMeta,
+  GradePromptInput,
+  SimulationPromptInput,
+  SummaryPromptInput,
+} from './provider.js';
+import type {
+  EstimateTopicsOutput,
+  ExamProfile,
+  FlashcardsOutput,
+  GeneratedFlashcard,
+  GradeOutput,
+  SimulationOutput,
+  SummaryOutput,
+  TopicEstimate,
+} from './schemas.js';
+import { estimateTokens } from './pricing.js';
+import { keywords, splitSentences, truncate } from './text.js';
+import { fakeExtractExamProfile, fakeGenerateSimulation, fakeGradeAnswer } from './fakeExam.js';
+import {
+  ESTIMATE_TOPICS_PROMPT_VERSION,
+  EXAM_PROFILE_PROMPT_VERSION,
+  FLASHCARDS_PROMPT_VERSION,
+  GRADING_PROMPT_VERSION,
+  SIMULATION_PROMPT_VERSION,
+  SUMMARY_PROMPT_VERSION,
+} from './versions.js';
+
+const FAKE_MODEL = 'fake-v1';
+
+/**
+ * Deterministic, offline stand-in for a real LLM. It does real extractive
+ * work (splits sentences, picks candidates, quotes them verbatim) rather
+ * than returning canned data — so every quote genuinely appears in its
+ * source chunk, and the citation-validation step in
+ * `functions/generateFlashcards.ts` has something real to check.
+ *
+ * Deliberately NOT a substitute for a real model's judgment (it can't tell
+ * which sentence is a good flashcard front) — it exists to let the rest of
+ * the pipeline (job orchestration, persistence, review UI, idempotency,
+ * budget guard) be built and tested for real before anyone pays for
+ * inference. Swap in `AnthropicProvider` by setting `ANTHROPIC_API_KEY`.
+ */
+export class FakeProvider implements AiProvider {
+  readonly name = 'fake';
+
+  async generateFlashcards(
+    input: FlashcardsPromptInput,
+    _model: string,
+  ): Promise<GeneratedWithMeta<FlashcardsOutput>> {
+    const targetCount =
+      input.count === 'auto' ? Math.min(input.chunks.length * 2, 20) : input.count;
+    const cards: GeneratedFlashcard[] = [];
+
+    for (const chunk of input.chunks) {
+      if (cards.length >= targetCount) break;
+      for (const sentence of splitSentences(chunk.text)) {
+        if (cards.length >= targetCount) break;
+        if (sentence.length < 20) continue; // too short to be an atomic fact
+
+        const type = input.types[cards.length % input.types.length] ?? 'basic';
+        cards.push({
+          type,
+          front:
+            type === 'cloze'
+              ? clozeify(sentence)
+              : `Cosa afferma il materiale su: "${truncate(sentence, 50)}"?`,
+          back: sentence,
+          sourceRef: { docId: chunk.docId, page: chunk.page, quote: sentence },
+        });
+      }
+    }
+
+    const inputTokens = input.chunks.reduce((sum, c) => sum + estimateTokens(c.text), 0);
+    const outputTokens = cards.reduce((sum, c) => sum + estimateTokens(c.front + c.back), 0);
+
+    return {
+      data: { cards },
+      usage: { inputTokens, outputTokens },
+      model: FAKE_MODEL,
+      promptVersion: FLASHCARDS_PROMPT_VERSION,
+    };
+  }
+
+  async generateSummary(
+    input: SummaryPromptInput,
+    _model: string,
+  ): Promise<GeneratedWithMeta<SummaryOutput>> {
+    const sentencesPerChunk = input.length === 'flash' ? 1 : input.length === 'esteso' ? 4 : 2;
+    const sections = input.chunks.map((chunk, i) => {
+      const bullets = splitSentences(chunk.text).slice(0, sentencesPerChunk);
+      return [`## Sezione ${i + 1} (pag. ${chunk.page})`, ...bullets.map((b) => `- ${b}`)].join(
+        '\n',
+      );
+    });
+
+    const markdown = [`# Riassunto — ${input.subjectName}`, '', ...sections, ''].join('\n\n');
+    const inputTokens = input.chunks.reduce((sum, c) => sum + estimateTokens(c.text), 0);
+    const outputTokens = estimateTokens(markdown);
+
+    return {
+      data: { markdown, glossary: [] },
+      usage: { inputTokens, outputTokens },
+      model: FAKE_MODEL,
+      promptVersion: SUMMARY_PROMPT_VERSION,
+    };
+  }
+
+  async extractExamProfile(
+    input: ExamProfilePromptInput,
+    _model: string,
+  ): Promise<GeneratedWithMeta<ExamProfile>> {
+    const data = fakeExtractExamProfile(input);
+    return {
+      data,
+      usage: {
+        inputTokens: input.chunks.reduce((sum, c) => sum + estimateTokens(c.text), 0),
+        outputTokens: estimateTokens(JSON.stringify(data)),
+      },
+      model: FAKE_MODEL,
+      promptVersion: EXAM_PROFILE_PROMPT_VERSION,
+    };
+  }
+
+  async generateSimulation(
+    input: SimulationPromptInput,
+    _model: string,
+  ): Promise<GeneratedWithMeta<SimulationOutput>> {
+    const data = fakeGenerateSimulation(input);
+    return {
+      data,
+      usage: {
+        inputTokens: input.chunks.reduce((sum, c) => sum + estimateTokens(c.text), 0),
+        outputTokens: estimateTokens(JSON.stringify(data)),
+      },
+      model: FAKE_MODEL,
+      promptVersion: SIMULATION_PROMPT_VERSION,
+    };
+  }
+
+  async gradeAnswer(
+    input: GradePromptInput,
+    _model: string,
+  ): Promise<GeneratedWithMeta<GradeOutput>> {
+    const data = fakeGradeAnswer(input);
+    return {
+      data,
+      usage: {
+        inputTokens: estimateTokens(JSON.stringify(input.item) + input.answer),
+        outputTokens: estimateTokens(JSON.stringify(data)),
+      },
+      model: FAKE_MODEL,
+      promptVersion: GRADING_PROMPT_VERSION,
+    };
+  }
+
+  async estimateTopics(
+    input: EstimateTopicsPromptInput,
+    _model: string,
+  ): Promise<GeneratedWithMeta<EstimateTopicsOutput>> {
+    const totalPages = input.units.reduce((s, u) => s + u.pages, 0) || 1;
+    const topics: TopicEstimate[] = input.units.map((u) => ({
+      key: u.key,
+      // ~3.5 min/page (first read, not memorization), never below one session block.
+      estimatedMinutes: Math.max(20, Math.round(u.pages * 3.5)),
+      difficulty: estimateDifficulty(u.excerpt),
+      // Relative to the other units in the same call, proportional to length —
+      // a real model would weigh centrality, not just size (see docs/fasi/F6 "Stato").
+      examWeight: Math.round((u.pages / totalPages) * 100) / 100,
+      prerequisites: [], // no ordering signal available without real judgment
+    }));
+
+    const inputTokens = input.units.reduce((sum, u) => sum + estimateTokens(u.excerpt), 0);
+    const outputTokens = estimateTokens(JSON.stringify(topics));
+
+    return {
+      data: { topics },
+      usage: { inputTokens, outputTokens },
+      model: FAKE_MODEL,
+      promptVersion: ESTIMATE_TOPICS_PROMPT_VERSION,
+    };
+  }
+}
+
+/**
+ * Deterministic stand-in for conceptual difficulty: unique content-word
+ * density per sentence. Real judgment ("this chapter is conceptually
+ * harder") needs a real model — this only proves the pipeline moves a
+ * genuine per-unit signal through, not a constant (docs/fasi/F6 "Stato").
+ */
+function estimateDifficulty(excerpt: string): 1 | 2 | 3 | 4 | 5 {
+  const sentences = splitSentences(excerpt);
+  const density = sentences.length === 0 ? 0 : keywords(excerpt).length / sentences.length;
+  return Math.min(5, Math.max(1, Math.round(1 + density))) as 1 | 2 | 3 | 4 | 5;
+}
+
+function clozeify(sentence: string): string {
+  const words = sentence.split(' ').filter((w) => w.length > 5);
+  if (words.length === 0) return sentence.replace(/\w+/, '{{...}}');
+  const target = words[Math.floor(words.length / 2)]!;
+  return sentence.replace(target, '{{...}}');
+}
