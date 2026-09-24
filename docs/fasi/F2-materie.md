@@ -31,7 +31,7 @@ card in scadenza oggi, n. documenti, barra di copertura argomenti). Azioni: crea
 
 - [ ] Da Materie a un argomento specifico in ≤2 click.
 - [ ] Seleziono 3 documenti e il pannello destro offre le azioni giuste, con costo stimato.
-- [ ] Unisco due argomenti duplicati: flashcard e chunk si riattaccano correttamente.
+- [x] Unisco due argomenti duplicati: flashcard e chunk si riattaccano correttamente.
 - [ ] Archivio una materia: sparisce dalla dashboard, la cartella resta intatta.
 - [ ] La pagina con 200 documenti e 2000 flashcard resta reattiva (virtualizzazione liste).
 
@@ -44,9 +44,9 @@ card in scadenza oggi, n. documenti, barra di copertura argomenti). Azioni: crea
 
 Come per F1, implementata solo la parte che non dipende da un provider AI o da dati che non
 esistono ancora (FSRS/F4, simulazioni/F5). **Non implementato**: pannello AI contestuale (azioni
-che seguono la selezione), merge argomenti con riattacco di flashcard/chunk (non esistono ancora
-flashcard), mastery calcolata (resta `null` finché F4/F5 non esistono), layout a 3 colonne
-virtualizzato per 200+ documenti/2000+ flashcard, tab Flashcard/Simulazioni/Piano (F4/F5/F6).
+che seguono la selezione), mastery calcolata (resta `null` finché F4/F5 non esistono), layout a 3
+colonne virtualizzato per 200+ documenti/2000+ flashcard, tab Flashcard/Simulazioni/Piano (F4/F5/F6).
+(Il merge argomenti è implementato — vedi "Aggiornamento" in fondo al file.)
 
 Cosa c'è, con test reali (144 test totali nel monorepo):
 
@@ -101,3 +101,28 @@ il valore sia la formula per esteso (`0.5·retrievability + 0.3·simulazioni + 0
 docs/02-filesystem-e-dati.md §5 — "niente numeri magici"). Nessuna modifica a contratto/API: `mastery`
 era già nel `TopicDto`, solo mai renderizzato. Non verificato in browser reale (stesso limite delle
 altre fasi: nessun Postgres raggiungibile in questo ambiente); typecheck/lint puliti.
+
+## Aggiornamento — merge argomenti (2026-09-24)
+
+Ultimo pezzo dichiarato "non implementato" fin dalla slice originale: `apps/web/src/lib/topics.ts::
+mergeTopics(db, subjectSlug, sourceTopicId, targetTopicId)` unisce due argomenti e cancella la
+sorgente — `POST /api/subjects/:slug/topics/:topicId/merge` con body `{ intoTopicId }`, pulsante
+"Unisci" (visibile in hover, accanto a "Elimina") in `TopicsPanel.tsx` con un piccolo selettore
+dell'argomento di destinazione.
+
+Tutto ciò che punta alla sorgente viene riassegnato **prima** di cancellarla, dentro una transazione,
+così il cascade delete di `topics` non perde nulla per errore: `flashcards.topicId`,
+`document_topics` (un documento già taggato a entrambi perde solo il duplicato, niente violazione
+della chiave composita), `simulation_items.topicId`, `tasks.topicId`, e i figli della sorgente
+nell'albero (riparentati alla destinazione — tranne la destinazione stessa se era un suo figlio
+diretto, che sale al genitore della sorgente invece di diventare genitore di se stessa). A fine
+merge la mastery della destinazione viene ricalcolata (`recomputeTopicMastery`), visto che ora ha
+più card/simulazioni collegate.
+
+6 test nuovi in `apps/web/test/topics.test.ts` (riattacco flashcard+document_topics, dedup su tag
+duplicato, riparenting dei figli, promozione della destinazione quando era figlia diretta della
+sorgente, rifiuto di unire un argomento a se stesso, `TopicNotFoundError` per id sconosciuti).
+Chiude il criterio di accettazione "Unisco due argomenti duplicati: flashcard e chunk si
+riattaccano correttamente" — i "chunk" del criterio non hanno un `topicId` proprio (appartengono a
+un documento, che raggiunge l'argomento solo via `document_topics`), quindi riattaccare
+`document_topics` è la parte "chunk" del criterio.

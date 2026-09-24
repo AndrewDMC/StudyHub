@@ -27,3 +27,13 @@ export const UpdateTopicRequestSchema = z.object({
   parentId: z.string().uuid().nullable().optional(),
 });
 export type UpdateTopicRequest = z.infer<typeof UpdateTopicRequestSchema>;
+
+/**
+ * "Unisco due argomenti duplicati: flashcard e chunk si riattaccano
+ * correttamente" (docs/fasi/F2-materie.md, criterio di accettazione). The
+ * topic in the URL is merged away *into* `intoTopicId`, which survives.
+ */
+export const MergeTopicsRequestSchema = z.object({
+  intoTopicId: z.string().uuid(),
+});
+export type MergeTopicsRequest = z.infer<typeof MergeTopicsRequestSchema>;

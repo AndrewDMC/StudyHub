@@ -17,9 +17,10 @@ Local-first: le materie sono cartelle reali su disco, l'AI è un worker eseguibi
 > **heatmap nell'albero Argomenti** (tooltip con formula per esteso). Il Planner ora avvisa anche
 > quando **il piano è indietro** (`detectDrift` collegato: 2+ giorni saltati o 30%+ task scadute →
 > banner con link per rigenerare). **`studyhub plan generate`/`ls`** in CLI, in-process senza Redis.
-> Niente ancora tema light, densità, distribuzione Docker. 407 test (`pnpm turbo run test`), tutti
-> verdi. Dettagli e limiti dichiarati nella sezione "Stato" di ogni `docs/fasi/F*.md`; roadmap
-> completa in [docs/fasi/README.md](docs/fasi/README.md).
+> **Merge argomenti duplicati** (flashcard, `document_topics`, simulazioni e task si riattaccano,
+> mastery ricalcolata). Niente ancora tema light, densità, distribuzione Docker. 413 test
+> (`pnpm turbo run test`), tutti verdi. Dettagli e limiti dichiarati nella sezione "Stato" di ogni
+> `docs/fasi/F*.md`; roadmap completa in [docs/fasi/README.md](docs/fasi/README.md).
 
 ## Sviluppo locale
 

@@ -1,6 +1,15 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
-import { subjects, topics, type Topic } from '@studyhub/db';
+import { and, eq, inArray, ne } from 'drizzle-orm';
+import {
+  documentTopics,
+  flashcards,
+  recomputeTopicMastery,
+  simulationItems,
+  subjects,
+  tasks,
+  topics,
+  type Topic,
+} from '@studyhub/db';
 import { disambiguateSlug, slugify } from '@studyhub/core';
 import type { CreateTopicRequest, TopicDto, UpdateTopicRequest } from '@studyhub/contracts';
 import { SubjectNotFoundError } from './errors';
@@ -111,6 +120,92 @@ export async function updateTopic(
     .returning();
   if (!row) throw new TopicNotFoundError(topicId);
   return toDto(row);
+}
+
+/**
+ * Merges `sourceTopicId` into `targetTopicId` and deletes the source
+ * (docs/fasi/F2-materie.md, criterio di accettazione: "unisco due argomenti
+ * duplicati: flashcard e chunk si riattaccano correttamente" — chunks have
+ * no topic of their own, they reach one through `document_topics`, so
+ * reattaching that is the "chunk" half of the criterion).
+ *
+ * Everything is reassigned before the source row is deleted, so its
+ * `ON DELETE CASCADE` children never fire: `flashcards.topicId`,
+ * `document_topics` (skipping a link the target already has, since the
+ * composite primary key forbids a duplicate), `simulation_items.topicId`,
+ * `tasks.topicId`, and the source's own child topics (reparented to the
+ * target — except the target itself, if it was a direct child of the
+ * source, which instead moves up to the source's own parent, so it never
+ * becomes its own parent).
+ */
+export async function mergeTopics(
+  db: AnyDb,
+  subjectSlug: string,
+  sourceTopicId: string,
+  targetTopicId: string,
+): Promise<TopicDto> {
+  const subject = await requireSubject(db, subjectSlug);
+  if (sourceTopicId === targetTopicId) {
+    throw new Error('Un argomento non può essere unito a sé stesso');
+  }
+
+  const rows: Topic[] = await db
+    .select()
+    .from(topics)
+    .where(
+      and(eq(topics.subjectId, subject.id), inArray(topics.id, [sourceTopicId, targetTopicId])),
+    );
+  const source = rows.find((t) => t.id === sourceTopicId);
+  const target = rows.find((t) => t.id === targetTopicId);
+  if (!source) throw new TopicNotFoundError(sourceTopicId);
+  if (!target) throw new TopicNotFoundError(targetTopicId);
+
+  await db.transaction(async (tx: AnyDb) => {
+    if (target.parentId === sourceTopicId) {
+      await tx
+        .update(topics)
+        .set({ parentId: source.parentId })
+        .where(eq(topics.id, targetTopicId));
+    }
+    await tx
+      .update(topics)
+      .set({ parentId: targetTopicId })
+      .where(and(eq(topics.parentId, sourceTopicId), ne(topics.id, targetTopicId)));
+
+    await tx
+      .update(flashcards)
+      .set({ topicId: targetTopicId })
+      .where(eq(flashcards.topicId, sourceTopicId));
+    await tx
+      .update(simulationItems)
+      .set({ topicId: targetTopicId })
+      .where(eq(simulationItems.topicId, sourceTopicId));
+    await tx.update(tasks).set({ topicId: targetTopicId }).where(eq(tasks.topicId, sourceTopicId));
+
+    const sourceLinks: { documentId: string }[] = await tx
+      .select({ documentId: documentTopics.documentId })
+      .from(documentTopics)
+      .where(eq(documentTopics.topicId, sourceTopicId));
+    const targetLinks: { documentId: string }[] = await tx
+      .select({ documentId: documentTopics.documentId })
+      .from(documentTopics)
+      .where(eq(documentTopics.topicId, targetTopicId));
+    const alreadyTagged = new Set(targetLinks.map((r) => r.documentId));
+    const toMove = sourceLinks.filter((r) => !alreadyTagged.has(r.documentId));
+    await tx.delete(documentTopics).where(eq(documentTopics.topicId, sourceTopicId));
+    if (toMove.length > 0) {
+      await tx
+        .insert(documentTopics)
+        .values(toMove.map((r) => ({ documentId: r.documentId, topicId: targetTopicId })));
+    }
+
+    await tx.delete(topics).where(eq(topics.id, sourceTopicId));
+  });
+
+  await recomputeTopicMastery(db, targetTopicId);
+
+  const [merged] = await db.select().from(topics).where(eq(topics.id, targetTopicId));
+  return toDto(merged);
 }
 
 export async function deleteTopic(db: AnyDb, subjectSlug: string, topicId: string): Promise<void> {

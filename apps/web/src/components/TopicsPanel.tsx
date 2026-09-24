@@ -53,14 +53,26 @@ function TopicNode({
   topic,
   byParent,
   depth,
+  allTopics,
+  mergingId,
   onDelete,
+  onStartMerge,
+  onConfirmMerge,
+  onCancelMerge,
 }: {
   topic: TopicDto;
   byParent: Map<string | null, TopicDto[]>;
   depth: number;
+  allTopics: TopicDto[];
+  mergingId: string | null;
   onDelete: (id: string) => void;
+  onStartMerge: (id: string) => void;
+  onConfirmMerge: (sourceId: string, targetId: string) => void;
+  onCancelMerge: () => void;
 }) {
   const children = byParent.get(topic.id) ?? [];
+  const isMerging = mergingId === topic.id;
+  const otherTopics = allTopics.filter((t) => t.id !== topic.id);
   return (
     <li>
       <div
@@ -71,15 +83,60 @@ function TopicNode({
           <MasteryDot mastery={topic.mastery} />
           <span className="truncate">{topic.name}</span>
         </span>
-        <button
-          type="button"
-          onClick={() => onDelete(topic.id)}
-          className="hidden text-xs text-fg-muted hover:text-danger group-hover:inline"
-          aria-label={`Elimina ${topic.name}`}
-        >
-          Elimina
-        </button>
+        <span className="hidden gap-2 group-hover:flex">
+          <button
+            type="button"
+            onClick={() => onStartMerge(topic.id)}
+            disabled={otherTopics.length === 0}
+            className="text-xs text-fg-muted hover:text-accent disabled:opacity-40"
+            aria-label={`Unisci ${topic.name} a un altro argomento`}
+          >
+            Unisci
+          </button>
+          <button
+            type="button"
+            onClick={() => onDelete(topic.id)}
+            className="text-xs text-fg-muted hover:text-danger"
+            aria-label={`Elimina ${topic.name}`}
+          >
+            Elimina
+          </button>
+        </span>
       </div>
+      {isMerging && (
+        <form
+          className="mb-1 flex items-center gap-1.5 px-2 text-xs"
+          style={{ paddingLeft: `${depth * 16 + 8}px` }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            const targetId = new FormData(e.currentTarget).get('targetId');
+            if (typeof targetId === 'string' && targetId) onConfirmMerge(topic.id, targetId);
+          }}
+        >
+          <span className="text-fg-muted">Unisci in:</span>
+          <select
+            name="targetId"
+            defaultValue=""
+            required
+            className="rounded-[var(--radius-control)] border border-border bg-bg-inset px-1.5 py-0.5 text-fg-primary"
+          >
+            <option value="" disabled>
+              scegli…
+            </option>
+            {otherTopics.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+          <button type="submit" className="text-accent hover:underline">
+            Conferma
+          </button>
+          <button type="button" onClick={onCancelMerge} className="text-fg-muted hover:underline">
+            Annulla
+          </button>
+        </form>
+      )}
       {children.length > 0 && (
         <ul>
           {children.map((child) => (
@@ -88,7 +145,12 @@ function TopicNode({
               topic={child}
               byParent={byParent}
               depth={depth + 1}
+              allTopics={allTopics}
+              mergingId={mergingId}
               onDelete={onDelete}
+              onStartMerge={onStartMerge}
+              onConfirmMerge={onConfirmMerge}
+              onCancelMerge={onCancelMerge}
             />
           ))}
         </ul>
@@ -99,6 +161,7 @@ function TopicNode({
 
 export function TopicsPanel({ subjectSlug }: { subjectSlug: string }) {
   const [name, setName] = useState('');
+  const [mergingId, setMergingId] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ['topics', subjectSlug],
@@ -135,6 +198,24 @@ export function TopicsPanel({ subjectSlug }: { subjectSlug: string }) {
     onSuccess: invalidate,
   });
 
+  const mergeMutation = useMutation({
+    mutationFn: async ({ sourceId, targetId }: { sourceId: string; targetId: string }) => {
+      const res = await fetch(`/api/subjects/${subjectSlug}/topics/${sourceId}/merge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ intoTopicId: targetId }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error?.message ?? 'Unione fallita');
+      }
+    },
+    onSuccess: () => {
+      setMergingId(null);
+      invalidate();
+    },
+  });
+
   const roots = query.data ? (buildTree(query.data).get(null) ?? []) : [];
   const byParent = query.data ? buildTree(query.data) : new Map();
 
@@ -153,6 +234,11 @@ export function TopicsPanel({ subjectSlug }: { subjectSlug: string }) {
       {query.isSuccess && roots.length === 0 && (
         <p className="px-1 text-xs text-fg-muted">Nessun argomento ancora.</p>
       )}
+      {mergeMutation.isError && (
+        <p role="alert" className="mb-1 px-1 text-xs text-danger">
+          {(mergeMutation.error as Error).message}
+        </p>
+      )}
       {query.isSuccess && roots.length > 0 && (
         <ul>
           {roots.map((topic) => (
@@ -161,7 +247,12 @@ export function TopicsPanel({ subjectSlug }: { subjectSlug: string }) {
               topic={topic}
               byParent={byParent}
               depth={0}
+              allTopics={query.data}
+              mergingId={mergingId}
               onDelete={(id) => deleteMutation.mutate(id)}
+              onStartMerge={setMergingId}
+              onConfirmMerge={(sourceId, targetId) => mergeMutation.mutate({ sourceId, targetId })}
+              onCancelMerge={() => setMergingId(null)}
             />
           ))}
         </ul>
