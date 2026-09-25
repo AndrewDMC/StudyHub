@@ -96,11 +96,13 @@ export async function enqueueExamProfileExtraction(
   options: { overwriteEdited?: boolean } = {},
 ): Promise<{ jobId: string }> {
   const subject = await requireSubject(db, subjectSlug);
-  const job = await queue.add('extract_exam_profile', {
-    subjectId: subject.id,
-    overwriteEdited: options.overwriteEdited ?? false,
-  });
-  return { jobId: job.id ?? randomUUID() };
+  const jobId = randomUUID();
+  await queue.add(
+    'extract_exam_profile',
+    { subjectId: subject.id, overwriteEdited: options.overwriteEdited ?? false },
+    { jobId },
+  );
+  return { jobId };
 }
 
 // ------------------------------------------------------------ simulations
@@ -112,8 +114,9 @@ export async function enqueueSimulation(
   input: Omit<GenerateSimulationJobInput, 'subjectId'>,
 ): Promise<{ jobId: string }> {
   const subject = await requireSubject(db, subjectSlug);
-  const job = await queue.add('generate_simulation', { ...input, subjectId: subject.id });
-  return { jobId: job.id ?? randomUUID() };
+  const jobId = randomUUID();
+  await queue.add('generate_simulation', { ...input, subjectId: subject.id }, { jobId });
+  return { jobId };
 }
 
 /** Simulations with their history (docs/fasi/F5: "storico simulazioni con trend"). */
@@ -236,7 +239,7 @@ async function expireIfDue(
     .where(and(eq(simulationAttempts.id, attempt.id), eq(simulationAttempts.status, 'in_progress')))
     .returning();
   if (updated) {
-    await queue.add('grade_attempt', { attemptId: attempt.id });
+    await queue.add('grade_attempt', { attemptId: attempt.id }, { jobId: randomUUID() });
     return updated;
   }
   const [fresh] = await db
@@ -357,7 +360,7 @@ export async function submitAttempt(
     .set({ status: 'submitted', submittedAt: now })
     .where(and(eq(simulationAttempts.id, attemptId), eq(simulationAttempts.status, 'in_progress')))
     .returning();
-  if (updated) await queue.add('grade_attempt', { attemptId });
+  if (updated) await queue.add('grade_attempt', { attemptId }, { jobId: randomUUID() });
   return attemptToDto(updated ?? attempt, items, now);
 }
 

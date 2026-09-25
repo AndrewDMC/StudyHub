@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { isDocumentType } from '@studyhub/core';
 import { getDb } from '@/lib/db';
@@ -72,7 +73,7 @@ export async function POST(request: Request, { params }: RouteParams) {
       // a later `reconcile`/manual retry can pick it up. Never blocks the
       // response on Redis being up.
       await getJobQueue()
-        .add('extract_text', { documentId: result.document.id })
+        .add('extract_text', { documentId: result.document.id }, { jobId: randomUUID() })
         .catch(() => {});
     }
 

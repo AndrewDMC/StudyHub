@@ -165,8 +165,9 @@ export async function enqueueGeneratePlan(
       .where(and(eq(exams.id, input.examId), eq(exams.subjectId, subject.id)));
     if (!exam) throw new ExamNotFoundError(input.examId);
   }
-  const job = await queue.add('generate_plan', { ...input, subjectId: subject.id });
-  return { jobId: job.id ?? randomUUID() };
+  const jobId = randomUUID();
+  await queue.add('generate_plan', { ...input, subjectId: subject.id }, { jobId });
+  return { jobId };
 }
 
 /**

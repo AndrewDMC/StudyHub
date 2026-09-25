@@ -1,0 +1,20 @@
+name: studyhub
+
+# Override: routes the worker's AI calls through the `claude` CLI (subscription
+# auth) instead of the billed Anthropic API. Usage:
+#
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.claude-cli.yml up
+#
+# Requires CLAUDE_CLI_HOME and CLAUDE_CLI_CONFIG in .env, pointing at the
+# *host* machine's `claude` login (see .env.example). On this machine, `claude
+# login` already wrote them to ~/.claude and ~/.claude.json — point these vars
+# there. The container reuses that OAuth session; it never sees an API key.
+
+services:
+  worker:
+    environment:
+      - AI_PROVIDER=claude-cli
+      - HOME=/home/studyhub
+    volumes:
+      - ${CLAUDE_CLI_HOME}:/home/studyhub/.claude
+      - ${CLAUDE_CLI_CONFIG}:/home/studyhub/.claude.json

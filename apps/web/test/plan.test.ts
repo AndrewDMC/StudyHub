@@ -72,10 +72,11 @@ describe('enqueueGeneratePlan', () => {
       force: false,
     });
 
-    expect(result.jobId).toBe('job-plan-1');
+    expect(result.jobId).toEqual(expect.any(String));
     expect(queue.add).toHaveBeenCalledWith(
       'generate_plan',
       expect.objectContaining({ subjectId: subject.id }),
+      { jobId: result.jobId },
     );
   });
 

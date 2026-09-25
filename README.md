@@ -7,7 +7,9 @@ Local-first: le materie sono cartelle reali su disco, l'AI è un worker eseguibi
 > Stato: **F0 completa · F1–F7 a slice** — fondamenta, ingest deterministico (PDF+FTS), materie
 > (argomenti/esami/archiviazione), motore AI con provider **simulato** (`FakeProvider`, gratuito e
 > deterministico; `AnthropicProvider` reale pronto ma non testato dal vivo — serve una
-> `ANTHROPIC_API_KEY`), ripasso con **FSRS-5 reale**, simulazioni d'esame con modalità esame e
+> `ANTHROPIC_API_KEY`; **`ClaudeCliProvider`** in alternativa, instrada le stesse chiamate sulla
+> CLI `claude` da terminale usando la subscription già loggata, niente API key — vedi README
+> "Provider AI via CLI `claude`"), ripasso con **FSRS-5 reale**, simulazioni d'esame con modalità esame e
 > correzione formativa, **planner** con scheduling deterministico reale, bozza/revisione/commit del
 > piano e **calendario mensile cross-materia** (niente ancora ICS), **dashboard** cross-materia con
 > command palette (`⌘K`), **`studyhub backup`/`restore`** reali, e **tagging documento↔argomento**
@@ -18,7 +20,7 @@ Local-first: le materie sono cartelle reali su disco, l'AI è un worker eseguibi
 > quando **il piano è indietro** (`detectDrift` collegato: 2+ giorni saltati o 30%+ task scadute →
 > banner con link per rigenerare). **`studyhub plan generate`/`ls`** in CLI, in-process senza Redis.
 > **Merge argomenti duplicati** (flashcard, `document_topics`, simulazioni e task si riattaccano,
-> mastery ricalcolata). Niente ancora tema light, densità, distribuzione Docker. 413 test
+> mastery ricalcolata). Niente ancora tema light, densità, distribuzione Docker. 420 test
 > (`pnpm turbo run test`), tutti verdi. Dettagli e limiti dichiarati nella sezione "Stato" di ogni
 > `docs/fasi/F*.md`; roadmap completa in [docs/fasi/README.md](docs/fasi/README.md).
 
@@ -40,7 +42,35 @@ Redis); copia `.env.example` in `.env` prima di avviarlo.
 Le funzioni AI (`generate_flashcards`, `generate_summary`) girano **senza `ANTHROPIC_API_KEY`**
 usando `FakeProvider` (estrazione deterministica, verbatim, costo zero — vedi
 [docs/fasi/F3-ai-core.md](docs/fasi/F3-ai-core.md) "Stato"). Imposta `ANTHROPIC_API_KEY` in `.env`
-per passare al provider reale: nessun altro cambio richiesto.
+per passare al provider reale (`AnthropicProvider`, API a consumo): nessun altro cambio richiesto.
+
+### Provider AI via CLI `claude` (subscription, senza API key)
+
+`ClaudeCliProvider` ([packages/ai/src/claudeCliProvider.ts](packages/ai/src/claudeCliProvider.ts))
+instrada le stesse chiamate (`generateFlashcards`, `generateSummary`, `extractExamProfile`,
+`generateSimulation`, `gradeAnswer`, `estimateTopics`) attraverso la CLI `claude` da terminale
+(`claude --print --output-format json --json-schema ...`, prompt su stdin, nessun tool/MCP
+abilitato) invece della Messages API — usa quindi la sessione/subscription con cui `claude` è già
+loggato, non `ANTHROPIC_API_KEY`. Stessa disciplina di retry-con-feedback-di-validazione (max 2)
+dell'`AnthropicProvider`.
+
+Per usarlo nell'ambiente Docker:
+
+1. Sulla macchina host, assicurati che `claude login` sia già stato eseguito (scrive
+   `~/.claude` e `~/.claude.json`).
+2. In `.env`, imposta `AI_PROVIDER=claude-cli` e i percorsi host `CLAUDE_CLI_HOME`/
+   `CLAUDE_CLI_CONFIG` (vedi commenti in `.env.example`).
+3. Avvia con l'override che monta quelle credenziali nel container e installa la CLI
+   (già nell'immagine worker):
+
+   ```bash
+   docker compose -f docker/docker-compose.yml -f docker/docker-compose.claude-cli.yml up
+   ```
+
+Il worker chiama quindi `claude` da terminale dentro il container, riusando la sessione OAuth
+montata dall'host — nessuna chiave API in gioco. Nota: `pricing.ts` resta una stima *per token*
+pensata per l'API a consumo — con la subscription il costo marginale reale per chiamata è zero,
+la cifra mostrata in UI/CLI è quindi puramente illustrativa quando si usa questo provider.
 
 ## Knowledge base
 

@@ -127,6 +127,7 @@ describe('exam prep (web)', () => {
       expect(queue.add).toHaveBeenCalledWith(
         'generate_simulation',
         expect.objectContaining({ subjectId }),
+        { jobId: expect.any(String) },
       );
     });
 
@@ -207,7 +208,9 @@ describe('exam prep (web)', () => {
       await expect(
         saveAnswers(db, queue, slug, attempt.id, { [itemIds[0]!]: 'fuori tempo' }, late),
       ).rejects.toBeInstanceOf(ConflictError);
-      expect(queue.add).toHaveBeenCalledWith('grade_attempt', { attemptId: attempt.id });
+      expect(queue.add).toHaveBeenCalledWith('grade_attempt', { attemptId: attempt.id }, {
+        jobId: expect.any(String),
+      });
 
       const [row] = await db
         .select()

@@ -28,12 +28,23 @@ async function fetchDocuments(slug: string): Promise<DocumentDto[]> {
   return body.documents as DocumentDto[];
 }
 
+async function fetchAiProvider(): Promise<string> {
+  const res = await fetch('/api/settings/ai-provider');
+  const body = await res.json();
+  return body.provider as string;
+}
+
 export function SubjectDetailClient({ slug }: { slug: string }) {
   const subjectQuery = useQuery({ queryKey: ['subject', slug], queryFn: () => fetchSubject(slug) });
   const documentsQuery = useQuery({
     queryKey: ['documents', slug],
     queryFn: () => fetchDocuments(slug),
     refetchInterval: 4000, // cheap way to reflect worker progress without SSE (deferred to a later phase)
+  });
+  const aiProviderQuery = useQuery({
+    queryKey: ['ai-provider'],
+    queryFn: fetchAiProvider,
+    staleTime: Infinity, // fixed by env at container start — never changes without a restart
   });
 
   if (subjectQuery.isLoading) {
@@ -112,11 +123,13 @@ export function SubjectDetailClient({ slug }: { slug: string }) {
           <ExamsPanel subjectSlug={slug} />
           <ExamPrepPanel subjectSlug={slug} />
           <GenerationPanel subjectSlug={slug} documents={documentsQuery.data ?? []} />
-          <div className="rounded-[var(--radius-card)] border border-dashed border-border bg-bg-surface p-3 text-xs text-fg-muted">
-            Generazione simulata (nessuna chiave Anthropic configurata): le flashcard/riassunti sono
-            creati per estrazione deterministica dal testo, non da un modello reale — vedi
-            docs/fasi/F3-ai-core.md &quot;Stato&quot;.
-          </div>
+          {aiProviderQuery.data === 'fake' && (
+            <div className="rounded-[var(--radius-card)] border border-dashed border-border bg-bg-surface p-3 text-xs text-fg-muted">
+              Generazione simulata (nessun provider AI configurato): le flashcard/riassunti sono
+              creati per estrazione deterministica dal testo, non da un modello reale — vedi
+              docs/fasi/F3-ai-core.md &quot;Stato&quot;.
+            </div>
+          )}
         </aside>
       </div>
     </div>

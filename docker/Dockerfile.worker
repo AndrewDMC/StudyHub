@@ -22,28 +22,58 @@ RUN pnpm install --frozen-lockfile
 FROM base AS build
 COPY --from=deps /app/ .
 COPY --from=pruner /app/out/full/ .
+# `turbo prune --docker` only traces the package.json dependency graph, so it
+# drops tsconfig.base.json — a root file every package's tsconfig `extends`,
+# outside that graph. Without it: "TS5083: Cannot read file
+# '/app/tsconfig.base.json'" (and no per-package compilerOptions at all).
+COPY tsconfig.base.json ./tsconfig.base.json
 RUN npx turbo run build --filter=@studyhub/worker --filter=@studyhub/cli
 # Drop dev dependencies (tsx, vitest, typescript, ...) before shipping.
-RUN pnpm install --frozen-lockfile --prod
+# --ignore-scripts: the root package.json's own `prepare` (husky) has nothing
+# to hook into here (no .git, and husky itself was just dropped as a dev
+# dependency) — it only exists for local `pnpm install`.
+RUN pnpm install --frozen-lockfile --prod --ignore-scripts
 
 # --- runtime -----------------------------------------------------------
 FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
-RUN addgroup -g 1000 studyhub && adduser -u 1000 -G studyhub -s /bin/sh -D studyhub
+# 1001, not 1000: current node:22-alpine already ships a `node` user/group at
+# gid/uid 1000.
+RUN addgroup -g 1001 studyhub && adduser -u 1001 -G studyhub -s /bin/sh -D studyhub
 
 COPY --from=build --chown=studyhub:studyhub /app .
 
-# `studyhub` on PATH -> apps/cli/dist/index.js (docs/01-architettura.md: cli
+# Every internal package (@studyhub/db, @studyhub/core, ...) resolves via its
+# package.json "main"/"exports" straight to its TypeScript *source*
+# (./src/index.ts — deliberately, so `pnpm dev` needs no build step). Plain
+# `node apps/worker/dist/index.js` therefore still ends up importing
+# `packages/db/src/index.ts` at runtime — and plain Node doesn't resolve that
+# file's own `./schema.js` relative imports against the sibling `schema.ts`
+# (ERR_MODULE_NOT_FOUND). `tsx` is what makes that resolution work — it's
+# exactly what `pnpm dev` already runs on this same source, so this is the
+# same code path as local dev, not a separate one. The `tsc` build above is
+# kept as a type-correctness gate (the image fails to build on a type error);
+# it isn't what actually runs here.
+RUN npm install -g tsx
+
+# `studyhub` on PATH -> apps/cli/src/index.ts (docs/01-architettura.md: cli
 # is the worker's own code invoked one-shot).
-RUN printf '#!/bin/sh\nexec node /app/apps/cli/dist/index.js "$@"\n' > /usr/local/bin/studyhub \
+RUN printf '#!/bin/sh\nexec tsx /app/apps/cli/src/index.ts "$@"\n' > /usr/local/bin/studyhub \
   && chmod +x /usr/local/bin/studyhub
 
+# Claude Code CLI — only exercised when AI_PROVIDER=claude-cli (ClaudeCliProvider,
+# packages/ai/src/claudeCliProvider.ts). Its auth comes from the host's
+# ~/.claude / ~/.claude.json, mounted read-write into $HOME at runtime via
+# docker/docker-compose.claude-cli.yml — nothing baked into the image.
+RUN npm install -g @anthropic-ai/claude-code
+
 USER studyhub
+ENV HOME=/home/studyhub
 ENV STUDYHUB_DATA_DIR=/data
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
   CMD node -e "const fs=require('fs');try{const t=parseInt(fs.readFileSync('/tmp/studyhub-worker-heartbeat','utf8'),10);process.exit(Date.now()-t<60000?0:1)}catch(e){process.exit(1)}"
 
-CMD ["node", "apps/worker/dist/index.js"]
+CMD ["tsx", "apps/worker/src/index.ts"]

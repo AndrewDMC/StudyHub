@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@studyhub/ai": "workspace:*",
     "@studyhub/contracts": "workspace:*",
     "@studyhub/core": "workspace:*",
     "@studyhub/db": "workspace:*",

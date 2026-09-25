@@ -1,4 +1,5 @@
 import { writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { createDb } from '@studyhub/db';
 import { resolveDataRoot } from '@studyhub/core';
 import { createJobQueue } from './queue.js';
@@ -25,7 +26,9 @@ async function main() {
   const heartbeat = startHeartbeat();
 
   // Trigger: worker startup + every 15 min + on-demand (docs/02-filesystem-e-dati.md §2).
-  await queue.add('reconcile', {});
+  // jobId here is BullMQ's own dedup key, not the `jobs` table row id — see
+  // worker.ts, which mints a fresh uuid for every reconcile occurrence.
+  await queue.add('reconcile', {}, { jobId: randomUUID() });
   await queue.add(
     'reconcile',
     {},

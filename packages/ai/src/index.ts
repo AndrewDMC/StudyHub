@@ -3,6 +3,8 @@ export * from './schemas.js';
 export * from './pricing.js';
 export * from './fakeProvider.js';
 export * from './anthropicProvider.js';
+export * from './claudeCliProvider.js';
+export * from './promptRender.js';
 export * from './resolveProvider.js';
 export * from './promptLoader.js';
 export * from './versions.js';

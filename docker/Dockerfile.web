@@ -21,6 +21,11 @@ RUN pnpm install --frozen-lockfile
 FROM base AS build
 COPY --from=deps /app/ .
 COPY --from=pruner /app/out/full/ .
+# `turbo prune --docker` only traces the package.json dependency graph, so it
+# drops tsconfig.base.json — a root file every package's tsconfig `extends`,
+# outside that graph. Without it: "TS5083: Cannot read file
+# '/app/tsconfig.base.json'" (and no per-package compilerOptions at all).
+COPY tsconfig.base.json ./tsconfig.base.json
 ENV NEXT_TELEMETRY_DISABLED=1
 # A DB connection is required to *run* the app, not to build it, but drizzle
 # schema imports execute at module-eval time; any syntactically valid URL works.
@@ -33,7 +38,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN addgroup -g 1000 studyhub && adduser -u 1000 -G studyhub -s /bin/sh -D studyhub
+# 1001, not 1000: current node:22-alpine already ships a `node` user/group at
+# gid/uid 1000.
+RUN addgroup -g 1001 studyhub && adduser -u 1001 -G studyhub -s /bin/sh -D studyhub
 
 COPY --from=build --chown=studyhub:studyhub /app/apps/web/.next/standalone ./
 COPY --from=build --chown=studyhub:studyhub /app/apps/web/.next/static ./apps/web/.next/static

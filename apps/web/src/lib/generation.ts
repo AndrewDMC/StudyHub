@@ -74,8 +74,9 @@ export async function enqueueFlashcardsGeneration(
   input: Omit<GenerateFlashcardsJobInput, 'subjectId'>,
 ): Promise<{ jobId: string }> {
   const subject = await requireSubject(db, subjectSlug);
-  const job = await queue.add('generate_flashcards', { ...input, subjectId: subject.id });
-  return { jobId: job.id ?? randomUUID() };
+  const jobId = randomUUID();
+  await queue.add('generate_flashcards', { ...input, subjectId: subject.id }, { jobId });
+  return { jobId };
 }
 
 export async function enqueueSummaryGeneration(
@@ -85,8 +86,9 @@ export async function enqueueSummaryGeneration(
   input: Omit<GenerateSummaryJobInput, 'subjectId'>,
 ): Promise<{ jobId: string }> {
   const subject = await requireSubject(db, subjectSlug);
-  const job = await queue.add('generate_summary', { ...input, subjectId: subject.id });
-  return { jobId: job.id ?? randomUUID() };
+  const jobId = randomUUID();
+  await queue.add('generate_summary', { ...input, subjectId: subject.id }, { jobId });
+  return { jobId };
 }
 
 export async function listArtifacts(db: AnyDb, subjectSlug: string): Promise<ArtifactDto[]> {

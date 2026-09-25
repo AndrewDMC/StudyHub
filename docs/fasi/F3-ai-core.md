@@ -76,6 +76,26 @@ Cosa è reale, non simulato (190 test nel monorepo, `pnpm turbo run test`):
 - **Review queue reale**: `/materie/[slug]/artifacts/[artifactId]` — accetta/scarta card per card
   con citazione a fianco, "approva il mazzo" imposta `status: approved`.
 
+**Aggiornamento (2026-09-25)**: terzo provider, `ClaudeCliProvider`
+(`packages/ai/src/claudeCliProvider.ts`) — stessa interfaccia `AiProvider`, stessa disciplina di
+retry-con-feedback (max 2), ma invoca `claude --print --output-format json --json-schema ...` da
+terminale (prompt su stdin, nessun tool/MCP abilitato) invece della Messages API. Su richiesta
+esplicita: serve a far girare l'inferenza reale usando la subscription `claude` già loggata sulla
+macchina, non una `ANTHROPIC_API_KEY` a consumo. `resolveProvider()` lo sceglie con
+`AI_PROVIDER=claude-cli`; in Docker richiede l'override `docker/docker-compose.claude-cli.yml`, che
+monta `~/.claude`/`~/.claude.json` dell'host nel container worker (vedi README "Provider AI via CLI
+`claude`"). Le funzioni di rendering dei prompt (`documentsBlock`, `render*UserPrompt`) sono state
+estratte in `packages/ai/src/promptRender.ts`, condivise da `AnthropicProvider` e
+`ClaudeCliProvider` — stesso testo di prompt, stessa igiene anti-injection (tag `<document>`
+neutralizzati), indipendentemente dal canale di invocazione. **Mai eseguito contro la CLI vera**
+in questa sessione: la sessione OAuth locale era scaduta al momento del test (`claude --print`
+restituisce `Failed to authenticate: OAuth session expired`, riprodotto e trattato come qualunque
+altro `is_error` — un normale round di retry-con-feedback, non un crash); il controllo di flusso è
+comunque testato contro un runner CLI mockato
+(`packages/ai/test/claudeCliProvider.test.ts`, stesso pattern di `anthropicProvider.test.ts`: primo
+tentativo valido, retry su schema non valido, retry su `is_error`, retry su stdout non-JSON,
+fallimento dopo 3 tentativi). **Da provare tu** con una sessione `claude` valida.
+
 **Aggiornamento (2026-09-24)**: lo scope per `topicIds` è ora reale, non più rifiutato. La tabella
 `document_topics` (docs/fasi/F2-materie.md "Stato") collega documenti e argomenti;
 `resolveScopeChunks` (`apps/worker/src/processors/generation/shared.ts`) risolve `topicIds` ai

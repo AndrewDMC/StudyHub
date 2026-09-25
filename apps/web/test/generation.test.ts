@@ -40,10 +40,11 @@ describe('enqueueFlashcardsGeneration', () => {
         force: false,
       });
 
-      expect(result.jobId).toBe('job-123');
+      expect(result.jobId).toEqual(expect.any(String));
       expect(queue.add).toHaveBeenCalledWith(
         'generate_flashcards',
         expect.objectContaining({ subjectId: subject.id }),
+        { jobId: result.jobId },
       );
     } finally {
       await rm(dataRoot, { recursive: true, force: true });
