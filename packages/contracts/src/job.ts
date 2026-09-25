@@ -16,6 +16,7 @@ export const JobTypeSchema = z.enum([
   'generate_simulation',
   'grade_attempt',
   'generate_plan',
+  'extract_topics',
 ]);
 export type JobType = z.infer<typeof JobTypeSchema>;
 

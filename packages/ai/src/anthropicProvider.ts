@@ -6,6 +6,7 @@ import type {
   AiUsage,
   EstimateTopicsPromptInput,
   ExamProfilePromptInput,
+  ExtractTopicsPromptInput,
   FlashcardsPromptInput,
   GeneratedWithMeta,
   GradePromptInput,
@@ -16,6 +17,7 @@ import type {
 import {
   EstimateTopicsOutputSchema,
   ExamProfileSchema,
+  ExtractTopicsOutputSchema,
   FlashcardsOutputSchema,
   GradeOutputSchema,
   SchemaOutputSchema,
@@ -23,6 +25,7 @@ import {
   SummaryOutputSchema,
   type EstimateTopicsOutput,
   type ExamProfile,
+  type ExtractTopicsOutput,
   type FlashcardsOutput,
   type GradeOutput,
   type SchemaOutput,
@@ -33,6 +36,7 @@ import { loadPrompt } from './promptLoader.js';
 import {
   renderEstimateTopicsUserPrompt,
   renderExamProfileUserPrompt,
+  renderExtractTopicsUserPrompt,
   renderFlashcardsUserPrompt,
   renderGradeUserPrompt,
   renderSchemaUserPrompt,
@@ -165,6 +169,22 @@ export class AnthropicProvider implements AiProvider {
       system,
       renderEstimateTopicsUserPrompt(input),
       EstimateTopicsOutputSchema,
+      model,
+      4096,
+    );
+    return { data, usage, model, promptVersion };
+  }
+
+  async extractTopics(
+    input: ExtractTopicsPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<ExtractTopicsOutput>> {
+    const { text: system, promptVersion } = loadPrompt('extract_topics', 1);
+    const { data, usage } = await this.callWithTool(
+      'emit_topics',
+      system,
+      renderExtractTopicsUserPrompt(input),
+      ExtractTopicsOutputSchema,
       model,
       4096,
     );

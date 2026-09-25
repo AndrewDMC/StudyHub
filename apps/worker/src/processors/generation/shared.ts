@@ -144,6 +144,7 @@ const AI_JOB_TYPES = [
   'generate_simulation',
   'grade_attempt',
   'generate_plan',
+  'extract_topics',
 ] as const;
 
 /**

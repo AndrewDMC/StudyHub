@@ -1,6 +1,7 @@
 import type {
   EstimateTopicsPromptInput,
   ExamProfilePromptInput,
+  ExtractTopicsPromptInput,
   FlashcardsPromptInput,
   GradePromptInput,
   SchemaPromptInput,
@@ -72,6 +73,18 @@ export function renderEstimateTopicsUserPrompt(input: EstimateTopicsPromptInput)
     ...input.units.map(
       (u) =>
         `<document id="${u.key}" title="${u.name}" pages="${u.pages}">\n${escapeClosingTag(u.excerpt, 'document')}\n</document>`,
+    ),
+  ].join('\n');
+}
+
+export function renderExtractTopicsUserPrompt(input: ExtractTopicsPromptInput): string {
+  return [
+    `Materia: ${input.subjectName}`,
+    `${input.documents.length} documenti da cui proporre una tassonomia di argomenti. Ogni argomento` +
+      ' elenca i "docId" (fra quelli sotto) che copre.',
+    '',
+    ...input.documents.map(
+      (d) => `<document id="${d.docId}">\n${escapeClosingTag(d.excerpt, 'document')}\n</document>`,
     ),
   ].join('\n');
 }

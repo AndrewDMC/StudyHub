@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { TopicDto } from '@studyhub/contracts';
+import type { DocumentDto, TopicDto } from '@studyhub/contracts';
 
 async function fetchTopics(slug: string): Promise<TopicDto[]> {
   const res = await fetch(`/api/subjects/${slug}/topics`);
@@ -159,7 +159,13 @@ function TopicNode({
   );
 }
 
-export function TopicsPanel({ subjectSlug }: { subjectSlug: string }) {
+export function TopicsPanel({
+  subjectSlug,
+  documents,
+}: {
+  subjectSlug: string;
+  documents: DocumentDto[];
+}) {
   const [name, setName] = useState('');
   const [mergingId, setMergingId] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -169,6 +175,23 @@ export function TopicsPanel({ subjectSlug }: { subjectSlug: string }) {
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['topics', subjectSlug] });
+  const readyDocIds = documents.filter((d) => d.status === 'parsed').map((d) => d.id);
+
+  const extractMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/subjects/${subjectSlug}/topics/extract`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ docIds: readyDocIds }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error?.message ?? 'Suggerimento argomenti fallito');
+      return body as { jobId: string };
+    },
+    onSuccess: () => {
+      setTimeout(invalidate, 3000); // runs in the worker — give it a moment then refresh
+    },
+  });
 
   const createMutation = useMutation({
     mutationFn: async (topicName: string) => {
@@ -279,6 +302,25 @@ export function TopicsPanel({ subjectSlug }: { subjectSlug: string }) {
           +
         </button>
       </form>
+
+      <button
+        type="button"
+        disabled={readyDocIds.length === 0 || extractMutation.isPending}
+        onClick={() => extractMutation.mutate()}
+        className="mt-2 w-full rounded-[var(--radius-control)] border border-dashed border-border px-2 py-1 text-xs text-fg-secondary hover:text-fg-primary disabled:opacity-50"
+      >
+        Suggerisci argomenti (AI)
+      </button>
+      {extractMutation.isError && (
+        <p role="alert" className="mt-1 px-1 text-xs text-danger">
+          {(extractMutation.error as Error).message}
+        </p>
+      )}
+      {extractMutation.isSuccess && (
+        <p className="mt-1 px-1 text-[11px] text-ok">
+          Job avviato — l&apos;elenco si aggiorna a breve.
+        </p>
+      )}
     </div>
   );
 }

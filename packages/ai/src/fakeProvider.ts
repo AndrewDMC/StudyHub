@@ -2,6 +2,7 @@ import type {
   AiProvider,
   EstimateTopicsPromptInput,
   ExamProfilePromptInput,
+  ExtractTopicsPromptInput,
   FlashcardsPromptInput,
   GeneratedWithMeta,
   GradePromptInput,
@@ -12,6 +13,8 @@ import type {
 import type {
   EstimateTopicsOutput,
   ExamProfile,
+  ExtractedTopic,
+  ExtractTopicsOutput,
   FlashcardsOutput,
   GeneratedFlashcard,
   GradeOutput,
@@ -27,6 +30,7 @@ import { fakeExtractExamProfile, fakeGenerateSimulation, fakeGradeAnswer } from 
 import {
   ESTIMATE_TOPICS_PROMPT_VERSION,
   EXAM_PROFILE_PROMPT_VERSION,
+  EXTRACT_TOPICS_PROMPT_VERSION,
   FLASHCARDS_PROMPT_VERSION,
   GRADING_PROMPT_VERSION,
   SCHEMA_PROMPT_VERSION,
@@ -226,6 +230,39 @@ export class FakeProvider implements AiProvider {
       usage: { inputTokens, outputTokens },
       model: FAKE_MODEL,
       promptVersion: ESTIMATE_TOPICS_PROMPT_VERSION,
+    };
+  }
+
+  async extractTopics(
+    input: ExtractTopicsPromptInput,
+    _model: string,
+  ): Promise<GeneratedWithMeta<ExtractTopicsOutput>> {
+    // Groups documents by their most prominent shared keyword — same
+    // "real signal, not real judgment" trade-off as estimateDifficulty
+    // below: it proves the pipeline (dedup-by-name, document_topics
+    // tagging) moves genuine per-document data, not a canned answer.
+    const docIdsByKeyword = new Map<string, string[]>();
+    for (const doc of input.documents) {
+      const topKeyword = keywords(doc.excerpt)[0] ?? `documento-${doc.docId.slice(0, 8)}`;
+      const docIds = docIdsByKeyword.get(topKeyword) ?? [];
+      docIds.push(doc.docId);
+      docIdsByKeyword.set(topKeyword, docIds);
+    }
+
+    const topics: ExtractedTopic[] = [...docIdsByKeyword.entries()].map(([keyword, docIds]) => ({
+      name: keyword.charAt(0).toUpperCase() + keyword.slice(1),
+      docIds,
+      confidence: 0.5,
+    }));
+
+    const inputTokens = input.documents.reduce((sum, d) => sum + estimateTokens(d.excerpt), 0);
+    const outputTokens = estimateTokens(JSON.stringify(topics));
+
+    return {
+      data: { topics },
+      usage: { inputTokens, outputTokens },
+      model: FAKE_MODEL,
+      promptVersion: EXTRACT_TOPICS_PROMPT_VERSION,
     };
   }
 }

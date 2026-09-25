@@ -11,7 +11,13 @@ import {
   type Topic,
 } from '@studyhub/db';
 import { disambiguateSlug, slugify } from '@studyhub/core';
-import type { CreateTopicRequest, TopicDto, UpdateTopicRequest } from '@studyhub/contracts';
+import type {
+  CreateTopicRequest,
+  ExtractTopicsJobInput,
+  TopicDto,
+  UpdateTopicRequest,
+} from '@studyhub/contracts';
+import type { Queue } from 'bullmq';
 import { SubjectNotFoundError } from './errors';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -215,4 +221,17 @@ export async function deleteTopic(db: AnyDb, subjectSlug: string, topicId: strin
     .where(and(eq(topics.id, topicId), eq(topics.subjectId, subject.id)))
     .returning();
   if (deleted.length === 0) throw new TopicNotFoundError(topicId);
+}
+
+/** Enqueues `extract_topics`; returns the BullMQ job id the caller can poll via `jobs`. */
+export async function enqueueExtractTopics(
+  db: AnyDb,
+  queue: Pick<Queue, 'add'>,
+  subjectSlug: string,
+  input: Omit<ExtractTopicsJobInput, 'subjectId'>,
+): Promise<{ jobId: string }> {
+  const subject = await requireSubject(db, subjectSlug);
+  const jobId = randomUUID();
+  await queue.add('extract_topics', { ...input, subjectId: subject.id }, { jobId });
+  return { jobId };
 }

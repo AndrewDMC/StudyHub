@@ -1,6 +1,7 @@
 import type {
   EstimateTopicsOutput,
   ExamProfile,
+  ExtractTopicsOutput,
   FlashcardType,
   FlashcardsOutput,
   GradeOutput,
@@ -89,6 +90,18 @@ export interface EstimateTopicsPromptInput {
   units: TopicEstimateUnit[];
 }
 
+/** One document to consider for `extract_topics` — id echoed back so proposals can cite it. */
+export interface TopicExtractionDocument {
+  docId: string;
+  /** A sample of the document's content, not the whole thing (keeps the call cheap). */
+  excerpt: string;
+}
+
+export interface ExtractTopicsPromptInput {
+  subjectName: string;
+  documents: TopicExtractionDocument[];
+}
+
 /**
  * `packages/core` and other model-agnostic code never talk to a provider
  * directly — they go through this interface. `AnthropicProvider` is the
@@ -122,4 +135,8 @@ export interface AiProvider {
     input: EstimateTopicsPromptInput,
     model: string,
   ): Promise<GeneratedWithMeta<EstimateTopicsOutput>>;
+  extractTopics(
+    input: ExtractTopicsPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<ExtractTopicsOutput>>;
 }

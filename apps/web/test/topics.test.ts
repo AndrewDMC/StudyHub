@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,12 +10,17 @@ import { createSubject } from '../src/lib/subjects';
 import {
   createTopic,
   deleteTopic,
+  enqueueExtractTopics,
   listTopics,
   mergeTopics,
   TopicNotFoundError,
   updateTopic,
 } from '../src/lib/topics';
 import { SubjectNotFoundError } from '../src/lib/errors';
+
+function fakeQueue() {
+  return { add: vi.fn().mockResolvedValue({ id: 'job-123' }) };
+}
 
 describe('topics', () => {
   let dataRoot: string;
@@ -227,5 +232,39 @@ describe('topics', () => {
         TopicNotFoundError,
       );
     });
+  });
+});
+
+describe('enqueueExtractTopics', () => {
+  it('resolves the subject slug to an id and enqueues with it', async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), 'studyhub-enqueue-'));
+    try {
+      const db = await createTestDb();
+      const subject = await createSubject(db, dataRoot, { name: 'Fisica 1', color: 'blue' });
+      const queue = fakeQueue();
+
+      const result = await enqueueExtractTopics(db, queue, subject.slug, {
+        docIds: [randomUUID()],
+        force: false,
+      });
+
+      expect(result.jobId).toEqual(expect.any(String));
+      expect(queue.add).toHaveBeenCalledWith(
+        'extract_topics',
+        expect.objectContaining({ subjectId: subject.id }),
+        { jobId: result.jobId },
+      );
+    } finally {
+      await rm(dataRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('throws SubjectNotFoundError for an unknown slug without touching the queue', async () => {
+    const db = await createTestDb();
+    const queue = fakeQueue();
+    await expect(
+      enqueueExtractTopics(db, queue, 'nope', { docIds: [randomUUID()], force: false }),
+    ).rejects.toBeInstanceOf(SubjectNotFoundError);
+    expect(queue.add).not.toHaveBeenCalled();
   });
 });

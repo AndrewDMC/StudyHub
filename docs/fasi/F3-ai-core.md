@@ -118,13 +118,26 @@ già per flashcard/riassunto — nessun controllo di stile/profondità in UI anc
 implementato**: una pagina di revisione dedicata (lo schema compare nella lista artefatti ma senza
 link, come il riassunto); il rendering del diagramma Mermaid in UI.
 
+**Aggiornamento (2026-09-25)**: `extract_topics` (§1 "topic extraction → proposta tassonomia") è
+ora reale — ultimo dei quattro processor dello scope F3. Diverso dagli altri tre: non produce un
+artefatto `draft` da revisionare, applica direttamente la tassonomia proposta come righe
+`topics`/`document_topics` con `source: 'ai'` e `confidence` — colonne che `packages/db/src/schema.ts`
+portava già per questo, mai popolate finché non è arrivato questo job. Sicuro da applicare subito
+perché additivo e idempotente: un nome proposto già esistente nella materia viene riusato (case
+insensitive), mai duplicato, e `mergeTopics` (docs/fasi/F2-materie.md) resta lo strumento per
+ripulire una proposta sbagliata a posteriori — non serve una coda di revisione dedicata. Stesso
+gate anti-allucinazione delle flashcard, applicato ai `docId`: un `docId` proposto che non era fra
+quelli richiesti viene scartato (`apps/worker/src/processors/generation/extractTopics.ts`, testato
+incluso il caso di un `docId` inventato). Idempotenza via `jobKey` come gli altri tre, ma verificata
+direttamente sulla tabella `jobs` (non c'è un `artifactId` da restituire). Modello di routing
+`claude-haiku-4-5-20251001` ("haiku per estrarre", docs/03 §4). Esposto in UI come pulsante
+"Suggerisci argomenti (AI)" in `TopicsPanel` (`/materie/[slug]`), sui documenti pronti (`status:
+parsed`) della materia. **Non implementato**: raggruppamento gerarchico (ogni argomento proposto è
+sempre alla radice, `parentId: null` — la tassonomia AI è piatta anche se il modello ricevesse un
+`depth` come `generate_schema`, che qui non esiste come parametro).
+
 **Non implementato** in questa slice (limiti dichiarati, non nascosti):
 
-- **`extract_topics`**: non implementato. Segue lo stesso pattern di `generate_flashcards`/
-  `generate_summary` (provider adapter + validazione + persistenza) ed è il prossimo passo
-  naturale, non un redesign. (`generate_simulation` è reale, vedi
-  `docs/fasi/F5-esami-simulazioni.md` "Stato"; `generate_schema` è reale, vedi "Aggiornamento"
-  sotto — questa riga era disallineata con entrambi.)
 - **Dedup semantica** (cosine > 0.92 contro le card esistenti del deck): ridotta a dedup per testo
   esatto del `front` — la dedup semantica serve embeddings, non ancora collegati (vedi F1).
 - **Eval harness**: 2 fixture (`packages/ai/evals/flashcards/`, STEM + umanistica), non le "5-10

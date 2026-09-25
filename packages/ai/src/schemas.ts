@@ -130,6 +130,25 @@ export const EstimateTopicsOutputSchema = z.object({
 });
 export type EstimateTopicsOutput = z.infer<typeof EstimateTopicsOutputSchema>;
 
+/**
+ * `extract_topics` (docs/03-ai-e-worker.md §1, docs/fasi/F3-ai-core.md). One
+ * proposed topic, grouping the documents (by their `docId`, echoed back from
+ * the caller's input) it covers — validated against the requested scope in
+ * the worker, never trusted verbatim (a hallucinated docId would otherwise
+ * tag a document never sent to the model).
+ */
+export const ExtractedTopicSchema = z.object({
+  name: z.string().min(1),
+  docIds: z.array(z.string().uuid()).min(1),
+  confidence: z.number().min(0).max(1),
+});
+export type ExtractedTopic = z.infer<typeof ExtractedTopicSchema>;
+
+export const ExtractTopicsOutputSchema = z.object({
+  topics: z.array(ExtractedTopicSchema),
+});
+export type ExtractTopicsOutput = z.infer<typeof ExtractTopicsOutputSchema>;
+
 export const GradeOutputSchema = z.object({
   criteria: z.array(
     z.object({

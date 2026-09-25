@@ -184,6 +184,60 @@ describe('FakeProvider.estimateTopics', () => {
   });
 });
 
+describe('FakeProvider.extractTopics', () => {
+  const provider = new FakeProvider();
+
+  it('groups documents sharing the same top keyword into one topic', async () => {
+    const { data } = await provider.extractTopics(
+      {
+        subjectName: 'Fisica 1',
+        documents: [
+          { docId, excerpt: "L'entropia di un sistema isolato non diminuisce mai." },
+          {
+            docId: randomUUID(),
+            excerpt: "L'entropia è centrale nel secondo principio della termodinamica.",
+          },
+        ],
+      },
+      'irrelevant',
+    );
+    expect(data.topics.length).toBeGreaterThan(0);
+    for (const topic of data.topics) {
+      expect(topic.docIds.length).toBeGreaterThan(0);
+      expect(topic.confidence).toBeGreaterThan(0);
+    }
+  });
+
+  it('never proposes a docId outside the requested documents', async () => {
+    const requestedIds = new Set([docId, randomUUID()]);
+    const { data } = await provider.extractTopics(
+      {
+        subjectName: 'X',
+        documents: [...requestedIds].map((id) => ({
+          docId: id,
+          excerpt: 'Contenuto sufficientemente lungo da generare una parola chiave.',
+        })),
+      },
+      'irrelevant',
+    );
+    for (const topic of data.topics) {
+      for (const id of topic.docIds) {
+        expect(requestedIds.has(id)).toBe(true);
+      }
+    }
+  });
+
+  it('is deterministic: same input -> same output', async () => {
+    const input = {
+      subjectName: 'X',
+      documents: [{ docId, excerpt: 'Materiale di studio sufficientemente lungo.' }],
+    };
+    const a = await provider.extractTopics(input, 'irrelevant');
+    const b = await provider.extractTopics(input, 'irrelevant');
+    expect(a.data).toEqual(b.data);
+  });
+});
+
 describe('FakeProvider.generateSchema', () => {
   const provider = new FakeProvider();
 

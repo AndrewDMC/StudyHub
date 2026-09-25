@@ -4,6 +4,7 @@ import { jobs, type JobCost } from '@studyhub/db';
 import {
   ExtractExamProfileJobInputSchema,
   ExtractTextJobInputSchema,
+  ExtractTopicsJobInputSchema,
   GenerateFlashcardsJobInputSchema,
   GeneratePlanJobInputSchema,
   GenerateSchemaJobInputSchema,
@@ -18,6 +19,7 @@ import {
 import { processPing } from './processors/ping.js';
 import { reconcileSubjects } from './processors/reconcile.js';
 import { processExtractText } from './processors/extractText.js';
+import { processExtractTopics } from './processors/generation/extractTopics.js';
 import { processGenerateFlashcards } from './processors/generation/generateFlashcards.js';
 import { processGenerateSchema } from './processors/generation/generateSchema.js';
 import { processGenerateSummary } from './processors/generation/generateSummary.js';
@@ -123,6 +125,8 @@ async function dispatch(
       return processGradeAttempt(db, dataRoot, GradeAttemptJobInputSchema.parse(data));
     case 'generate_plan':
       return processGeneratePlan(db, GeneratePlanJobInputSchema.parse(data));
+    case 'extract_topics':
+      return processExtractTopics(db, dataRoot, ExtractTopicsJobInputSchema.parse(data));
     default: {
       const exhaustive: never = type;
       throw new Error(`unhandled job type: ${exhaustive}`);

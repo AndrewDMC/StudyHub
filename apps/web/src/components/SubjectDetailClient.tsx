@@ -89,7 +89,7 @@ export function SubjectDetailClient({ slug }: { slug: string }) {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[240px_1fr_320px]">
         <aside>
-          <TopicsPanel subjectSlug={slug} />
+          <TopicsPanel subjectSlug={slug} documents={documentsQuery.data ?? []} />
         </aside>
 
         <main className="min-w-0">
