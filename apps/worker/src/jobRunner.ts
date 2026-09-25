@@ -146,10 +146,35 @@ async function upsertJobRow(
     await db.update(jobs).set({ status }).where(eq(jobs.id, job.id));
     return;
   }
-  await db.insert(jobs).values({
-    id: job.id ?? randomUUID(),
-    type,
-    input: job.data ?? {},
-    status,
-  });
+
+  const base = { id: job.id ?? randomUUID(), type, input: job.data ?? {}, status };
+  const subjectId = extractSubjectId(job.data);
+  if (subjectId === null) {
+    await db.insert(jobs).values(base);
+    return;
+  }
+  try {
+    await db.insert(jobs).values({ ...base, subjectId });
+  } catch {
+    // `subjectId` doesn't reference a real subject (foreign key violation — e.g. a job enqueued
+    // for a subject deleted in the meantime). The processor is what should report that clearly
+    // ("subject not found", per every processor's own check) — still create the row so the job
+    // stays trackable by id, just without attribution, instead of losing it to an unhandled
+    // constraint error before dispatch even runs.
+    await db.insert(jobs).values(base);
+  }
+}
+
+/**
+ * Most job input schemas carry a `subjectId` directly (see `packages/contracts`) — reading it
+ * here is what lets `jobs.subject_id` (and everything that joins on it: the Dashboard's
+ * "Attività", `/admin`'s job list) actually attribute a job to a subject instead of showing
+ * `null` for every job that has one. `reconcile` (no single subject), `ping`, `extract_text`
+ * (`documentId` only) and `grade_attempt` (`attemptId` only) genuinely have none to give without
+ * a DB lookup this function isn't meant to do — those stay unattributed, correctly.
+ */
+function extractSubjectId(data: unknown): string | null {
+  if (typeof data !== 'object' || data === null) return null;
+  const subjectId = (data as { subjectId?: unknown }).subjectId;
+  return typeof subjectId === 'string' ? subjectId : null;
 }

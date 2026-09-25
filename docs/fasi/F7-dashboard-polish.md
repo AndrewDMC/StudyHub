@@ -89,8 +89,48 @@ Cosa c'è, con test reali:
   il percorso esiste (le pagine ci sono tutte) ma non è cucito insieme con un wizard.
 - **Immagini Docker pubblicate, `docker-compose.yml` one-liner, profilo `lite` SQLite**: nessun Docker
   daemon disponibile in questo ambiente per costruire/pubblicare immagini (stesso limite di F0).
-- **Pagina `/admin`**: non costruita (costi per mese, stato sync FS, reset indice).
 - **Verifica bundle "nessuna chiave API lato client"**: non ri-eseguita in questa sessione.
 - **Backup/restore reali contro Postgres**: testati solo con pglite (nessun Postgres/Docker disponibile
   — stesso limite dichiarato in ogni fase precedente). La logica è la stessa SQL via Drizzle, ma un
   primo giro contro un Postgres vero resta da fare prima di fidarsi in produzione.
+
+## Aggiornamento (2026-09-26): pagina `/admin`
+
+Costruita, ultimo pezzo dichiarato mancante nello scope originale. `apps/web/src/lib/admin.ts` +
+tre route (`GET /api/admin/overview`, `GET /api/admin/jobs`, `POST /api/admin/reconcile`),
+`AdminClient` (`/admin`), voce aggiunta a `AppShell` e `CommandPalette`. Testato in
+`apps/web/test/admin.test.ts` (8 casi: ordinamento/paginazione/filtro per stato, aggregazione costi
+per mese UTC, stato dell'ultimo `reconcile`, enqueue del reset indice).
+
+- **Job**: elenco paginato (`limit`/`offset`), filtrabile per `status`, stessa forma di
+  `RecentJobDto` già usata dalla Dashboard — nessuna duplicazione di schema.
+- **Costi per mese**: sommati in JS da `jobs.cost` (jsonb, niente aggregazione SQL nativa qui, come
+  già in `checkBudget` — dataset atteso piccolo per un'app locale mono-utente), raggruppati per
+  `YYYY-MM` UTC.
+- **Stato sync FS**: snapshot dell'ultimo job `reconcile` di qualunque scope (`imported`/
+  `alreadyIndexed`/`skippedInvalid` dal suo `output`), non uno stato "live" del filesystem.
+- **Reset indice**: rilancia lo stesso `reconcile` a scope pieno che gira già all'avvio del worker
+  (`apps/worker/src/index.ts`) — idempotente, importa solo ciò che manca, non una cancellazione
+  distruttiva dell'indice esistente.
+- **"Log"**: nessuno store di log persistito oltre a `jobs.error` — il messaggio d'errore già
+  visibile su ogni riga job è quello che questa slice chiama "log". Un log strutturato/persistito
+  (oltre a pino su stdout) resta da fare.
+
+**Bug preesistente scoperto e corretto qui**: `jobs.subject_id` non veniva mai impostato da
+`apps/worker/src/jobRunner.ts::upsertJobRow` per i job scope-a-materia (`generate_flashcards` e
+affini) — la colonna esiste ed è quella che sia questa pagina sia l'"Attività" della Dashboard
+leggono per mostrare `subjectName`/`subjectSlug`, ma restava sempre `null` in pratica; i test la
+impostavano a mano nell'insert di seed per poter verificare il join, cosa che il worker reale non
+faceva mai. Corretto: `upsertJobRow` ora legge `subjectId` da `job.data` quando presente (la
+maggioranza degli schemi di input in `packages/contracts` lo porta già) — con un fallback
+esplicito se quel `subjectId` viola il vincolo di foreign key verso `subjects` (es. materia
+cancellata fra l'enqueue e l'esecuzione): la riga job viene comunque creata, solo senza
+attribuzione, invece di perdersi in un errore di constraint non gestito prima ancora che il
+processor possa riportare il suo "subject not found". `reconcile`, `ping`, `extract_text`
+(`documentId` soltanto) e `grade_attempt` (`attemptId` soltanto) restano correttamente senza
+materia attribuita — non ne hanno una singola da dare senza una query aggiuntiva che questa
+funzione non deve fare. Testato in `apps/worker/test/jobRunner.test.ts` (attribuzione reale,
+nessuna attribuzione per un job senza `subjectId`, fallback per un `subjectId` inesistente).
+
+**Non implementato**: nessuna cancellazione/retry di un singolo job dalla UI (solo lettura + il
+reset indice complessivo); nessun filtro per tipo di job o per materia, solo per stato.
