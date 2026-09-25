@@ -118,41 +118,84 @@ function TopicTagger({
   );
 }
 
-/** `document_topics` tagging (docs/fasi/F2-materie.md "Stato"): each document can carry one or more topics, toggled inline. */
+/**
+ * `document_topics` tagging (docs/fasi/F2-materie.md "Stato"): each document can carry one or
+ * more topics, toggled inline. `selectedDocIds`/`onSelectionChange` are optional — a checkbox
+ * per ready document lets the panels on the right (Genera, Suggerisci argomenti) scope
+ * themselves to a subset instead of always "every parsed document" (F2 acceptance criterion:
+ * "Seleziono 3 documenti e il pannello destro offre le azioni giuste, con costo stimato").
+ */
 export function DocumentList({
   subjectSlug,
   documents,
+  selectedDocIds,
+  onSelectionChange,
 }: {
   subjectSlug: string;
   documents: DocumentDto[];
+  selectedDocIds?: Set<string>;
+  onSelectionChange?: (next: Set<string>) => void;
 }) {
   const topicsQuery = useQuery({
     queryKey: ['topics', subjectSlug],
     queryFn: () => fetchTopics(subjectSlug),
   });
 
+  const toggleSelected = (docId: string) => {
+    if (!onSelectionChange) return;
+    const next = new Set(selectedDocIds ?? []);
+    if (next.has(docId)) next.delete(docId);
+    else next.add(docId);
+    onSelectionChange(next);
+  };
+
   return (
-    <ul className="divide-y divide-border rounded-[var(--radius-card)] border border-border bg-bg-surface">
-      {documents.map((doc) => (
-        <li key={doc.id} className="flex items-center justify-between gap-3 px-4 py-3">
-          <div className="min-w-0">
-            <p className="truncate text-sm text-fg-primary">{doc.originalName}</p>
-            <p className="mt-0.5 font-mono text-[11px] text-fg-muted">
-              {doc.type} · {formatBytes(doc.bytes)}
-              {doc.pages !== null ? ` · ${doc.pages} pag.` : ''}
-            </p>
-            {topicsQuery.isSuccess && (
-              <TopicTagger subjectSlug={subjectSlug} doc={doc} topics={topicsQuery.data} />
-            )}
-          </div>
-          <span
-            className="shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium"
-            style={{ color: STATUS_COLOR[doc.status], borderColor: STATUS_COLOR[doc.status] }}
+    <div>
+      {onSelectionChange && (selectedDocIds?.size ?? 0) > 0 && (
+        <div className="mb-2 flex items-center justify-between px-1 text-xs text-fg-secondary">
+          <span>{selectedDocIds!.size} selezionati</span>
+          <button
+            type="button"
+            onClick={() => onSelectionChange(new Set())}
+            className="text-fg-muted underline-offset-2 hover:text-fg-primary hover:underline"
           >
-            {STATUS_LABEL[doc.status]}
-          </span>
-        </li>
-      ))}
-    </ul>
+            Deseleziona tutti
+          </button>
+        </div>
+      )}
+      <ul className="divide-y divide-border rounded-[var(--radius-card)] border border-border bg-bg-surface">
+        {documents.map((doc) => (
+          <li key={doc.id} className="flex items-center justify-between gap-3 px-4 py-3">
+            <div className="flex min-w-0 items-start gap-2.5">
+              {onSelectionChange && doc.status === 'parsed' && (
+                <input
+                  type="checkbox"
+                  checked={selectedDocIds?.has(doc.id) ?? false}
+                  onChange={() => toggleSelected(doc.id)}
+                  aria-label={`Seleziona ${doc.originalName}`}
+                  className="mt-1 shrink-0"
+                />
+              )}
+              <div className="min-w-0">
+                <p className="truncate text-sm text-fg-primary">{doc.originalName}</p>
+                <p className="mt-0.5 font-mono text-[11px] text-fg-muted">
+                  {doc.type} · {formatBytes(doc.bytes)}
+                  {doc.pages !== null ? ` · ${doc.pages} pag.` : ''}
+                </p>
+                {topicsQuery.isSuccess && (
+                  <TopicTagger subjectSlug={subjectSlug} doc={doc} topics={topicsQuery.data} />
+                )}
+              </div>
+            </div>
+            <span
+              className="shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium"
+              style={{ color: STATUS_COLOR[doc.status], borderColor: STATUS_COLOR[doc.status] }}
+            >
+              {STATUS_LABEL[doc.status]}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

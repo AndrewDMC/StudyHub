@@ -162,9 +162,11 @@ function TopicNode({
 export function TopicsPanel({
   subjectSlug,
   documents,
+  selectedDocIds,
 }: {
   subjectSlug: string;
   documents: DocumentDto[];
+  selectedDocIds?: Set<string>;
 }) {
   const [name, setName] = useState('');
   const [mergingId, setMergingId] = useState<string | null>(null);
@@ -175,7 +177,11 @@ export function TopicsPanel({
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['topics', subjectSlug] });
-  const readyDocIds = documents.filter((d) => d.status === 'parsed').map((d) => d.id);
+  const parsedDocIds = documents.filter((d) => d.status === 'parsed').map((d) => d.id);
+  const readyDocIds =
+    selectedDocIds && selectedDocIds.size > 0
+      ? parsedDocIds.filter((id) => selectedDocIds.has(id))
+      : parsedDocIds;
 
   const extractMutation = useMutation({
     mutationFn: async () => {

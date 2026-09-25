@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import type { DocumentDto, SubjectDto } from '@studyhub/contracts';
@@ -35,6 +36,10 @@ async function fetchAiProvider(): Promise<string> {
 }
 
 export function SubjectDetailClient({ slug }: { slug: string }) {
+  // Empty = "no explicit selection", every panel below falls back to all parsed documents
+  // (docs/fasi/F2-materie.md "Seleziono 3 documenti e il pannello destro offre le azioni giuste"
+  // — selecting is opt-in, not required, so nothing changes for someone who never touches it).
+  const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set());
   const subjectQuery = useQuery({ queryKey: ['subject', slug], queryFn: () => fetchSubject(slug) });
   const documentsQuery = useQuery({
     queryKey: ['documents', slug],
@@ -89,7 +94,11 @@ export function SubjectDetailClient({ slug }: { slug: string }) {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[240px_1fr_320px]">
         <aside>
-          <TopicsPanel subjectSlug={slug} documents={documentsQuery.data ?? []} />
+          <TopicsPanel
+            subjectSlug={slug}
+            documents={documentsQuery.data ?? []}
+            selectedDocIds={selectedDocIds}
+          />
         </aside>
 
         <main className="min-w-0">
@@ -112,7 +121,12 @@ export function SubjectDetailClient({ slug }: { slug: string }) {
               </div>
             )}
             {documentsQuery.isSuccess && documentsQuery.data.length > 0 && (
-              <DocumentList subjectSlug={slug} documents={documentsQuery.data} />
+              <DocumentList
+                subjectSlug={slug}
+                documents={documentsQuery.data}
+                selectedDocIds={selectedDocIds}
+                onSelectionChange={setSelectedDocIds}
+              />
             )}
           </section>
         </main>
@@ -122,7 +136,11 @@ export function SubjectDetailClient({ slug }: { slug: string }) {
           <StatsPanel subjectSlug={slug} />
           <ExamsPanel subjectSlug={slug} />
           <ExamPrepPanel subjectSlug={slug} />
-          <GenerationPanel subjectSlug={slug} documents={documentsQuery.data ?? []} />
+          <GenerationPanel
+            subjectSlug={slug}
+            documents={documentsQuery.data ?? []}
+            selectedDocIds={selectedDocIds}
+          />
           {aiProviderQuery.data === 'fake' && (
             <div className="rounded-[var(--radius-card)] border border-dashed border-border bg-bg-surface p-3 text-xs text-fg-muted">
               Generazione simulata (nessun provider AI configurato): le flashcard/riassunti sono

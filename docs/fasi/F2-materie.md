@@ -31,6 +31,11 @@ card in scadenza oggi, n. documenti, barra di copertura argomenti). Azioni: crea
 
 - [ ] Da Materie a un argomento specifico in ≤2 click.
 - [ ] Seleziono 3 documenti e il pannello destro offre le azioni giuste, con costo stimato.
+      (Checkbox su ogni documento pronto in `DocumentList`, `GenerationPanel`/`TopicsPanel` si
+      scopano alla selezione quando non è vuota — vedi "Aggiornamento" in fondo al file. Non
+      spuntato: solo `tsc`/eslint puliti, nessuna verifica in browser reale né test automatico —
+      questo repo non ha un setup per testare componenti React, coerente col resto del codice ma
+      più debole delle altre verifiche "Stato" di questo file.)
 - [x] Unisco due argomenti duplicati: flashcard e chunk si riattaccano correttamente.
 - [ ] Archivio una materia: sparisce dalla dashboard, la cartella resta intatta.
 - [ ] La pagina con 200 documenti e 2000 flashcard resta reattiva (virtualizzazione liste).
@@ -43,10 +48,10 @@ card in scadenza oggi, n. documenti, barra di copertura argomenti). Azioni: crea
 ## Stato: slice non-AI implementata (2026-09-22)
 
 Come per F1, implementata solo la parte che non dipende da un provider AI o da dati che non
-esistono ancora (FSRS/F4, simulazioni/F5). **Non implementato**: pannello AI contestuale (azioni
-che seguono la selezione), mastery calcolata (resta `null` finché F4/F5 non esistono), layout a 3
-colonne virtualizzato per 200+ documenti/2000+ flashcard, tab Flashcard/Simulazioni/Piano (F4/F5/F6).
-(Il merge argomenti è implementato — vedi "Aggiornamento" in fondo al file.)
+esistono ancora (FSRS/F4, simulazioni/F5). **Non implementato**: mastery calcolata (resta `null`
+finché F4/F5 non esistono), layout a 3 colonne virtualizzato per 200+ documenti/2000+ flashcard,
+tab Flashcard/Simulazioni/Piano (F4/F5/F6). (Il merge argomenti è implementato — vedi
+"Aggiornamento" in fondo al file; il pannello AI contestuale che segue la selezione anche.)
 
 Cosa c'è, con test reali (144 test totali nel monorepo):
 
@@ -126,3 +131,19 @@ Chiude il criterio di accettazione "Unisco due argomenti duplicati: flashcard e 
 riattaccano correttamente" — i "chunk" del criterio non hanno un `topicId` proprio (appartengono a
 un documento, che raggiunge l'argomento solo via `document_topics`), quindi riattaccare
 `document_topics` è la parte "chunk" del criterio.
+
+## Aggiornamento — selezione documenti che scopa il pannello destro (2026-09-26)
+
+Il "pannello AI contestuale che segue la selezione" del criterio di accettazione non esisteva:
+`GenerationPanel`/`TopicsPanel` includevano sempre *tutti* i documenti `parsed` della materia,
+niente scelta di un sottoinsieme. Ora `DocumentList` mostra una checkbox su ogni documento pronto;
+lo stato di selezione vive in `SubjectDetailClient` (un `Set<string>`, passato in giù) e, quando
+non è vuoto, `GenerationPanel`/`TopicsPanel` lo intersecano con i propri documenti pronti invece di
+usarli tutti — la stima costo del `ModelPicker` (vedi `docs/fasi/F3-ai-core.md` "Aggiornamento")
+ne beneficia gratis, visto che dipende dagli stessi `docIds`. Selezione vuota = comportamento
+precedente invariato, nessuna rottura per chi non tocca mai le checkbox.
+
+**Non verificato in browser**: questo repo non ha un setup per testare componenti React (tutti i
+test esistenti sono su `apps/web/src/lib/*`, mai su un componente) e in questo ambiente non è
+disponibile un Postgres per far partire l'app — solo `tsc --noEmit` ed eslint puliti su ogni file
+toccato. Più debole delle altre voci di questo "Stato", dichiarato qui invece che taciuto.

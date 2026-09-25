@@ -72,9 +72,12 @@ async function enqueue(
 export function GenerationPanel({
   subjectSlug,
   documents,
+  selectedDocIds,
 }: {
   subjectSlug: string;
   documents: DocumentDto[];
+  /** Non-empty = scope to this subset (docs/fasi/F2-materie.md "Stato"); empty/omitted = every ready document. */
+  selectedDocIds?: Set<string>;
 }) {
   const [model, setModel] = useState<string>(MODEL_OPTIONS[1].id); // sonnet: default routing for flashcards/schema/summary (docs/03 §4)
   const queryClient = useQueryClient();
@@ -82,7 +85,11 @@ export function GenerationPanel({
     queryKey: ['artifacts', subjectSlug],
     queryFn: () => fetchArtifacts(subjectSlug),
   });
-  const readyDocIds = documents.filter((d) => d.status === 'parsed').map((d) => d.id);
+  const parsedDocIds = documents.filter((d) => d.status === 'parsed').map((d) => d.id);
+  const readyDocIds =
+    selectedDocIds && selectedDocIds.size > 0
+      ? parsedDocIds.filter((id) => selectedDocIds.has(id))
+      : parsedDocIds;
 
   const estimateQuery = useQuery({
     queryKey: ['generation-estimate', subjectSlug, model, readyDocIds.join(',')],
@@ -125,7 +132,8 @@ export function GenerationPanel({
           onClick={() => generateMutation.mutate('flashcards')}
           className="rounded-[var(--radius-control)] bg-accent px-3 py-1.5 text-xs font-medium text-white transition-colors duration-120 hover:bg-accent-hover disabled:opacity-50"
         >
-          Genera flashcard ({readyDocIds.length} doc. pronti)
+          Genera flashcard ({readyDocIds.length}{' '}
+          {selectedDocIds && selectedDocIds.size > 0 ? 'selezionati' : 'doc. pronti'})
           {costLabel('flashcards') && ` · ${costLabel('flashcards')}`}
         </button>
         <button
