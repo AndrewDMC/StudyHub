@@ -1,16 +1,43 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
-import { artifacts, flashcards, subjects, type Artifact, type Flashcard } from '@studyhub/db';
+import { and, eq, inArray } from 'drizzle-orm';
+import {
+  artifacts,
+  chunks,
+  documentTopics,
+  documents,
+  flashcards,
+  subjects,
+  topics,
+  type Artifact,
+  type Flashcard,
+} from '@studyhub/db';
+import { estimateCostEur, estimateTokens } from '@studyhub/ai';
 import type {
   ArtifactDto,
+  EstimateGenerationCostRequest,
+  EstimateGenerationCostResponse,
   FlashcardDto,
   GenerateFlashcardsJobInput,
   GenerateSchemaJobInput,
   GenerateSummaryJobInput,
+  GenerationKind,
   ReviewFlashcardRequest,
 } from '@studyhub/contracts';
 import type { Queue } from 'bullmq';
 import { SubjectNotFoundError } from './errors';
+
+/**
+ * Output/input token ratio per function, used only for the UI's pre-flight cost estimate
+ * (docs/03-ai-e-worker.md §4). Rough and declared as such — flashcards/schema/summary all
+ * *compress* the input, never expand it, so a fraction of the input token count is a reasonable
+ * order-of-magnitude guess before the job actually runs. Real cost (from the model's own usage
+ * reporting) is what `artifacts.costEur` shows after generation.
+ */
+const OUTPUT_TOKEN_RATIO: Record<GenerationKind, number> = {
+  flashcards: 0.3,
+  schema: 0.25,
+  summary: 0.3,
+};
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyDb = any;
@@ -207,4 +234,55 @@ export async function approveDeck(
     .returning();
   if (!row) throw new ArtifactNotFoundError(deckId);
   return toArtifactDto(row);
+}
+
+/**
+ * Resolves a generation scope to input token count and, per function, a rough pre-flight cost
+ * for the given model — never calls a provider (docs/fasi/F3-ai-core.md "Stato": "la stima esiste
+ * ed è usata dal budget guard, solo non mostrata prima del click" — this is what shows it).
+ */
+export async function estimateGenerationCost(
+  db: AnyDb,
+  subjectSlug: string,
+  input: EstimateGenerationCostRequest,
+): Promise<EstimateGenerationCostResponse> {
+  const subject = await requireSubject(db, subjectSlug);
+
+  let docIds = input.scope.docIds ?? [];
+  if (docIds.length === 0 && input.scope.topicIds && input.scope.topicIds.length > 0) {
+    const linkRows: { documentId: string }[] = await db
+      .select({ documentId: documentTopics.documentId })
+      .from(documentTopics)
+      .innerJoin(topics, eq(documentTopics.topicId, topics.id))
+      .where(and(eq(topics.subjectId, subject.id), inArray(documentTopics.topicId, input.scope.topicIds)));
+    docIds = [...new Set(linkRows.map((r) => r.documentId))];
+  }
+
+  const docRows: { id: string }[] =
+    docIds.length === 0
+      ? []
+      : await db
+          .select({ id: documents.id })
+          .from(documents)
+          .where(and(eq(documents.subjectId, subject.id), inArray(documents.id, docIds)));
+  const scopedDocIds = docRows.map((d) => d.id);
+
+  const chunkRows: { text: string }[] =
+    scopedDocIds.length === 0
+      ? []
+      : await db
+          .select({ text: chunks.text })
+          .from(chunks)
+          .where(inArray(chunks.documentId, scopedDocIds));
+
+  const inputTokens = chunkRows.reduce((sum, c) => sum + estimateTokens(c.text), 0);
+
+  const perKind = Object.fromEntries(
+    (Object.keys(OUTPUT_TOKEN_RATIO) as GenerationKind[]).map((kind) => {
+      const outputTokens = Math.round(inputTokens * OUTPUT_TOKEN_RATIO[kind]);
+      return [kind, { outputTokens, costEur: estimateCostEur(input.model, inputTokens, outputTokens) }];
+    }),
+  ) as EstimateGenerationCostResponse['perKind'];
+
+  return { model: input.model, inputTokens, perKind };
 }

@@ -44,6 +44,34 @@ export const GenerateSummaryJobInputSchema = z.object({
 });
 export type GenerateSummaryJobInput = z.infer<typeof GenerateSummaryJobInputSchema>;
 
+/**
+ * Pre-flight cost estimate for `GenerationPanel` (docs/03-ai-e-worker.md §4: "La UI mostra
+ * sempre modello + costo stimato prima di lanciare il job"). Covers the three scope-based
+ * functions (`generate_flashcards`/`generate_schema`/`generate_summary`) since they share one
+ * scope and one model choice in the UI — not `generate_simulation` or `extract_topics`, which
+ * have their own panels.
+ */
+export const GenerationKindSchema = z.enum(['flashcards', 'schema', 'summary']);
+export type GenerationKind = z.infer<typeof GenerationKindSchema>;
+
+export const EstimateGenerationCostRequestSchema = z.object({
+  scope: GenerationScopeSchema,
+  model: z.string(),
+});
+export type EstimateGenerationCostRequest = z.infer<typeof EstimateGenerationCostRequestSchema>;
+
+export const EstimateGenerationCostSchema = z.object({
+  outputTokens: z.number().int().nonnegative(),
+  costEur: z.number().nonnegative(),
+});
+
+export const EstimateGenerationCostResponseSchema = z.object({
+  model: z.string(),
+  inputTokens: z.number().int().nonnegative(),
+  perKind: z.record(GenerationKindSchema, EstimateGenerationCostSchema),
+});
+export type EstimateGenerationCostResponse = z.infer<typeof EstimateGenerationCostResponseSchema>;
+
 export const ArtifactKindSchema = z.enum([
   'flashcard_deck',
   'schema',

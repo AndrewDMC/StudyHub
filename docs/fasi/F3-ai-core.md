@@ -136,6 +136,21 @@ parsed`) della materia. **Non implementato**: raggruppamento gerarchico (ogni ar
 sempre alla radice, `parentId: null` — la tassonomia AI è piatta anche se il modello ricevesse un
 `depth` come `generate_schema`, che qui non esiste come parametro).
 
+**Aggiornamento (2026-09-26)**: `ModelPicker` + stima costo pre-flight (§4: "La UI mostra sempre
+modello + costo stimato prima di lanciare il job") sono ora in UI, per i tre pulsanti di
+`GenerationPanel` (flashcard/schema/riassunto — non per `generate_simulation`/`extract_topics`, che
+hanno i loro pannelli separati). `ModelPicker` (`apps/web/src/components/ModelPicker.tsx`) sceglie
+fra i tre modelli del model routing (haiku/sonnet/opus); ogni cambio di modello o di documenti
+pronti ricalcola la stima via `POST /api/subjects/[slug]/artifacts/estimate`
+(`estimateGenerationCost`, `apps/web/src/lib/generation.ts`), che conta i token di input dai chunk
+già estratti (`estimateTokens`) e applica un **rapporto di compressione dichiarato, non nascosto**
+(flashcard 0.3×, schema 0.25×, riassunto 0.3× l'input — una stima d'ordine di grandezza, non una
+previsione esatta) prima di chiamare la stessa `estimateCostEur` del budget guard — mai una vera
+chiamata al provider. Il modello scelto viaggia poi nel job stesso (`model` nel body delle tre
+route esistenti), sostituendo il default fisso per quella generazione. **Non implementato**: la
+stima non copre `generate_simulation`/`extract_topics`; nessun costo storico per confrontare stima
+vs reale.
+
 **Non implementato** in questa slice (limiti dichiarati, non nascosti):
 
 - **Dedup semantica** (cosine > 0.92 contro le card esistenti del deck): ridotta a dedup per testo
@@ -143,10 +158,6 @@ sempre alla radice, `parentId: null` — la tassonomia AI è piatta anche se il 
 - **Eval harness**: 2 fixture (`packages/ai/evals/flashcards/`, STEM + umanistica), non le "5-10
   documenti reali" della spec — sufficienti a far girare `pnpm eval` prima di un bump di versione
   del prompt, non a validare la qualità di un modello reale.
-- **`ModelPicker` + stima costo pre-flight in UI**: il pannello `GenerationPanel` avvia la
-  generazione con parametri fissi (auto count, basic+cloze, difficoltà 2); la scelta di modello e
-  la stima costo prima del lancio non sono ancora esposte in UI (la stima esiste ed è usata dal
-  budget guard, solo non mostrata prima del click).
 - **CLI**: `studyhub generate flashcards/summary --dry-run --json` (docs/03 §5) non implementato in
   questa sessione — il worker e la UI coprono il ciclo completo (genera → revisiona → approva), il
   parallelo CLI segue lo stesso pattern di `apps/cli/src/commands/subject.ts` quando serve.

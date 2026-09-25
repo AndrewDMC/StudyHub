@@ -1,8 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ArtifactDto, DocumentDto } from '@studyhub/contracts';
+import type { ArtifactDto, DocumentDto, EstimateGenerationCostResponse } from '@studyhub/contracts';
+import { ModelPicker, MODEL_OPTIONS } from './ModelPicker';
 
 const KIND_LABELS: Record<ArtifactDto['kind'], string> = {
   flashcard_deck: 'Flashcard',
@@ -18,6 +20,11 @@ const STATUS_LABELS: Record<ArtifactDto['status'], string> = {
   archived: 'Archiviato',
 };
 
+/** €0.0001 → "€0.0001"; €0 → "gratis" (FakeProvider, nessuna chiave configurata). */
+function formatCost(costEur: number): string {
+  return costEur === 0 ? 'gratis' : `~€${costEur.toFixed(4)}`;
+}
+
 async function fetchArtifacts(slug: string): Promise<ArtifactDto[]> {
   const res = await fetch(`/api/subjects/${slug}/artifacts`);
   const body = await res.json();
@@ -25,13 +32,33 @@ async function fetchArtifacts(slug: string): Promise<ArtifactDto[]> {
   return body.artifacts as ArtifactDto[];
 }
 
-async function enqueue(slug: string, kind: 'flashcards' | 'schema' | 'summary', docIds: string[]) {
+async function fetchEstimate(
+  slug: string,
+  docIds: string[],
+  model: string,
+): Promise<EstimateGenerationCostResponse> {
+  const res = await fetch(`/api/subjects/${slug}/artifacts/estimate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scope: { docIds }, model }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error?.message ?? 'Stima costo fallita');
+  return body as EstimateGenerationCostResponse;
+}
+
+async function enqueue(
+  slug: string,
+  kind: 'flashcards' | 'schema' | 'summary',
+  docIds: string[],
+  model: string,
+) {
   const requestBody =
     kind === 'flashcards'
-      ? { scope: { docIds }, count: 'auto', types: ['basic', 'cloze'], difficulty: 2, lang: 'it' }
+      ? { scope: { docIds }, count: 'auto', types: ['basic', 'cloze'], difficulty: 2, lang: 'it', model }
       : kind === 'schema'
-        ? { scope: { docIds }, depth: 2, style: 'gerarchico' }
-        : { scope: { docIds }, length: 'standard' };
+        ? { scope: { docIds }, depth: 2, style: 'gerarchico', model }
+        : { scope: { docIds }, length: 'standard', model };
   const res = await fetch(`/api/subjects/${slug}/artifacts/${kind}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -49,6 +76,7 @@ export function GenerationPanel({
   subjectSlug: string;
   documents: DocumentDto[];
 }) {
+  const [model, setModel] = useState<string>(MODEL_OPTIONS[1].id); // sonnet: default routing for flashcards/schema/summary (docs/03 §4)
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ['artifacts', subjectSlug],
@@ -56,9 +84,15 @@ export function GenerationPanel({
   });
   const readyDocIds = documents.filter((d) => d.status === 'parsed').map((d) => d.id);
 
+  const estimateQuery = useQuery({
+    queryKey: ['generation-estimate', subjectSlug, model, readyDocIds.join(',')],
+    queryFn: () => fetchEstimate(subjectSlug, readyDocIds, model),
+    enabled: readyDocIds.length > 0,
+  });
+
   const generateMutation = useMutation({
     mutationFn: (kind: 'flashcards' | 'schema' | 'summary') =>
-      enqueue(subjectSlug, kind, readyDocIds),
+      enqueue(subjectSlug, kind, readyDocIds, model),
     onSuccess: () => {
       // The job runs asynchronously in the worker; give it a moment then refresh.
       setTimeout(
@@ -68,6 +102,11 @@ export function GenerationPanel({
     },
   });
 
+  const costLabel = (kind: 'flashcards' | 'schema' | 'summary'): string | null => {
+    const entry = estimateQuery.data?.perKind[kind];
+    return entry ? formatCost(entry.costEur) : null;
+  };
+
   return (
     <div className="rounded-[var(--radius-card)] border border-border bg-bg-surface p-3">
       <h2 className="mb-2 px-1 text-xs font-medium uppercase tracking-wide text-fg-muted">
@@ -75,6 +114,11 @@ export function GenerationPanel({
       </h2>
 
       <div className="flex flex-col gap-2 px-1">
+        <ModelPicker value={model} onChange={setModel} disabled={generateMutation.isPending} />
+        {estimateQuery.isError && (
+          <p className="text-[11px] text-fg-muted">Stima costo non disponibile.</p>
+        )}
+
         <button
           type="button"
           disabled={readyDocIds.length === 0 || generateMutation.isPending}
@@ -82,6 +126,7 @@ export function GenerationPanel({
           className="rounded-[var(--radius-control)] bg-accent px-3 py-1.5 text-xs font-medium text-white transition-colors duration-120 hover:bg-accent-hover disabled:opacity-50"
         >
           Genera flashcard ({readyDocIds.length} doc. pronti)
+          {costLabel('flashcards') && ` · ${costLabel('flashcards')}`}
         </button>
         <button
           type="button"
@@ -89,7 +134,7 @@ export function GenerationPanel({
           onClick={() => generateMutation.mutate('summary')}
           className="rounded-[var(--radius-control)] border border-border px-3 py-1.5 text-xs text-fg-secondary hover:text-fg-primary disabled:opacity-50"
         >
-          Genera riassunto
+          Genera riassunto{costLabel('summary') && ` · ${costLabel('summary')}`}
         </button>
         <button
           type="button"
@@ -97,7 +142,7 @@ export function GenerationPanel({
           onClick={() => generateMutation.mutate('schema')}
           className="rounded-[var(--radius-control)] border border-border px-3 py-1.5 text-xs text-fg-secondary hover:text-fg-primary disabled:opacity-50"
         >
-          Genera schema
+          Genera schema{costLabel('schema') && ` · ${costLabel('schema')}`}
         </button>
         {readyDocIds.length === 0 && (
           <p className="text-[11px] text-fg-muted">

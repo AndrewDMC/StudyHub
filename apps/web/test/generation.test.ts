@@ -5,13 +5,14 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { createTestDb } from '@studyhub/db/testDb';
-import { artifacts, chunks, documents, flashcards } from '@studyhub/db';
+import { artifacts, chunks, documentTopics, documents, flashcards, topics } from '@studyhub/db';
 import { createSubject } from '../src/lib/subjects';
 import {
   approveDeck,
   ArtifactNotFoundError,
   enqueueFlashcardsGeneration,
   enqueueSchemaGeneration,
+  estimateGenerationCost,
   FlashcardNotFoundError,
   getArtifact,
   listArtifacts,
@@ -107,6 +108,91 @@ describe('enqueueSchemaGeneration', () => {
       }),
     ).rejects.toBeInstanceOf(SubjectNotFoundError);
     expect(queue.add).not.toHaveBeenCalled();
+  });
+});
+
+describe('estimateGenerationCost', () => {
+  let dataRoot: string;
+  let db: Awaited<ReturnType<typeof createTestDb>>;
+  let subjectSlug: string;
+  let subjectId: string;
+  let docId: string;
+  let topicId: string;
+
+  beforeEach(async () => {
+    dataRoot = await mkdtemp(join(tmpdir(), 'studyhub-estimate-'));
+    db = await createTestDb();
+    const subject = await createSubject(db, dataRoot, { name: 'Fisica 1', color: 'blue' });
+    subjectId = subject.id;
+    subjectSlug = subject.slug;
+
+    docId = randomUUID();
+    await db.insert(documents).values({
+      id: docId,
+      subjectId,
+      type: 'appunti',
+      originalName: 'x.pdf',
+      storedPath: '/x',
+      mime: 'application/pdf',
+      bytes: 1,
+      sha256: 'a'.repeat(64),
+    });
+    await db.insert(chunks).values({
+      id: randomUUID(),
+      documentId: docId,
+      pageFrom: 1,
+      pageTo: 1,
+      ord: 0,
+      text: "L'entropia di un sistema isolato non diminuisce mai.".repeat(20),
+      tokens: 200,
+    });
+
+    topicId = randomUUID();
+    await db.insert(topics).values({ id: topicId, subjectId, name: 'Termodinamica', slug: 'termodinamica' });
+    await db.insert(documentTopics).values({ documentId: docId, topicId });
+  });
+
+  afterEach(async () => {
+    await rm(dataRoot, { recursive: true, force: true });
+  });
+
+  it('estimates a positive cost per kind, proportional to input size', async () => {
+    const estimate = await estimateGenerationCost(db, subjectSlug, {
+      scope: { docIds: [docId] },
+      model: 'claude-sonnet-5',
+    });
+
+    expect(estimate.inputTokens).toBeGreaterThan(0);
+    expect(estimate.perKind.flashcards.costEur).toBeGreaterThan(0);
+    expect(estimate.perKind.schema.costEur).toBeGreaterThan(0);
+    expect(estimate.perKind.summary.costEur).toBeGreaterThan(0);
+  });
+
+  it('resolves a topicIds-only scope to the tagged document, same as generation itself', async () => {
+    const byDoc = await estimateGenerationCost(db, subjectSlug, {
+      scope: { docIds: [docId] },
+      model: 'claude-sonnet-5',
+    });
+    const byTopic = await estimateGenerationCost(db, subjectSlug, {
+      scope: { topicIds: [topicId] },
+      model: 'claude-sonnet-5',
+    });
+    expect(byTopic.inputTokens).toBe(byDoc.inputTokens);
+  });
+
+  it('is zero for a scope resolving to no chunks (e.g. an unrelated document id)', async () => {
+    const estimate = await estimateGenerationCost(db, subjectSlug, {
+      scope: { docIds: [randomUUID()] },
+      model: 'claude-sonnet-5',
+    });
+    expect(estimate.inputTokens).toBe(0);
+    expect(estimate.perKind.flashcards.costEur).toBe(0);
+  });
+
+  it('throws SubjectNotFoundError for an unknown slug', async () => {
+    await expect(
+      estimateGenerationCost(db, 'nope', { scope: { docIds: [docId] }, model: 'claude-sonnet-5' }),
+    ).rejects.toBeInstanceOf(SubjectNotFoundError);
   });
 });
 
