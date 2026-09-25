@@ -5,6 +5,7 @@ const NAV_ITEMS = [
   { href: '/', label: 'Dashboard', shortcut: 'G D', enabled: true },
   { href: '/materie', label: 'Materie', shortcut: 'G M', enabled: true },
   { href: '/calendario', label: 'Calendario', shortcut: 'G C', enabled: true },
+  { href: '/admin', label: 'Admin', shortcut: 'G A', enabled: true },
 ] as const;
 
 export function AppShell({ children }: { children: React.ReactNode }) {

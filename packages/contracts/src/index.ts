@@ -9,3 +9,4 @@ export * from './simulation.js';
 export * from './plan.js';
 export * from './calendar.js';
 export * from './dashboard.js';
+export * from './admin.js';

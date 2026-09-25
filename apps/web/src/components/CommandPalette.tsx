@@ -65,6 +65,7 @@ export function CommandPalette() {
     { id: 'nav-dashboard', label: 'Dashboard', href: '/' },
     { id: 'nav-materie', label: 'Materie', href: '/materie' },
     { id: 'nav-calendario', label: 'Calendario', href: '/calendario' },
+    { id: 'nav-admin', label: 'Admin', href: '/admin' },
   ];
   const subjects = subjectsQuery.data ?? [];
   const subjectEntries: Entry[] = subjects.map((s) => ({

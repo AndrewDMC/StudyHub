@@ -163,9 +163,9 @@ describe('estimateGenerationCost', () => {
     });
 
     expect(estimate.inputTokens).toBeGreaterThan(0);
-    expect(estimate.perKind.flashcards.costEur).toBeGreaterThan(0);
-    expect(estimate.perKind.schema.costEur).toBeGreaterThan(0);
-    expect(estimate.perKind.summary.costEur).toBeGreaterThan(0);
+    expect(estimate.perKind.flashcards!.costEur).toBeGreaterThan(0);
+    expect(estimate.perKind.schema!.costEur).toBeGreaterThan(0);
+    expect(estimate.perKind.summary!.costEur).toBeGreaterThan(0);
   });
 
   it('resolves a topicIds-only scope to the tagged document, same as generation itself', async () => {
@@ -186,7 +186,7 @@ describe('estimateGenerationCost', () => {
       model: 'claude-sonnet-5',
     });
     expect(estimate.inputTokens).toBe(0);
-    expect(estimate.perKind.flashcards.costEur).toBe(0);
+    expect(estimate.perKind.flashcards!.costEur).toBe(0);
   });
 
   it('throws SubjectNotFoundError for an unknown slug', async () => {
