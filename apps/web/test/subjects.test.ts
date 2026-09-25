@@ -3,7 +3,16 @@ import { mkdtemp, rm, stat, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { exams } from '@studyhub/db';
+import {
+  artifacts,
+  documentTopics,
+  documents,
+  exams,
+  flashcards,
+  studyPlans,
+  tasks,
+  topics,
+} from '@studyhub/db';
 import { createTestDb } from '@studyhub/db/testDb';
 import {
   createSubject,
@@ -49,6 +58,8 @@ describe('createSubject — full F0 flow (input -> slug -> FS -> DB -> DTO)', ()
     expect(listed[0]?.slug).toBe('fisica-1');
     expect(listed[0]?.documentCount).toBe(0);
     expect(listed[0]?.nextExamAt).toBeNull();
+    expect(listed[0]?.averageMastery).toBeNull();
+    expect(listed[0]?.dueCardsToday).toBe(0);
   });
 
   it('disambiguates the slug when two subjects share the same name', async () => {
@@ -132,6 +143,147 @@ describe('listSubjectSummaries — aggregation and archived filtering', () => {
 
     const all = await listSubjectSummaries(db, { includeArchived: true });
     expect(all.map((s) => s.slug).sort()).toEqual([a.slug, b.slug].sort());
+  });
+
+  it('averages topic mastery per subject, ignoring topics without one', async () => {
+    const subject = await createSubject(db, dataRoot, { name: 'Fisica 1', color: 'blue' });
+    await db.insert(topics).values([
+      { id: randomUUID(), subjectId: subject.id, name: 'A', slug: 'a', mastery: 0.4 },
+      { id: randomUUID(), subjectId: subject.id, name: 'B', slug: 'b', mastery: 0.8 },
+      { id: randomUUID(), subjectId: subject.id, name: 'C', slug: 'c', mastery: null },
+    ]);
+
+    const [summary] = await listSubjectSummaries(db);
+    expect(summary?.averageMastery).toBe(0.6);
+  });
+
+  it('counts due-today flashcards per subject (new, or past/at their dueAt; suspended and future excluded)', async () => {
+    const subject = await createSubject(db, dataRoot, { name: 'Fisica 1', color: 'blue' });
+    const deckId = randomUUID();
+    await db.insert(artifacts).values({
+      id: deckId,
+      subjectId: subject.id,
+      kind: 'flashcard_deck',
+      title: 'Deck',
+      path: '/x.json',
+      model: 'fake-v1',
+      promptVersion: 'flashcards/v1',
+    });
+    await db.insert(flashcards).values([
+      {
+        id: randomUUID(),
+        deckId,
+        type: 'basic',
+        front: 'new card',
+        back: 'x',
+        sourceRef: { docId: randomUUID(), page: 1, quote: 'x' },
+        state: 'new',
+      },
+      {
+        id: randomUUID(),
+        deckId,
+        type: 'basic',
+        front: 'overdue',
+        back: 'x',
+        sourceRef: { docId: randomUUID(), page: 1, quote: 'x' },
+        state: 'review',
+        dueAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      },
+      {
+        id: randomUUID(),
+        deckId,
+        type: 'basic',
+        front: 'future',
+        back: 'x',
+        sourceRef: { docId: randomUUID(), page: 1, quote: 'x' },
+        state: 'review',
+        dueAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      },
+      {
+        id: randomUUID(),
+        deckId,
+        type: 'basic',
+        front: 'suspended overdue',
+        back: 'x',
+        sourceRef: { docId: randomUUID(), page: 1, quote: 'x' },
+        state: 'review',
+        dueAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+        suspended: true,
+      },
+    ]);
+
+    const [summary] = await listSubjectSummaries(db);
+    expect(summary?.dueCardsToday).toBe(2);
+  });
+
+  it('computes topic reading coverage for the subject (pages read over pages assigned)', async () => {
+    const subject = await createSubject(db, dataRoot, { name: 'Fisica 1', color: 'blue' });
+    const topicId = randomUUID();
+    await db.insert(topics).values({ id: topicId, subjectId: subject.id, name: 'A', slug: 'a' });
+    const docId = randomUUID();
+    await db.insert(documents).values({
+      id: docId,
+      subjectId: subject.id,
+      type: 'appunti',
+      originalName: 'doc.pdf',
+      storedPath: '/irrelevant',
+      mime: 'application/pdf',
+      bytes: 10,
+      sha256: 'a'.repeat(64),
+      status: 'parsed',
+      pages: 20,
+    });
+    await db.insert(documentTopics).values({ documentId: docId, topicId });
+    const planId = randomUUID();
+    await db.insert(studyPlans).values({
+      id: planId,
+      subjectId: subject.id,
+      startDate: '2026-01-05',
+      targetDate: '2026-02-04',
+      availability: { perWeekday: [0, 120, 120, 120, 120, 120, 0], blackoutDates: [] },
+      prefs: {
+        sessionLength: 50,
+        intensity: 'standard',
+        simulationCount: 'auto',
+        simulationMinutes: 90,
+        reviewMinutesPerCard: 0.5,
+      },
+      feasibility: {
+        feasible: true,
+        requiredMinutes: 0,
+        availableMinutes: 0,
+        shortfallMinutes: 0,
+        unscheduledTopicKeys: [],
+        strategies: [],
+      },
+      warnings: [],
+      model: 'fake-v1',
+      promptVersion: 'estimate_topics/v1',
+      status: 'active',
+    });
+    await db.insert(tasks).values({
+      id: randomUUID(),
+      subjectId: subject.id,
+      planId,
+      taskKey: 'read:1',
+      date: '2026-01-05',
+      kind: 'read',
+      topicId,
+      minutes: 30,
+      title: 'Studia',
+      description: '',
+      payload: { action: 'read', material: [{ docId, pageFrom: 1, pageTo: 10 }], topicId },
+      status: 'done',
+    });
+
+    const [summary] = await listSubjectSummaries(db);
+    expect(summary?.topicCoverage).toBeCloseTo(0.5, 1);
+  });
+
+  it('reports null topic coverage when no document is tagged to a topic yet', async () => {
+    await createSubject(db, dataRoot, { name: 'Fisica 1', color: 'blue' });
+    const [summary] = await listSubjectSummaries(db);
+    expect(summary?.topicCoverage).toBeNull();
   });
 });
 

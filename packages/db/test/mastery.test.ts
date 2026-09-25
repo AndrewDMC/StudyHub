@@ -5,6 +5,7 @@ import { createTestDb } from '../src/testDb.js';
 import {
   artifacts,
   attemptItemResults,
+  computeSubjectCoverage,
   documentTopics,
   documents,
   flashcards,
@@ -333,5 +334,75 @@ describe('recomputeTopicMastery', () => {
       const secondaryValue = await recomputeTopicMastery(db, secondaryTopicId);
       expect(secondaryValue).toBeNull(); // no document is primarily tagged to it
     });
+  });
+});
+
+describe('computeSubjectCoverage', () => {
+  let db: Awaited<ReturnType<typeof createTestDb>>;
+  let subjectId: string;
+
+  beforeEach(async () => {
+    db = await createTestDb();
+    subjectId = randomUUID();
+    await db.insert(subjects).values({
+      id: subjectId,
+      slug: 'fisica-1',
+      name: 'Fisica 1',
+      color: 'blue',
+      folderPath: '/data/subjects/fisica-1',
+    });
+  });
+
+  it('is null when no document in the subject is tagged to a topic', async () => {
+    await addParsedDoc(db, subjectId, 20);
+    expect(await computeSubjectCoverage(db, subjectId)).toBeNull();
+  });
+
+  it('sums covered pages across every topic of the subject, not just one', async () => {
+    const topicA = randomUUID();
+    const topicB = randomUUID();
+    await db.insert(topics).values([
+      { id: topicA, subjectId, name: 'A', slug: 'a' },
+      { id: topicB, subjectId, name: 'B', slug: 'b' },
+    ]);
+    const docA = await addParsedDoc(db, subjectId, 10);
+    const docB = await addParsedDoc(db, subjectId, 10);
+    await db.insert(documentTopics).values([
+      { documentId: docA, topicId: topicA },
+      { documentId: docB, topicId: topicB },
+    ]);
+    const planId = await addPlan(db, subjectId);
+    // Only docA fully read: 10/20 total pages assigned across both topics.
+    await addReadTask(db, {
+      subjectId,
+      planId,
+      topicId: topicA,
+      material: [{ docId: docA, pageFrom: 1, pageTo: 10 }],
+    });
+
+    expect(await computeSubjectCoverage(db, subjectId)).toBeCloseTo(0.5, 1);
+  });
+
+  it('clamps a document’s covered pages at its own page count', async () => {
+    const topicId = randomUUID();
+    await db.insert(topics).values({ id: topicId, subjectId, name: 'A', slug: 'a' });
+    const docId = await addParsedDoc(db, subjectId, 10);
+    await db.insert(documentTopics).values({ documentId: docId, topicId });
+    const planA = await addPlan(db, subjectId);
+    const planB = await addPlan(db, subjectId);
+    await addReadTask(db, {
+      subjectId,
+      planId: planA,
+      topicId,
+      material: [{ docId, pageFrom: 1, pageTo: 10 }],
+    });
+    await addReadTask(db, {
+      subjectId,
+      planId: planB,
+      topicId,
+      material: [{ docId, pageFrom: 1, pageTo: 10 }],
+    });
+
+    expect(await computeSubjectCoverage(db, subjectId)).toBe(1);
   });
 });

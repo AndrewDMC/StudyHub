@@ -73,6 +73,76 @@ async function computeTopicCoverage(
 }
 
 /**
+ * Subject-wide reading coverage (docs/fasi/F2-materie.md griglia Materie,
+ * "Copertura argomenti"): pages actually read (`done` `read` tasks) over
+ * pages assigned to *any* topic of the subject (via each document's primary
+ * tag, `resolvePrimaryTopics`) — the same real definition
+ * `computeTopicCoverage` uses per topic, summed across every topic instead
+ * of picking one. `null` when no document in the subject is tagged to a
+ * topic yet (nothing assigned to cover), not a silent zero.
+ */
+export async function computeSubjectCoverage(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  subjectId: string,
+): Promise<number | null> {
+  const docRows: { id: string; pages: number | null }[] = await db
+    .select({ id: documents.id, pages: documents.pages })
+    .from(documents)
+    .where(and(eq(documents.subjectId, subjectId), eq(documents.status, 'parsed')));
+  const eligibleDocs = docRows.filter(
+    (d): d is { id: string; pages: number } => (d.pages ?? 0) > 0,
+  );
+  if (eligibleDocs.length === 0) return null;
+
+  const primaryByDoc = await resolvePrimaryTopics(
+    db,
+    subjectId,
+    eligibleDocs.map((d) => d.id),
+  );
+  const taggedDocs = eligibleDocs.filter((d) => primaryByDoc.has(d.id));
+  if (taggedDocs.length === 0) return null;
+
+  const topicIds: { id: string }[] = await db
+    .select({ id: topics.id })
+    .from(topics)
+    .where(eq(topics.subjectId, subjectId));
+  const readTasks: {
+    payload: { material?: { docId: string; pageFrom: number; pageTo: number }[] };
+  }[] =
+    topicIds.length === 0
+      ? []
+      : await db
+          .select({ payload: tasks.payload })
+          .from(tasks)
+          .where(
+            and(
+              inArray(
+                tasks.topicId,
+                topicIds.map((t) => t.id),
+              ),
+              eq(tasks.kind, 'read'),
+              eq(tasks.status, 'done'),
+            ),
+          );
+
+  const readPagesByDoc = new Map<string, number>();
+  for (const t of readTasks) {
+    for (const m of t.payload.material ?? []) {
+      const pages = Math.max(0, m.pageTo - m.pageFrom + 1);
+      readPagesByDoc.set(m.docId, (readPagesByDoc.get(m.docId) ?? 0) + pages);
+    }
+  }
+
+  const totalPages = taggedDocs.reduce((s, d) => s + d.pages, 0);
+  const coveredPages = taggedDocs.reduce(
+    (s, d) => s + Math.min(d.pages, readPagesByDoc.get(d.id) ?? 0),
+    0,
+  );
+  return clamp01(coveredPages / totalPages);
+}
+
+/**
  * Recomputes `topics.mastery` from its inputs (docs/02-filesystem-e-dati.md
  * §5, formula in `packages/core/src/mastery.ts`): average current
  * retrievability of the topic's reviewed flashcards + average accuracy of

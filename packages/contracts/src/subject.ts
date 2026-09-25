@@ -27,6 +27,9 @@ export type SubjectDto = z.infer<typeof SubjectDtoSchema>;
 export const SubjectSummaryDtoSchema = SubjectDtoSchema.extend({
   documentCount: z.number().int().nonnegative(),
   nextExamAt: z.string().datetime().nullable(),
+  averageMastery: z.number().nullable(),
+  dueCardsToday: z.number().int().nonnegative(),
+  topicCoverage: z.number().nullable(),
 });
 export type SubjectSummaryDto = z.infer<typeof SubjectSummaryDtoSchema>;
 

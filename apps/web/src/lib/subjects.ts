@@ -1,6 +1,15 @@
 import { randomUUID } from 'node:crypto';
-import { eq, isNull, sql } from 'drizzle-orm';
-import { documents, exams, subjects, type Database } from '@studyhub/db';
+import { and, eq, isNull, lte, or, isNotNull, sql } from 'drizzle-orm';
+import {
+  artifacts,
+  computeSubjectCoverage,
+  documents,
+  exams,
+  flashcards,
+  subjects,
+  topics,
+  type Database,
+} from '@studyhub/db';
 import {
   disambiguateSlug,
   listSubjectSlugsOnDisk,
@@ -31,9 +40,51 @@ function toDto(row: typeof subjects.$inferSelect): SubjectDto {
   };
 }
 
+/** Per-subject average of `topics.mastery` — null for a subject where no topic has a value yet. */
+async function averageMasteryBySubject(db: AnyDb): Promise<Map<string, number>> {
+  const rows: { subjectId: string; mastery: number | null }[] = await db
+    .select({ subjectId: topics.subjectId, mastery: topics.mastery })
+    .from(topics);
+  const bySubject = new Map<string, number[]>();
+  for (const r of rows) {
+    if (r.mastery === null) continue;
+    const arr = bySubject.get(r.subjectId) ?? [];
+    arr.push(r.mastery);
+    bySubject.set(r.subjectId, arr);
+  }
+  const result = new Map<string, number>();
+  for (const [subjectId, values] of bySubject) {
+    result.set(subjectId, Math.round((values.reduce((s, v) => s + v, 0) / values.length) * 1000) / 1000);
+  }
+  return result;
+}
+
+/** Per-subject count of flashcards due by the end of today (same rule as dashboard.ts::countDueCards). */
+async function dueCardsTodayBySubject(db: AnyDb): Promise<Map<string, number>> {
+  const endOfToday = new Date();
+  endOfToday.setUTCHours(23, 59, 59, 999);
+  const rows: { subjectId: string }[] = await db
+    .select({ subjectId: artifacts.subjectId })
+    .from(flashcards)
+    .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
+    .where(
+      and(
+        eq(flashcards.suspended, false),
+        or(
+          eq(flashcards.state, 'new'),
+          and(isNotNull(flashcards.dueAt), lte(flashcards.dueAt, endOfToday)),
+        ),
+      ),
+    );
+  const counts = new Map<string, number>();
+  for (const r of rows) counts.set(r.subjectId, (counts.get(r.subjectId) ?? 0) + 1);
+  return counts;
+}
+
 /**
  * List-view aggregation for the Materie grid (docs/fasi/F2-materie.md):
- * document count and the soonest upcoming exam per subject. Archived
+ * document count, the soonest upcoming exam, average topic mastery,
+ * today's due-card count and reading coverage per subject. Archived
  * subjects are hidden by default — "archivio una materia: sparisce dalla
  * dashboard, la cartella resta intatta".
  */
@@ -41,20 +92,33 @@ export async function listSubjectSummaries(
   db: AnyDb,
   options: { includeArchived?: boolean } = {},
 ): Promise<SubjectSummaryDto[]> {
-  const rows = await db
-    .select({
-      subject: subjects,
-      documentCount: sql<number>`count(distinct ${documents.id})`.mapWith(Number),
-      nextExamAt: sql<
-        string | null
-      >`min(${exams.date}) filter (where ${exams.status} = 'scheduled' and ${exams.date} > now())`,
-    })
-    .from(subjects)
-    .leftJoin(documents, eq(documents.subjectId, subjects.id))
-    .leftJoin(exams, eq(exams.subjectId, subjects.id))
-    .where(options.includeArchived ? undefined : isNull(subjects.archivedAt))
-    .groupBy(subjects.id)
-    .orderBy(subjects.name);
+  const [rows, avgMastery, dueToday] = await Promise.all([
+    db
+      .select({
+        subject: subjects,
+        documentCount: sql<number>`count(distinct ${documents.id})`.mapWith(Number),
+        nextExamAt: sql<
+          string | null
+        >`min(${exams.date}) filter (where ${exams.status} = 'scheduled' and ${exams.date} > now())`,
+      })
+      .from(subjects)
+      .leftJoin(documents, eq(documents.subjectId, subjects.id))
+      .leftJoin(exams, eq(exams.subjectId, subjects.id))
+      .where(options.includeArchived ? undefined : isNull(subjects.archivedAt))
+      .groupBy(subjects.id)
+      .orderBy(subjects.name),
+    averageMasteryBySubject(db),
+    dueCardsTodayBySubject(db),
+  ]);
+
+  const coverageBySubject = new Map<string, number | null>(
+    await Promise.all(
+      rows.map(async (r: { subject: typeof subjects.$inferSelect }) => {
+        const coverage = await computeSubjectCoverage(db, r.subject.id);
+        return [r.subject.id, coverage] as const;
+      }),
+    ),
+  );
 
   return rows.map(
     (r: {
@@ -65,6 +129,9 @@ export async function listSubjectSummaries(
       ...toDto(r.subject),
       documentCount: r.documentCount,
       nextExamAt: r.nextExamAt ? new Date(r.nextExamAt).toISOString() : null,
+      averageMastery: avgMastery.get(r.subject.id) ?? null,
+      dueCardsToday: dueToday.get(r.subject.id) ?? 0,
+      topicCoverage: coverageBySubject.get(r.subject.id) ?? null,
     }),
   );
 }
