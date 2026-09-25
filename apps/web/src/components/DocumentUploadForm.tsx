@@ -22,8 +22,14 @@ const TYPE_LABELS: Record<DocumentType, string> = {
   altro: 'Altro',
 };
 
-export function DocumentUploadForm({ subjectSlug }: { subjectSlug: string }) {
-  const [type, setType] = useState<DocumentType>('appunti');
+export function DocumentUploadForm({
+  subjectSlug,
+  defaultType = 'appunti',
+}: {
+  subjectSlug: string;
+  defaultType?: DocumentType;
+}) {
+  const [type, setType] = useState<DocumentType>(defaultType);
   const inputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
