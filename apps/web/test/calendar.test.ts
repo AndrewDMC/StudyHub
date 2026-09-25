@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { createTestDb } from '@studyhub/db/testDb';
 import { exams, studyPlans, tasks } from '@studyhub/db';
 import { createSubject } from '../src/lib/subjects';
-import { getCalendarRange } from '../src/lib/calendar';
+import { getCalendarRange, getIcsFeed } from '../src/lib/calendar';
 
 const AVAILABILITY = { perWeekday: [0, 120, 120, 120, 120, 120, 0], blackoutDates: [] };
 const PREFS = {
@@ -203,5 +203,87 @@ describe('getCalendarRange', () => {
       subjectSlug: subject.slug,
       subjectColor: 'blue',
     });
+  });
+});
+
+describe('getIcsFeed', () => {
+  let dataRoot: string;
+  let db: Awaited<ReturnType<typeof createTestDb>>;
+
+  beforeEach(async () => {
+    dataRoot = await mkdtemp(join(tmpdir(), 'studyhub-ics-'));
+    db = await createTestDb();
+  });
+  afterEach(async () => {
+    await rm(dataRoot, { recursive: true, force: true });
+  });
+
+  async function activePlan(subjectId: string) {
+    const planId = randomUUID();
+    await db.insert(studyPlans).values({
+      id: planId,
+      subjectId,
+      startDate: '2026-01-01',
+      targetDate: '2026-02-01',
+      availability: AVAILABILITY,
+      prefs: PREFS,
+      feasibility: FEASIBILITY,
+      warnings: [],
+      model: 'fake-v1',
+      promptVersion: 'estimate_topics/v1',
+      status: 'active',
+    });
+    return planId;
+  }
+
+  it('produces a VCALENDAR with one VEVENT per task and per non-cancelled exam', async () => {
+    const subject = await createSubject(db, dataRoot, { name: 'Fisica 1', color: 'blue' });
+    const planId = await activePlan(subject.id);
+    await db.insert(tasks).values({
+      id: randomUUID(),
+      subjectId: subject.id,
+      planId,
+      taskKey: 'read:a:001',
+      date: '2026-01-10',
+      kind: 'read',
+      minutes: 50,
+      title: 'Studia termodinamica',
+      description: '',
+      payload: { action: 'read' },
+      status: 'todo',
+    });
+    await db.insert(exams).values([
+      {
+        id: randomUUID(),
+        subjectId: subject.id,
+        title: 'Scritto',
+        kind: 'scritto',
+        date: new Date('2026-02-15T09:00:00.000Z'),
+        status: 'scheduled',
+      },
+      {
+        id: randomUUID(),
+        subjectId: subject.id,
+        title: 'Rinviato',
+        kind: 'scritto',
+        date: new Date('2026-02-20T09:00:00.000Z'),
+        status: 'cancelled',
+      },
+    ]);
+
+    const ics = await getIcsFeed(db);
+    expect(ics.startsWith('BEGIN:VCALENDAR\r\n')).toBe(true);
+    expect((ics.match(/BEGIN:VEVENT/g) ?? []).length).toBe(2); // the task + the scheduled exam, not the cancelled one
+    expect(ics).toContain('SUMMARY:Studia termodinamica\r\n');
+    expect(ics).toContain('SUMMARY:Esame: Scritto\r\n');
+    expect(ics).not.toContain('Rinviato');
+    expect(ics).toContain('DTSTART;VALUE=DATE:20260110\r\n');
+    expect(ics).toContain('DTSTART;VALUE=DATE:20260215\r\n');
+    expect(ics).toContain('CATEGORIES:Fisica 1\r\n');
+  });
+
+  it('produces an empty-but-valid calendar when there is nothing to show', async () => {
+    const ics = await getIcsFeed(db);
+    expect(ics).toBe('BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//StudyHub//Planner//IT\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nEND:VCALENDAR\r\n');
   });
 });

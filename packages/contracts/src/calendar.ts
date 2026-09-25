@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { SubjectColorSchema } from '@studyhub/core';
-import { ExamKindSchema } from './exam.js';
+import { ExamKindSchema, ExamStatusSchema } from './exam.js';
 import { TaskDtoSchema } from './plan.js';
 
 /**
@@ -24,6 +24,9 @@ export const CalendarExamDtoSchema = z.object({
   title: z.string(),
   kind: ExamKindSchema,
   date: z.string().datetime(),
+  status: ExamStatusSchema,
+  location: z.string().nullable(),
+  description: z.string().nullable(),
 });
 export type CalendarExamDto = z.infer<typeof CalendarExamDtoSchema>;
 

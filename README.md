@@ -11,7 +11,8 @@ Local-first: le materie sono cartelle reali su disco, l'AI è un worker eseguibi
 > CLI `claude` da terminale usando la subscription già loggata, niente API key — vedi README
 > "Provider AI via CLI `claude`"), ripasso con **FSRS-5 reale**, simulazioni d'esame con modalità esame e
 > correzione formativa, **planner** con scheduling deterministico reale, bozza/revisione/commit del
-> piano e **calendario mensile cross-materia** (niente ancora ICS), **dashboard** cross-materia con
+> piano e **calendario mensile cross-materia** con **feed ICS sottoscrivibile** (export; import
+> ancora da fare), **dashboard** cross-materia con
 > command palette (`⌘K`), **`studyhub backup`/`restore`** reali, e **tagging documento↔argomento**
 > (`document_topics`) che il Planner usa già per pianificare sugli argomenti taggati, non solo sui
 > documenti, e **`topics.mastery` reale con formula completa** — retrievability (review FSRS),
@@ -24,7 +25,7 @@ Local-first: le materie sono cartelle reali su disco, l'AI è un worker eseguibi
 > (`generate_flashcards`/`generate_schema`/`generate_summary`/`extract_topics`, oltre a
 > `generate_simulation` di F5), con **`ModelPicker` + stima costo pre-flight** in UI prima di ogni
 > generazione. **Pagina `/admin`** (job, costi per mese, stato sync FS, reset indice). Niente
-> ancora tema light, densità, distribuzione Docker. 431 test (`pnpm turbo run test`), tutti verdi.
+> ancora tema light, densità, distribuzione Docker. 440 test (`pnpm turbo run test`), tutti verdi.
 > Dettagli e limiti dichiarati nella sezione "Stato" di ogni `docs/fasi/F*.md`; roadmap completa in
 > [docs/fasi/README.md](docs/fasi/README.md).
 

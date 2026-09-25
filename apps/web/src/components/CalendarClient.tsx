@@ -145,11 +145,39 @@ function DayAgenda({
   );
 }
 
+function IcsFeedLink() {
+  const [copied, setCopied] = useState(false);
+  const href = '/api/calendar.ics';
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(new URL(href, window.location.origin).toString());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API can be unavailable (e.g. insecure context) — the link below still works.
+    }
+  };
+
+  return (
+    <div className="mb-3 flex items-center gap-2 text-xs text-fg-muted">
+      <span>Sottoscrivi in Google Calendar/Apple Calendar:</span>
+      <a href={href} className="text-accent hover:underline">
+        {href}
+      </a>
+      <button type="button" onClick={copy} className="text-fg-secondary hover:text-fg-primary">
+        {copied ? 'Copiato' : 'Copia link'}
+      </button>
+    </div>
+  );
+}
+
 /**
  * Cross-subject month calendar (docs/fasi/F6-planner-calendario.md "Scope").
  * **Not built in this slice** (see F6 "Stato"): pointer drag&drop (moves go
  * through the date field below, not dragging a card), week/agenda views,
- * blackout-date editing, ICS export/import.
+ * blackout-date editing, ICS import (export is a subscribable feed — see
+ * `IcsFeedLink` above).
  */
 export function CalendarClient() {
   const queryClient = useQueryClient();
@@ -239,6 +267,8 @@ export function CalendarClient() {
           </button>
         </div>
       </div>
+
+      <IcsFeedLink />
 
       {subjectsInRange.size > 0 && (
         <div className="mb-3 flex flex-wrap gap-3 text-xs text-fg-secondary">

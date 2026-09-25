@@ -36,7 +36,9 @@ Spec funzionale completa: `docs/04-planner.md`.
 - [x] Sposto una task di 2 giorni: il piano si riadatta senza violare i vincoli duri e senza chiamate AI.
 - [x] Due esami ravvicinati: nessun giorno supera i minuti disponibili (con la materia che genera per
       seconda che rispetta i minuti già occupati dalla prima — non un solver congiunto, vedi "Stato").
-- [ ] Il feed ICS si apre correttamente in Google Calendar e si aggiorna.
+- [ ] Il feed ICS si apre correttamente in Google Calendar e si aggiorna. (Il feed esiste ed è
+      strutturalmente valido RFC 5545 — testato contro la spec, non contro un vero Google
+      Calendar/Apple Calendar in questo ambiente: vedi "Aggiornamento" in fondo al file.)
 - [x] Salto 3 giorni: al rientro il sistema propone un ricalcolo, non una lista di 30 task arretrate.
       (`GET .../plan/drift` + banner nel pannello "Oggi" — vedi "Aggiornamento" in fondo al file. La
       soglia di `detectDrift` è ≥2 giorni interamente saltati o ≥30% di task scadute nell'ultima
@@ -146,8 +148,9 @@ Cosa c'è, con test reali:
   campo data + bottone). Niente editing di blackout dates dalla UI (il campo esiste nel modello e nel
   wizard di generazione, non nel Calendario). Niente indicatore di fattibilità/sovraccarico sulla cella
   del giorno oltre al totale minuti.
-- **Export/import ICS**: non iniziato. `calendar_events` (per esami/lezioni/ICS importato come vincoli
-  d'ingresso, distinti dalle task — `docs/04-planner.md` §9.4) non esiste come tabella.
+- **Import ICS**: non iniziato (export sì, vedi "Aggiornamento" in fondo al file). `calendar_events`
+  (per esami/lezioni/ICS importato come vincoli d'ingresso, distinti dalle task —
+  `docs/04-planner.md` §9.4) non esiste come tabella.
 - **Anteprima di fattibilità _prima_ di generare**: il wizard lancia sempre il job; il verdetto di
   fattibilità e le 3 strategie si vedono solo dopo, nella bozza generata — non prima di spendere la
   chiamata Fase A.
@@ -210,3 +213,26 @@ free exports for apps/cli") perché non c'era ancora bisogno di esporlo da lì. 
 commit`: il commit scrive anche su filesystem via `apps/web/src/lib/plan.ts`, non condiviso col
 worker — resta un'azione solo-UI per ora. 3 test nuovi in `apps/cli/test/plan.test.ts` (genera una
 bozza, errore chiaro per materia sconosciuta, `ls` in ordine e con conteggio task corretto).
+
+## Aggiornamento — feed ICS (export) (2026-09-26)
+
+Export ICS reale — metà dello scope "Export ICS + import ICS" (import resta non iniziato, vedi
+"Non implementato"). `buildIcsCalendar` (`packages/core/src/ics.ts`) è uno scrittore RFC 5545
+minimale, dipendenze zero: escaping di testo (`;`, `,`, `\`, newline), *line folding* a 75
+caratteri con continuazione indentata, `\r\n` ovunque come richiesto dalla spec — testato contro
+la spec stessa (`packages/core/test/ics.test.ts`, 7 casi), non contro un parser ICS di terze
+parti. `getIcsFeed` (`apps/web/src/lib/calendar.ts`) riusa `getCalendarRange` — stessa query di
+`/calendario`, così il feed non può disallinearsi da quel che il Calendario stesso mostra — con
+una finestra `0001-01-01`..`9999-12-31` (tutto lo storico e il futuro in una chiamata: dataset
+piccolo per un'app locale mono-utente, e un client calendario ripolla sempre lo stesso URL fisso,
+niente parametri di query da variare). Un esame `cancelled` è escluso dal feed (fuorviante avere un
+evento su un calendario per un esame annullato); una task porta minuti/tipo/stato in
+`DESCRIPTION`, la materia in `CATEGORIES`. Esposto come `GET /api/calendar.ics`
+(`text/calendar`, non JSON) e come link "Sottoscrivi" + pulsante copia-link in `/calendario`.
+
+**Non verificato**: l'apertura reale in Google Calendar/Apple Calendar (nessun accesso di rete a
+servizi esterni in questo ambiente) — solo la correttezza strutturale RFC 5545. **Non
+implementato**: aggiornamento push del feed (un client calendario ripolla secondo il proprio
+intervallo, tipicamente ore — nessun meccanismo per notificarlo prima); `CalendarExamDtoSchema` è
+stato esteso con `status`/`location`/`description` (già letti dalla query esistente, solo non
+esposti) per permettere questo filtro — cambio additivo, nessun consumer esistente rotto.

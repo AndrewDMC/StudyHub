@@ -1,5 +1,6 @@
 import { and, eq, gte, lt } from 'drizzle-orm';
 import { exams, studyPlans, subjects, tasks, type Exam, type Task } from '@studyhub/db';
+import { buildIcsCalendar, type IcsEvent } from '@studyhub/core';
 import type { CalendarExamDto, CalendarRangeDto, CalendarTaskDto } from '@studyhub/contracts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -42,6 +43,9 @@ function toCalendarExamDto(row: Exam, subject: SubjectMeta): CalendarExamDto {
     title: row.title,
     kind: row.kind,
     date: row.date.toISOString(),
+    status: row.status,
+    location: row.location,
+    description: row.description,
   };
 }
 
@@ -122,4 +126,65 @@ export async function getCalendarRange(
       toCalendarExamDto(r, { slug: r.subjectSlug, name: r.subjectName, color: r.subjectColor }),
     ),
   };
+}
+
+const TASK_KIND_LABELS: Record<CalendarTaskDto['kind'], string> = {
+  read: 'Lettura',
+  flashcards: 'Flashcard',
+  schema: 'Schema',
+  simulation: 'Simulazione',
+  drill: 'Drill',
+  rest: 'Riposo',
+  review: 'Ripasso',
+};
+
+const TASK_STATUS_LABELS: Record<CalendarTaskDto['status'], string> = {
+  proposed: 'proposta',
+  todo: 'da fare',
+  doing: 'in corso',
+  done: 'fatta',
+  skipped: 'saltata',
+  moved: 'spostata',
+};
+
+/**
+ * Widest window `getCalendarRange`'s string/date comparisons accept — this is a single-user
+ * local app, so fetching the whole history/future in one feed request is cheap, and simpler than
+ * teaching calendar clients (which re-poll a fixed URL, no query params to vary) about a rolling
+ * window.
+ */
+const FEED_START = '0001-01-01';
+const FEED_END = '9999-12-31';
+
+/**
+ * ICS feed (docs/fasi/F6-planner-calendario.md scope: "Export ICS, feed sottoscrivibile") —
+ * every active-plan task and every non-cancelled exam, cross-subject, as one subscribable
+ * calendar. Reuses `getCalendarRange` rather than a parallel query, so the feed can never drift
+ * from what `/calendario` itself shows.
+ */
+export async function getIcsFeed(db: AnyDb): Promise<string> {
+  const range = await getCalendarRange(db, FEED_START, FEED_END);
+
+  const taskEvents: IcsEvent[] = range.tasks.map((t) => ({
+    uid: `task-${t.id}@studyhub.local`,
+    dateStart: t.date,
+    summary: t.title,
+    description: `${t.minutes} min · ${TASK_KIND_LABELS[t.kind]} · ${TASK_STATUS_LABELS[t.status]}${t.description ? `\n${t.description}` : ''}`,
+    categories: [t.subjectName],
+  }));
+
+  const examEvents: IcsEvent[] = range.exams
+    .filter((e) => e.status !== 'cancelled')
+    .map((e) => {
+      const description = [e.location, e.description].filter(Boolean).join(' — ');
+      return {
+        uid: `exam-${e.id}@studyhub.local`,
+        dateStart: e.date.slice(0, 10),
+        summary: `Esame: ${e.title}`,
+        categories: [e.subjectName, 'Esame'],
+        ...(description ? { description } : {}),
+      };
+    });
+
+  return buildIcsCalendar([...taskEvents, ...examEvents]);
 }
