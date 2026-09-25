@@ -11,6 +11,7 @@ import {
   approveDeck,
   ArtifactNotFoundError,
   enqueueFlashcardsGeneration,
+  enqueueSchemaGeneration,
   FlashcardNotFoundError,
   getArtifact,
   listArtifacts,
@@ -61,6 +62,47 @@ describe('enqueueFlashcardsGeneration', () => {
         types: ['basic'],
         difficulty: 2,
         lang: 'it',
+        force: false,
+      }),
+    ).rejects.toBeInstanceOf(SubjectNotFoundError);
+    expect(queue.add).not.toHaveBeenCalled();
+  });
+});
+
+describe('enqueueSchemaGeneration', () => {
+  it('resolves the subject slug to an id and enqueues with it', async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), 'studyhub-enqueue-'));
+    try {
+      const db = await createTestDb();
+      const subject = await createSubject(db, dataRoot, { name: 'Fisica 1', color: 'blue' });
+      const queue = fakeQueue();
+
+      const result = await enqueueSchemaGeneration(db, queue, subject.slug, {
+        scope: { docIds: [randomUUID()] },
+        depth: 2,
+        style: 'gerarchico',
+        force: false,
+      });
+
+      expect(result.jobId).toEqual(expect.any(String));
+      expect(queue.add).toHaveBeenCalledWith(
+        'generate_schema',
+        expect.objectContaining({ subjectId: subject.id }),
+        { jobId: result.jobId },
+      );
+    } finally {
+      await rm(dataRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('throws SubjectNotFoundError for an unknown slug without touching the queue', async () => {
+    const db = await createTestDb();
+    const queue = fakeQueue();
+    await expect(
+      enqueueSchemaGeneration(db, queue, 'nope', {
+        scope: { docIds: [randomUUID()] },
+        depth: 2,
+        style: 'gerarchico',
         force: false,
       }),
     ).rejects.toBeInstanceOf(SubjectNotFoundError);

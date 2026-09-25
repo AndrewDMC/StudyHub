@@ -3,6 +3,7 @@ import type {
   ExamProfilePromptInput,
   FlashcardsPromptInput,
   GradePromptInput,
+  SchemaPromptInput,
   SimulationPromptInput,
   SummaryPromptInput,
 } from './provider.js';
@@ -72,6 +73,15 @@ export function renderEstimateTopicsUserPrompt(input: EstimateTopicsPromptInput)
       (u) =>
         `<document id="${u.key}" title="${u.name}" pages="${u.pages}">\n${escapeClosingTag(u.excerpt, 'document')}\n</document>`,
     ),
+  ].join('\n');
+}
+
+export function renderSchemaUserPrompt(input: SchemaPromptInput): string {
+  return [
+    `Materia: ${input.subjectName}`,
+    `Stile: ${input.style}. Profondità: ${input.depth} livelli.`,
+    '',
+    documentsBlock(input.chunks),
   ].join('\n');
 }
 

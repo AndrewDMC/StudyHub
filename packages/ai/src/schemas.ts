@@ -26,6 +26,28 @@ export const FlashcardsOutputSchema = z.object({
 });
 export type FlashcardsOutput = z.infer<typeof FlashcardsOutputSchema>;
 
+/**
+ * `generate_schema` (docs/03-ai-e-worker.md §3.2). One node of the schema —
+ * `nodeId` is whatever short id the model assigns it (referenced from
+ * `mermaid` and from `markdown`'s own headings/list items), `sourceRef.quote`
+ * is validated verbatim against the cited chunk just like a flashcard's, so
+ * a schema can't invent structure the material doesn't support.
+ */
+export const SchemaNodeSchema = z.object({
+  nodeId: z.string().min(1),
+  label: z.string().min(1),
+  sourceRef: AiSourceRefSchema,
+});
+export type SchemaNode = z.infer<typeof SchemaNodeSchema>;
+
+export const SchemaOutputSchema = z.object({
+  markdown: z.string().min(1),
+  /** Mermaid diagram body (no ```mermaid fence) — optional, e.g. a 'confronto' style may be prose-only. */
+  mermaid: z.string().optional(),
+  nodes: z.array(SchemaNodeSchema).min(1),
+});
+export type SchemaOutput = z.infer<typeof SchemaOutputSchema>;
+
 /** docs/03-ai-e-worker.md §3.3. */
 export const SummaryOutputSchema = z.object({
   markdown: z.string().min(1),

@@ -184,6 +184,56 @@ describe('FakeProvider.estimateTopics', () => {
   });
 });
 
+describe('FakeProvider.generateSchema', () => {
+  const provider = new FakeProvider();
+
+  it('every node quote appears verbatim in its cited chunk text', async () => {
+    const text =
+      "L'entropia di un sistema isolato non diminuisce mai. Il secondo principio della termodinamica lo formalizza.";
+    const { data } = await provider.generateSchema(
+      {
+        subjectName: 'Fisica 1',
+        chunks: [{ docId, page: 3, text }],
+        depth: 2,
+        style: 'gerarchico',
+      },
+      'irrelevant',
+    );
+    expect(data.nodes.length).toBeGreaterThan(0);
+    for (const node of data.nodes) {
+      expect(text).toContain(node.sourceRef.quote);
+      expect(node.sourceRef.docId).toBe(docId);
+      expect(node.sourceRef.page).toBe(3);
+    }
+  });
+
+  it('omits the mermaid diagram for a confronto-style schema', async () => {
+    const { data } = await provider.generateSchema(
+      {
+        subjectName: 'X',
+        chunks: [{ docId, page: 1, text: 'Contenuto sufficientemente lungo da generare un nodo.' }],
+        depth: 1,
+        style: 'confronto',
+      },
+      'irrelevant',
+    );
+    expect(data.mermaid).toBeUndefined();
+  });
+
+  it('includes a mermaid graph for a gerarchico-style schema', async () => {
+    const { data } = await provider.generateSchema(
+      {
+        subjectName: 'X',
+        chunks: [{ docId, page: 1, text: 'Contenuto sufficientemente lungo da generare un nodo.' }],
+        depth: 1,
+        style: 'gerarchico',
+      },
+      'irrelevant',
+    );
+    expect(data.mermaid).toContain('graph TD');
+  });
+});
+
 describe('FakeProvider.generateSummary', () => {
   const provider = new FakeProvider();
 

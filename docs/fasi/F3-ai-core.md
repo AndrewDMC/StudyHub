@@ -103,11 +103,28 @@ documenti taggati e da lì ai chunk, con lo stesso controllo di appartenenza all
 per `docIds` — testato (`apps/worker/test/generateFlashcards.test.ts`), incluso il caso di un
 argomento senza documenti collegati (errore chiaro, non uno scope vuoto silenzioso).
 
+**Aggiornamento (2026-09-25)**: `generate_schema` (§3.2) è ora reale, stesso pattern di
+`generate_summary` — `packages/ai` espone `generateSchema` su tutti e tre i provider
+(`FakeProvider`, `AnthropicProvider`, `ClaudeCliProvider`), con prompt versionato
+(`packages/ai/prompts/schema/v1.md`) e lo stesso gate anti-allucinazione delle flashcard: ogni
+nodo dello schema è scartato se il suo `sourceRef.quote` non è sottostringa esatta del chunk
+citato (`apps/worker/src/processors/generation/generateSchema.ts`, testato incluso il caso di un
+nodo con citazione inventata). Persistito come JSON (`artifacts/schemas/<id>.json`: markdown,
+diagramma Mermaid opzionale, mapping nodo→sourceRef), non Markdown puro come il riassunto — la
+citazione per nodo va validata come dato strutturato, non solo mostrata in prosa. Stessa
+idempotenza (`jobKey`) e budget guard di `generate_summary`. Esposto in UI come terzo pulsante nel
+`GenerationPanel` (`/materie/[slug]`), con parametri fissi (`depth: 2`, `style: 'gerarchico'`) come
+già per flashcard/riassunto — nessun controllo di stile/profondità in UI ancora. **Non
+implementato**: una pagina di revisione dedicata (lo schema compare nella lista artefatti ma senza
+link, come il riassunto); il rendering del diagramma Mermaid in UI.
+
 **Non implementato** in questa slice (limiti dichiarati, non nascosti):
 
-- **`generate_schema`, `generate_simulation`, `extract_topics`**: non implementati. Seguono lo
-  stesso pattern di `generate_flashcards`/`generate_summary` (provider adapter + validazione +
-  persistenza) e sono il prossimo passo naturale, non un redesign.
+- **`extract_topics`**: non implementato. Segue lo stesso pattern di `generate_flashcards`/
+  `generate_summary` (provider adapter + validazione + persistenza) ed è il prossimo passo
+  naturale, non un redesign. (`generate_simulation` è reale, vedi
+  `docs/fasi/F5-esami-simulazioni.md` "Stato"; `generate_schema` è reale, vedi "Aggiornamento"
+  sotto — questa riga era disallineata con entrambi.)
 - **Dedup semantica** (cosine > 0.92 contro le card esistenti del deck): ridotta a dedup per testo
   esatto del `front` — la dedup semantica serve embeddings, non ancora collegati (vedi F1).
 - **Eval harness**: 2 fixture (`packages/ai/evals/flashcards/`, STEM + umanistica), non le "5-10

@@ -9,6 +9,7 @@ import type {
   FlashcardsPromptInput,
   GeneratedWithMeta,
   GradePromptInput,
+  SchemaPromptInput,
   SimulationPromptInput,
   SummaryPromptInput,
 } from './provider.js';
@@ -17,12 +18,14 @@ import {
   ExamProfileSchema,
   FlashcardsOutputSchema,
   GradeOutputSchema,
+  SchemaOutputSchema,
   SimulationOutputSchema,
   SummaryOutputSchema,
   type EstimateTopicsOutput,
   type ExamProfile,
   type FlashcardsOutput,
   type GradeOutput,
+  type SchemaOutput,
   type SimulationOutput,
   type SummaryOutput,
 } from './schemas.js';
@@ -32,6 +35,7 @@ import {
   renderExamProfileUserPrompt,
   renderFlashcardsUserPrompt,
   renderGradeUserPrompt,
+  renderSchemaUserPrompt,
   renderSimulationUserPrompt,
   renderSummaryUserPrompt,
 } from './promptRender.js';
@@ -119,6 +123,20 @@ export class ClaudeCliProvider implements AiProvider {
       system,
       renderSummaryUserPrompt(input),
       SummaryOutputSchema,
+      model,
+    );
+    return { data, usage, model, promptVersion };
+  }
+
+  async generateSchema(
+    input: SchemaPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<SchemaOutput>> {
+    const { text: system, promptVersion } = loadPrompt('schema', 1);
+    const { data, usage } = await this.callWithSchema(
+      system,
+      renderSchemaUserPrompt(input),
+      SchemaOutputSchema,
       model,
     );
     return { data, usage, model, promptVersion };

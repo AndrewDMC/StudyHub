@@ -5,6 +5,7 @@ import type {
   FlashcardsPromptInput,
   GeneratedWithMeta,
   GradePromptInput,
+  SchemaPromptInput,
   SimulationPromptInput,
   SummaryPromptInput,
 } from './provider.js';
@@ -14,6 +15,8 @@ import type {
   FlashcardsOutput,
   GeneratedFlashcard,
   GradeOutput,
+  SchemaNode,
+  SchemaOutput,
   SimulationOutput,
   SummaryOutput,
   TopicEstimate,
@@ -26,6 +29,7 @@ import {
   EXAM_PROFILE_PROMPT_VERSION,
   FLASHCARDS_PROMPT_VERSION,
   GRADING_PROMPT_VERSION,
+  SCHEMA_PROMPT_VERSION,
   SIMULATION_PROMPT_VERSION,
   SUMMARY_PROMPT_VERSION,
 } from './versions.js';
@@ -107,6 +111,46 @@ export class FakeProvider implements AiProvider {
       usage: { inputTokens, outputTokens },
       model: FAKE_MODEL,
       promptVersion: SUMMARY_PROMPT_VERSION,
+    };
+  }
+
+  async generateSchema(
+    input: SchemaPromptInput,
+    _model: string,
+  ): Promise<GeneratedWithMeta<SchemaOutput>> {
+    const nodes: SchemaNode[] = input.chunks.map((chunk, i) => {
+      const quote = splitSentences(chunk.text).find((s) => s.length >= 20) ?? chunk.text.slice(0, 50);
+      return {
+        nodeId: `n${i + 1}`,
+        label: truncate(quote, 60),
+        sourceRef: { docId: chunk.docId, page: chunk.page, quote },
+      };
+    });
+
+    const sections = nodes.map(
+      (n) => `## ${n.label}\n\n- Fonte: pag. ${n.sourceRef.page}`,
+    );
+    const markdown = [`# Schema — ${input.subjectName}`, '', ...sections, ''].join('\n\n');
+
+    // A 'confronto' reads better as a table in Markdown alone (docs/03 §3.2) — no diagram.
+    const mermaid =
+      input.style === 'confronto'
+        ? undefined
+        : [
+            'graph TD',
+            ...nodes.map((n) => `  ${n.nodeId}["${n.label.replace(/"/g, "'")}"]`),
+            ...nodes.slice(1).map((n, i) => `  ${nodes[i]!.nodeId} --> ${n.nodeId}`),
+          ].join('\n');
+
+    const data: SchemaOutput = { markdown, mermaid, nodes };
+    const inputTokens = input.chunks.reduce((sum, c) => sum + estimateTokens(c.text), 0);
+    const outputTokens = estimateTokens(JSON.stringify(data));
+
+    return {
+      data,
+      usage: { inputTokens, outputTokens },
+      model: FAKE_MODEL,
+      promptVersion: SCHEMA_PROMPT_VERSION,
     };
   }
 

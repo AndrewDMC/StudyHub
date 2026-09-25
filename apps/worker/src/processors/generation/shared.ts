@@ -138,6 +138,7 @@ export async function findIdempotentArtifactId(db: any, jobKey: string): Promise
 
 const AI_JOB_TYPES = [
   'generate_flashcards',
+  'generate_schema',
   'generate_summary',
   'extract_exam_profile',
   'generate_simulation',

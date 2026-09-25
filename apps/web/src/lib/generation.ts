@@ -5,6 +5,7 @@ import type {
   ArtifactDto,
   FlashcardDto,
   GenerateFlashcardsJobInput,
+  GenerateSchemaJobInput,
   GenerateSummaryJobInput,
   ReviewFlashcardRequest,
 } from '@studyhub/contracts';
@@ -88,6 +89,18 @@ export async function enqueueSummaryGeneration(
   const subject = await requireSubject(db, subjectSlug);
   const jobId = randomUUID();
   await queue.add('generate_summary', { ...input, subjectId: subject.id }, { jobId });
+  return { jobId };
+}
+
+export async function enqueueSchemaGeneration(
+  db: AnyDb,
+  queue: Pick<Queue, 'add'>,
+  subjectSlug: string,
+  input: Omit<GenerateSchemaJobInput, 'subjectId'>,
+): Promise<{ jobId: string }> {
+  const subject = await requireSubject(db, subjectSlug);
+  const jobId = randomUUID();
+  await queue.add('generate_schema', { ...input, subjectId: subject.id }, { jobId });
   return { jobId };
 }
 

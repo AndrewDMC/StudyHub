@@ -25,6 +25,16 @@ export const GenerateFlashcardsJobInputSchema = z.object({
 });
 export type GenerateFlashcardsJobInput = z.infer<typeof GenerateFlashcardsJobInputSchema>;
 
+export const GenerateSchemaJobInputSchema = z.object({
+  subjectId: z.string().uuid(),
+  scope: GenerationScopeSchema,
+  depth: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).default(2),
+  style: z.enum(['gerarchico', 'mappa', 'timeline', 'confronto']).default('gerarchico'),
+  model: z.string().optional(),
+  force: z.boolean().default(false),
+});
+export type GenerateSchemaJobInput = z.infer<typeof GenerateSchemaJobInputSchema>;
+
 export const GenerateSummaryJobInputSchema = z.object({
   subjectId: z.string().uuid(),
   scope: GenerationScopeSchema,

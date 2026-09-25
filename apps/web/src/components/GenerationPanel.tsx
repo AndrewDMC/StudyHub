@@ -25,15 +25,17 @@ async function fetchArtifacts(slug: string): Promise<ArtifactDto[]> {
   return body.artifacts as ArtifactDto[];
 }
 
-async function enqueue(slug: string, kind: 'flashcards' | 'summary', docIds: string[]) {
+async function enqueue(slug: string, kind: 'flashcards' | 'schema' | 'summary', docIds: string[]) {
+  const requestBody =
+    kind === 'flashcards'
+      ? { scope: { docIds }, count: 'auto', types: ['basic', 'cloze'], difficulty: 2, lang: 'it' }
+      : kind === 'schema'
+        ? { scope: { docIds }, depth: 2, style: 'gerarchico' }
+        : { scope: { docIds }, length: 'standard' };
   const res = await fetch(`/api/subjects/${slug}/artifacts/${kind}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(
-      kind === 'flashcards'
-        ? { scope: { docIds }, count: 'auto', types: ['basic', 'cloze'], difficulty: 2, lang: 'it' }
-        : { scope: { docIds }, length: 'standard' },
-    ),
+    body: JSON.stringify(requestBody),
   });
   const body = await res.json();
   if (!res.ok) throw new Error(body.error?.message ?? 'Avvio generazione fallito');
@@ -55,7 +57,8 @@ export function GenerationPanel({
   const readyDocIds = documents.filter((d) => d.status === 'parsed').map((d) => d.id);
 
   const generateMutation = useMutation({
-    mutationFn: (kind: 'flashcards' | 'summary') => enqueue(subjectSlug, kind, readyDocIds),
+    mutationFn: (kind: 'flashcards' | 'schema' | 'summary') =>
+      enqueue(subjectSlug, kind, readyDocIds),
     onSuccess: () => {
       // The job runs asynchronously in the worker; give it a moment then refresh.
       setTimeout(
@@ -87,6 +90,14 @@ export function GenerationPanel({
           className="rounded-[var(--radius-control)] border border-border px-3 py-1.5 text-xs text-fg-secondary hover:text-fg-primary disabled:opacity-50"
         >
           Genera riassunto
+        </button>
+        <button
+          type="button"
+          disabled={readyDocIds.length === 0 || generateMutation.isPending}
+          onClick={() => generateMutation.mutate('schema')}
+          className="rounded-[var(--radius-control)] border border-border px-3 py-1.5 text-xs text-fg-secondary hover:text-fg-primary disabled:opacity-50"
+        >
+          Genera schema
         </button>
         {readyDocIds.length === 0 && (
           <p className="text-[11px] text-fg-muted">

@@ -4,6 +4,7 @@ import type {
   FlashcardType,
   FlashcardsOutput,
   GradeOutput,
+  SchemaOutput,
   SimulationItem,
   SimulationOutput,
   SummaryOutput,
@@ -40,6 +41,14 @@ export interface SummaryPromptInput {
   subjectName: string;
   chunks: ChunkRef[];
   length: 'flash' | 'standard' | 'esteso';
+}
+
+/** docs/03-ai-e-worker.md §3.2. */
+export interface SchemaPromptInput {
+  subjectName: string;
+  chunks: ChunkRef[];
+  depth: 1 | 2 | 3 | 4;
+  style: 'gerarchico' | 'mappa' | 'timeline' | 'confronto';
 }
 
 /** Chunks come from documents of type `esami` (docs/03-ai-e-worker.md §2). */
@@ -99,6 +108,7 @@ export interface AiProvider {
     input: SummaryPromptInput,
     model: string,
   ): Promise<GeneratedWithMeta<SummaryOutput>>;
+  generateSchema(input: SchemaPromptInput, model: string): Promise<GeneratedWithMeta<SchemaOutput>>;
   extractExamProfile(
     input: ExamProfilePromptInput,
     model: string,

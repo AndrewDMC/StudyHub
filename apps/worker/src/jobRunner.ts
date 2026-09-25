@@ -6,6 +6,7 @@ import {
   ExtractTextJobInputSchema,
   GenerateFlashcardsJobInputSchema,
   GeneratePlanJobInputSchema,
+  GenerateSchemaJobInputSchema,
   GenerateSimulationJobInputSchema,
   GenerateSummaryJobInputSchema,
   GradeAttemptJobInputSchema,
@@ -18,6 +19,7 @@ import { processPing } from './processors/ping.js';
 import { reconcileSubjects } from './processors/reconcile.js';
 import { processExtractText } from './processors/extractText.js';
 import { processGenerateFlashcards } from './processors/generation/generateFlashcards.js';
+import { processGenerateSchema } from './processors/generation/generateSchema.js';
 import { processGenerateSummary } from './processors/generation/generateSummary.js';
 import { processExtractExamProfile } from './processors/exam/extractExamProfile.js';
 import { processGenerateSimulation } from './processors/exam/generateSimulation.js';
@@ -109,6 +111,8 @@ async function dispatch(
       return processExtractText(db, dataRoot, ExtractTextJobInputSchema.parse(data));
     case 'generate_flashcards':
       return processGenerateFlashcards(db, dataRoot, GenerateFlashcardsJobInputSchema.parse(data));
+    case 'generate_schema':
+      return processGenerateSchema(db, dataRoot, GenerateSchemaJobInputSchema.parse(data));
     case 'generate_summary':
       return processGenerateSummary(db, dataRoot, GenerateSummaryJobInputSchema.parse(data));
     case 'extract_exam_profile':

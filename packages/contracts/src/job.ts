@@ -10,6 +10,7 @@ export const JobTypeSchema = z.enum([
   'reconcile',
   'extract_text',
   'generate_flashcards',
+  'generate_schema',
   'generate_summary',
   'extract_exam_profile',
   'generate_simulation',
