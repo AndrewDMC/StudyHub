@@ -24,9 +24,11 @@ Local-first: le materie sono cartelle reali su disco, l'AI è un worker eseguibi
 > mastery ricalcolata). Motore AI ora completo sui quattro processor dello scope F3
 > (`generate_flashcards`/`generate_schema`/`generate_summary`/`extract_topics`, oltre a
 > `generate_simulation` di F5), con **`ModelPicker` + stima costo pre-flight** in UI prima di ogni
-> generazione. **Pagina `/admin`** (job, costi per mese, stato sync FS, reset indice). Niente
-> ancora tema light, densità, distribuzione Docker. 440 test (`pnpm turbo run test`), tutti verdi.
-> Dettagli e limiti dichiarati nella sezione "Stato" di ogni `docs/fasi/F*.md`; roadmap completa in
+> generazione. **Pagina `/admin`** (job, costi per mese, stato sync FS, reset indice). **Export CSV**
+> di un mazzo flashcard (importabile in Anki, mono-direzionale — niente ancora `.apkg` con stato
+> di scheduling). Niente ancora tema light, densità, distribuzione Docker. 449 test
+> (`pnpm turbo run test`), tutti verdi. Dettagli e limiti dichiarati nella sezione "Stato" di ogni
+> `docs/fasi/F*.md`; roadmap completa in
 > [docs/fasi/README.md](docs/fasi/README.md).
 
 ## Sviluppo locale

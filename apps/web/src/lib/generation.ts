@@ -12,6 +12,7 @@ import {
   type Flashcard,
 } from '@studyhub/db';
 import { estimateCostEur, estimateTokens } from '@studyhub/ai';
+import { buildCsv } from '@studyhub/core';
 import type {
   ArtifactDto,
   EstimateGenerationCostRequest,
@@ -163,6 +164,29 @@ export async function listDeckFlashcards(
   await getArtifact(db, subjectSlug, deckId); // 404s if the deck doesn't belong to this subject
   const rows: Flashcard[] = await db.select().from(flashcards).where(eq(flashcards.deckId, deckId));
   return rows.map(toFlashcardDto);
+}
+
+/**
+ * CSV export (docs/fasi/F4-flashcard.md scope: "Export/import Anki `.apkg`... e CSV") — front/
+ * back/type/hint, importable via Anki's own CSV importer. One-way and text-only on purpose: a
+ * real `.apkg` round-trip that preserves FSRS scheduling state through Anki's own scheduler is a
+ * separate, much larger effort (Anki's SQLite note/card schema, its own ease/interval model, not
+ * FSRS) — not attempted here, declared in docs/fasi/F4-flashcard.md "Stato".
+ */
+export async function exportDeckCsv(
+  db: AnyDb,
+  subjectSlug: string,
+  deckId: string,
+): Promise<{ filename: string; csv: string }> {
+  const artifact = await getArtifact(db, subjectSlug, deckId);
+  const rows: Flashcard[] = await db.select().from(flashcards).where(eq(flashcards.deckId, deckId));
+
+  const csv = buildCsv(
+    ['front', 'back', 'type', 'hint'],
+    rows.map((r) => [r.front, r.back, r.type, r.hint ?? '']),
+  );
+  const filename = `${artifact.title.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.csv`;
+  return { filename, csv };
 }
 
 /**

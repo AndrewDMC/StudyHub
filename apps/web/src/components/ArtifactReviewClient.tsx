@@ -85,14 +85,22 @@ export function ArtifactReviewClient({
           </Link>
           <h1 className="text-xl font-semibold tracking-[-0.02em]">Revisione flashcard</h1>
         </div>
-        <button
-          type="button"
-          onClick={() => approveAllMutation.mutate()}
-          disabled={approveAllMutation.isPending || !query.data || query.data.length === 0}
-          className="rounded-[var(--radius-control)] bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
-        >
-          Approva il mazzo
-        </button>
+        <div className="flex items-center gap-2">
+          <a
+            href={`/api/subjects/${subjectSlug}/artifacts/${artifactId}/export.csv`}
+            className="rounded-[var(--radius-control)] border border-border px-3 py-1.5 text-sm text-fg-secondary hover:text-fg-primary"
+          >
+            Esporta CSV
+          </a>
+          <button
+            type="button"
+            onClick={() => approveAllMutation.mutate()}
+            disabled={approveAllMutation.isPending || !query.data || query.data.length === 0}
+            className="rounded-[var(--radius-control)] bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+          >
+            Approva il mazzo
+          </button>
+        </div>
       </div>
       {approveAllMutation.isSuccess && <p className="mb-3 text-xs text-ok">Mazzo approvato.</p>}
       {approveAllMutation.isError && (

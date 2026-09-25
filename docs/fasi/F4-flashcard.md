@@ -26,7 +26,9 @@ Le card generate diventano un sistema di ripasso serio, con FSRS e statistiche c
 
 - [ ] 200 card in coda: la sessione scorre senza lag percepibile, nessun mouse necessario.
 - [ ] Chiudo il browser a metà sessione: le risposte già date sono salvate.
-- [ ] Export su Anki e reimport: nessuna perdita di stato di scheduling.
+- [ ] Export su Anki e reimport: nessuna perdita di stato di scheduling. (Export CSV reale — vedi
+      "Aggiornamento" in fondo al file — ma è testo semplice, non porta lo stato di scheduling
+      FSRS; il criterio letteralmente inteso richiede un vero `.apkg`, non iniziato.)
 - [ ] Il forecast a 30 giorni combacia con lo scheduling effettivo (test deterministico con clock fissato).
 - [ ] Sospendo una card: sparisce dalla coda ma resta nel deck.
 
@@ -68,7 +70,8 @@ Cosa c'è, con test reali:
 - **Editor deck** (crea/modifica/sposta/elimina card in blocco, merge di deck, tag): solo le
   operazioni singole già presenti (review-queue di F3 per pre-approvazione, sospensione qui).
 - **Export/import Anki `.apkg`**: non iniziato — è un formato SQLite zippato, scope a parte non
-  coperto in questa sessione. CSV più semplice ma anch'esso rimandato.
+  coperto in questa sessione. Export **CSV** reale (vedi "Aggiornamento" in fondo al file); import
+  (CSV o `.apkg`) resta non iniziato.
 - **Test "forecast combacia con lo scheduling effettivo"**: coperto solo indirettamente
   (`forecastDueCounts` su uno schedule vero prodotto da `scheduleReview`, non un confronto a 30
   giorni con repliche multiple).
@@ -100,3 +103,21 @@ La formula di mastery aveva ancora una componente sempre assente: la copertura. 
 `docs/fasi/F6-planner-calendario.md` "Stato" per come i task "read" del Planner alimentano il dato.
 Le tre componenti sono ora tutte reali; la formula resta `null` solo per un argomento senza alcun
 dato in nessuna delle tre (nessuna card, nessuna simulazione, nessun materiale taggato).
+
+## Aggiornamento — export CSV di un mazzo (2026-09-26)
+
+Metà dello scope "Export/import Anki `.apkg`... e CSV": l'export CSV, non l'`.apkg`. `buildCsv`
+(`packages/core/src/csv.ts`) è uno scrittore RFC 4180 minimale (stesso stile di `ics.ts` di F6:
+zero dipendenze, quoting solo quando serve, `\r\n`) — testato contro la spec
+(`packages/core/test/csv.test.ts`, 6 casi). `exportDeckCsv`
+(`apps/web/src/lib/generation.ts`) scrive `front,back,type,hint`, una riga per card, nome file
+dal titolo del mazzo. Esposto come `GET /api/subjects/[slug]/artifacts/[artifactId]/export.csv`
+(`text/csv`, non JSON) e come link "Esporta CSV" nella pagina di revisione del mazzo.
+
+**Dichiaratamente non** quello che il criterio di accettazione "Export su Anki e reimport: nessuna
+perdita di stato di scheduling" chiede alla lettera: è testo semplice (front/back/type/hint),
+importabile nel CSV importer di Anki ma **solo in una direzione** — una volta importato, è lo
+scheduler di Anki (ease/interval, non FSRS) a gestire quella card, non StudyHub. Un vero
+round-trip che preservi lo stato FSRS richiederebbe scrivere/leggere il formato `.apkg` reale
+(SQLite zippato, schema note/card proprio di Anki) — scope a parte, non iniziato, più grande di
+quanto valesse la pena affrontare in questa sessione insieme al resto.

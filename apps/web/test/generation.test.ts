@@ -13,6 +13,7 @@ import {
   enqueueFlashcardsGeneration,
   enqueueSchemaGeneration,
   estimateGenerationCost,
+  exportDeckCsv,
   FlashcardNotFoundError,
   getArtifact,
   listArtifacts,
@@ -270,6 +271,27 @@ describe('artifacts + review queue', () => {
     const cards = await listDeckFlashcards(db, subjectSlug, deckId);
     expect(cards).toHaveLength(1);
     expect(cards[0]?.front).toBe('Domanda?');
+  });
+
+  it('exportDeckCsv writes a header + one row per card, importable filename from the deck title', async () => {
+    const { filename, csv } = await exportDeckCsv(db, subjectSlug, deckId);
+    expect(filename).toBe('deck-di-prova.csv');
+    expect(csv).toBe('front,back,type,hint\r\nDomanda?,Risposta.,basic,\r\n');
+  });
+
+  it('exportDeckCsv quotes a field containing a comma', async () => {
+    await db
+      .update(flashcards)
+      .set({ front: 'Domanda, con virgola?' })
+      .where(eq(flashcards.id, cardId));
+    const { csv } = await exportDeckCsv(db, subjectSlug, deckId);
+    expect(csv).toContain('"Domanda, con virgola?"');
+  });
+
+  it('exportDeckCsv throws ArtifactNotFoundError for a deck outside the subject', async () => {
+    await expect(exportDeckCsv(db, subjectSlug, randomUUID())).rejects.toBeInstanceOf(
+      ArtifactNotFoundError,
+    );
   });
 
   it('reviewFlashcard(discard) removes the card', async () => {
