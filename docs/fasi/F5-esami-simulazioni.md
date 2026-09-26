@@ -82,7 +82,6 @@ BullMQ vera (`apps/worker/test/queue.test.ts`), verificato fallire col vecchio n
 **Non implementato**:
 
 - Input multimodale (pagine degli esami come immagini) — il profilo si basa solo sul testo estratto.
-- "Seconda opinione con modello superiore su singolo item": non esposta in UI.
 - Confronto di trend per argomento in grafico: c'è lo storico per simulazione, non la vista per argomento.
 
 ## Aggiornamento — tag dell'argomento anche sugli esercizi di una simulazione completa (2026-09-26)
@@ -106,3 +105,16 @@ cambio alla formula, solo di indirizzo — `packages/db` non dipendeva ancora da
 nessun ciclo perché `@studyhub/core` non dipende da `@studyhub/db`), così sia `grade_attempt` (worker)
 sia `submitReview` (`apps/web/src/lib/review.ts`, F4) possono richiamarla senza che `apps/web` importi
 codice interno di un altro _app_. Vedi `docs/fasi/F4-flashcard.md` "Stato" per i test.
+
+## Aggiornamento (2026-09-26): seconda opinione con modello superiore su singolo item
+
+Chiuso il gap "non esposta in UI" (docs/fasi/F5-esami-simulazioni.md "Rischi"). Nuovo job
+`grade_item_second_opinion` (`apps/worker/src/processors/exam/gradeItemSecondOpinion.ts`, riusa
+`reconcileWithRubric` di `gradeAttempt.ts`): re-corregge un item già corretto con `claude-opus-5`
+invece del `claude-sonnet-5` usato in `grade_attempt`. Il risultato va in nuove colonne
+`second_opinion_*` sulla stessa riga `attempt_item_results` (migrazione `0009_second_opinion.sql`)
+— **accanto** all'originale, mai a sovrascriverlo: i due possono legittimamente disaccordare ed
+entrambi sono utili da vedere. `POST /api/subjects/:slug/attempts/:attemptId/items/:itemId/second-
+opinion` accoda il job (rifiuta se il tentativo non è ancora corretto, o se l'item non appartiene a
+quella simulazione); `AttemptResultsClient` mostra un bottone "Chiedi una seconda opinione" per
+item, con polling sui risultati finché non atterra.

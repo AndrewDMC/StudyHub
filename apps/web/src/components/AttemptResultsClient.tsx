@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import type { AttemptDto, AttemptItemResultDto } from '@studyhub/contracts';
@@ -17,6 +18,17 @@ async function fetchResults(slug: string, id: string): Promise<AttemptItemResult
   const body = await res.json();
   if (!res.ok) throw new Error(body.error?.message ?? 'Risultati non disponibili');
   return body.results as AttemptItemResultDto[];
+}
+
+async function requestSecondOpinion(slug: string, attemptId: string, itemId: string) {
+  const res = await fetch(
+    `/api/subjects/${slug}/attempts/${attemptId}/items/${itemId}/second-opinion`,
+    { method: 'POST' },
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error?.message ?? 'Richiesta seconda opinione fallita');
+  }
 }
 
 /**
@@ -38,11 +50,33 @@ export function AttemptResultsClient({
     refetchInterval: (q) => (q.state.data?.status === 'graded' ? false : 3000),
   });
   const graded = attemptQuery.data?.status === 'graded';
+  const [pendingOpinions, setPendingOpinions] = useState<Set<string>>(new Set());
   const resultsQuery = useQuery({
     queryKey: ['attempt-results', attemptId],
     queryFn: () => fetchResults(subjectSlug, attemptId),
     enabled: graded,
+    // A requested second opinion also runs in the worker: keep polling while one is out.
+    refetchInterval: () => (pendingOpinions.size > 0 ? 3000 : false),
   });
+
+  const secondOpinion = useMutation({
+    mutationFn: (itemId: string) => requestSecondOpinion(subjectSlug, attemptId, itemId),
+    onSuccess: (_data, itemId) => setPendingOpinions((s) => new Set(s).add(itemId)),
+  });
+
+  useEffect(() => {
+    if (!resultsQuery.isSuccess || pendingOpinions.size === 0) return;
+    const landed = [...pendingOpinions].filter(
+      (itemId) => resultsQuery.data.find((r) => r.itemId === itemId)?.secondOpinion,
+    );
+    if (landed.length === 0) return;
+    setPendingOpinions((s) => {
+      const next = new Set(s);
+      for (const itemId of landed) next.delete(itemId);
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resultsQuery.data]);
 
   const drill = useMutation({
     mutationFn: async (topicId: string) => {
@@ -167,6 +201,47 @@ export function AttemptResultsClient({
                     <summary className="cursor-pointer">Soluzione di riferimento</summary>
                     <p className="mt-1 whitespace-pre-wrap">{r.solution}</p>
                   </details>
+
+                  {r.secondOpinion ? (
+                    <div className="mt-3 rounded-[var(--radius-control)] border border-accent/40 bg-bg-inset px-3 py-2 text-xs">
+                      <p className="font-medium text-accent">
+                        Seconda opinione ({r.secondOpinion.model}): {r.secondOpinion.awarded}/{r.max}
+                      </p>
+                      <ul className="mt-1.5 space-y-1">
+                        {r.secondOpinion.criteria.map((c) => (
+                          <li key={c.criterion} className="flex justify-between gap-3">
+                            <span className="text-fg-secondary">
+                              {c.criterion} — <span className="text-fg-muted">{c.feedback}</span>
+                            </span>
+                            <span className="shrink-0 font-mono tabular-nums text-fg-muted">
+                              {c.awarded}/{c.max}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      {r.secondOpinion.missing.length > 0 && (
+                        <p className="mt-1.5 text-warn">
+                          Manca: {r.secondOpinion.missing.join('; ')}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => secondOpinion.mutate(r.itemId)}
+                      disabled={secondOpinion.isPending || pendingOpinions.has(r.itemId)}
+                      className="mt-3 rounded-[var(--radius-control)] border border-border px-2 py-1 text-[11px] text-fg-secondary hover:text-fg-primary disabled:opacity-50"
+                    >
+                      {pendingOpinions.has(r.itemId)
+                        ? 'Seconda opinione in corso…'
+                        : 'Chiedi una seconda opinione'}
+                    </button>
+                  )}
+                  {secondOpinion.isError && secondOpinion.variables === r.itemId && (
+                    <p role="alert" className="mt-1.5 text-[11px] text-danger">
+                      {(secondOpinion.error as Error).message}
+                    </p>
+                  )}
                 </li>
               );
             })}

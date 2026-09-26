@@ -393,7 +393,44 @@ export async function getAttemptResults(
         missing: r.missing,
         solution: item.solution,
         sourceRef: r.sourceRef,
+        secondOpinion:
+          r.secondOpinionModel && r.secondOpinionAt
+            ? {
+                model: r.secondOpinionModel,
+                awarded: r.secondOpinionAwarded ?? 0,
+                criteria: r.secondOpinionCriteria ?? [],
+                missing: r.secondOpinionMissing ?? [],
+                at: r.secondOpinionAt.toISOString(),
+              }
+            : null,
       },
     ];
   });
+}
+
+/**
+ * "Seconda opinione con modello superiore su singolo item" (docs/fasi/F5-esami-simulazioni.md
+ * "Rischi"). Only on an already-graded item — nothing to compare a second opinion against
+ * otherwise.
+ */
+export async function enqueueSecondOpinion(
+  db: AnyDb,
+  queue: JobQueue,
+  subjectSlug: string,
+  attemptId: string,
+  itemId: string,
+): Promise<{ jobId: string }> {
+  const attempt = await requireAttempt(db, subjectSlug, attemptId);
+  if (attempt.status !== 'graded') {
+    throw new ConflictError('Il tentativo non è ancora corretto: nessun voto di base da confrontare.');
+  }
+  const [item] = await db
+    .select({ id: simulationItems.id })
+    .from(simulationItems)
+    .where(and(eq(simulationItems.id, itemId), eq(simulationItems.simulationId, attempt.simulationId)));
+  if (!item) throw new NotFoundError('Esercizio');
+
+  const jobId = randomUUID();
+  await queue.add('grade_item_second_opinion', { attemptId, itemId }, { jobId });
+  return { jobId };
 }

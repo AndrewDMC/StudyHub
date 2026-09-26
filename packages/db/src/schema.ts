@@ -431,6 +431,14 @@ export const attemptItemResults = pgTable('attempt_item_results', {
   // Always the item's own citation, attached by the worker — not trusted from
   // the grading model — so "la correzione cita sempre il materiale" holds by construction.
   sourceRef: jsonb('source_ref').$type<SourceRef>().notNull(),
+  // "Seconda opinione con modello superiore su singolo item" (docs/fasi/F5-esami-simulazioni.md
+  // "Rischi"): an optional, on-demand re-grade with a stronger model — shown *alongside* the
+  // original, never overwriting it, since the two can legitimately disagree.
+  secondOpinionModel: text('second_opinion_model'),
+  secondOpinionAwarded: real('second_opinion_awarded'),
+  secondOpinionCriteria: jsonb('second_opinion_criteria').$type<GradedCriterionData[]>(),
+  secondOpinionMissing: jsonb('second_opinion_missing').$type<string[]>(),
+  secondOpinionAt: timestamp('second_opinion_at', { withTimezone: true }),
 });
 
 /**

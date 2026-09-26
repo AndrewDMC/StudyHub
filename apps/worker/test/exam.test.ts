@@ -21,6 +21,7 @@ import { FakeProvider, type AiProvider } from '@studyhub/ai';
 import { processExtractExamProfile } from '../src/processors/exam/extractExamProfile.js';
 import { processGenerateSimulation } from '../src/processors/exam/generateSimulation.js';
 import { processGradeAttempt, reconcileWithRubric } from '../src/processors/exam/gradeAttempt.js';
+import { processGradeItemSecondOpinion } from '../src/processors/exam/gradeItemSecondOpinion.js';
 
 const PAST_EXAM_TEXT =
   'Tempo a disposizione: 90 minuti. Esercizio 1. Enunciare il secondo principio della termodinamica (15 punti). Esercizio 2. Calcolare il rendimento di un ciclo di Carnot (15 punti).';
@@ -442,6 +443,79 @@ describe('F5 worker pipeline', () => {
       );
       expect(result.totalAwarded).toBeLessThanOrEqual(result.totalMax);
       expect(result.totalAwarded).toBeCloseTo(30, 6); // capped exactly at the rubric maxima
+    });
+  });
+
+  describe('grade_item_second_opinion', () => {
+    it('stores the re-grade alongside the original, never overwriting it', async () => {
+      const { artifactId } = await generateExam();
+      const attemptId = await submittedAttempt(artifactId, () => ({}));
+      await processGradeAttempt(db, dataRoot, { attemptId, force: false }, new FakeProvider());
+
+      const [before] = await db
+        .select()
+        .from(attemptItemResults)
+        .where(eq(attemptItemResults.attemptId, attemptId));
+      const itemId = before!.itemId;
+
+      const result = await processGradeItemSecondOpinion(
+        db,
+        { attemptId, itemId, force: false },
+        new FakeProvider(),
+      );
+      expect(result.itemId).toBe(itemId);
+
+      const [after] = await db
+        .select()
+        .from(attemptItemResults)
+        .where(eq(attemptItemResults.id, before!.id));
+      expect(after?.awarded).toBe(before?.awarded); // original untouched
+      expect(after?.secondOpinionModel).toEqual(expect.any(String));
+      expect(after?.secondOpinionAwarded).toBe(result.awarded);
+      expect(after?.secondOpinionCriteria?.length).toBe(before!.criteria.length);
+      expect(after?.secondOpinionAt).toBeInstanceOf(Date);
+    });
+
+    it('refuses on an attempt that is not graded yet', async () => {
+      const { artifactId } = await generateExam();
+      const attemptId = await submittedAttempt(artifactId, () => ({}));
+      const [item] = await db
+        .select()
+        .from(simulationItems)
+        .where(eq(simulationItems.simulationId, artifactId));
+
+      await expect(
+        processGradeItemSecondOpinion(
+          db,
+          { attemptId, itemId: item!.id, force: false },
+          new FakeProvider(),
+        ),
+      ).rejects.toThrow(/non è ancora corretto/);
+    });
+
+    it('refuses an item id from another simulation', async () => {
+      const { artifactId } = await generateExam();
+      const attemptId = await submittedAttempt(artifactId, () => ({}));
+      await processGradeAttempt(db, dataRoot, { attemptId, force: false }, new FakeProvider());
+
+      const otherDrill = await processGenerateSimulation(
+        db,
+        dataRoot,
+        { subjectId, mode: 'drill_argomento', topicId, itemCount: 1, difficulty: 1, force: false },
+        new FakeProvider(),
+      );
+      const [otherItem] = await db
+        .select()
+        .from(simulationItems)
+        .where(eq(simulationItems.simulationId, otherDrill.artifactId));
+
+      await expect(
+        processGradeItemSecondOpinion(
+          db,
+          { attemptId, itemId: otherItem!.id, force: false },
+          new FakeProvider(),
+        ),
+      ).rejects.toThrow(/non trovato/);
     });
   });
 });

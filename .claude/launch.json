@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "web",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@studyhub/web", "dev"],
+      "runtimeExecutable": "D:\\Documenti\\GitHub\\StudyHub\\scripts\\run-web-dev.cmd",
+      "runtimeArgs": [],
       "port": 3000
     }
   ]

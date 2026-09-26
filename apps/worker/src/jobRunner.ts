@@ -11,6 +11,7 @@ import {
   GenerateSimulationJobInputSchema,
   GenerateSummaryJobInputSchema,
   GradeAttemptJobInputSchema,
+  GradeItemSecondOpinionJobInputSchema,
   JobTypeSchema,
   PingJobInputSchema,
   ReconcileJobInputSchema,
@@ -28,6 +29,7 @@ import { processGenerateSummary } from './processors/generation/generateSummary.
 import { processExtractExamProfile } from './processors/exam/extractExamProfile.js';
 import { processGenerateSimulation } from './processors/exam/generateSimulation.js';
 import { processGradeAttempt } from './processors/exam/gradeAttempt.js';
+import { processGradeItemSecondOpinion } from './processors/exam/gradeItemSecondOpinion.js';
 import { processGeneratePlan } from './processors/planner/generatePlan.js';
 import { logger } from './logger.js';
 
@@ -127,6 +129,8 @@ async function dispatch(
       return processGenerateSimulation(db, dataRoot, GenerateSimulationJobInputSchema.parse(data));
     case 'grade_attempt':
       return processGradeAttempt(db, dataRoot, GradeAttemptJobInputSchema.parse(data));
+    case 'grade_item_second_opinion':
+      return processGradeItemSecondOpinion(db, GradeItemSecondOpinionJobInputSchema.parse(data));
     case 'generate_plan':
       return processGeneratePlan(db, GeneratePlanJobInputSchema.parse(data));
     case 'extract_topics':
@@ -174,8 +178,9 @@ async function upsertJobRow(
  * here is what lets `jobs.subject_id` (and everything that joins on it: the Dashboard's
  * "Attività", `/admin`'s job list) actually attribute a job to a subject instead of showing
  * `null` for every job that has one. `reconcile` (no single subject), `ping`, `extract_text`
- * (`documentId` only) and `grade_attempt` (`attemptId` only) genuinely have none to give without
- * a DB lookup this function isn't meant to do — those stay unattributed, correctly.
+ * (`documentId` only), `grade_attempt` and `grade_item_second_opinion` (`attemptId`/`itemId` only)
+ * genuinely have none to give without a DB lookup this function isn't meant to do — those stay
+ * unattributed, correctly.
  */
 function extractSubjectId(data: unknown): string | null {
   if (typeof data !== 'object' || data === null) return null;

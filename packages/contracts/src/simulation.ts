@@ -38,6 +38,15 @@ export const GradeAttemptJobInputSchema = z.object({
 });
 export type GradeAttemptJobInput = z.infer<typeof GradeAttemptJobInputSchema>;
 
+/** "Seconda opinione con modello superiore su singolo item" (docs/fasi/F5-esami-simulazioni.md "Rischi"). */
+export const GradeItemSecondOpinionJobInputSchema = z.object({
+  attemptId: z.string().uuid(),
+  itemId: z.string().uuid(),
+  model: z.string().optional(),
+  force: z.boolean().default(false),
+});
+export type GradeItemSecondOpinionJobInput = z.infer<typeof GradeItemSecondOpinionJobInputSchema>;
+
 export const ExamProfileDtoSchema = z.object({
   id: z.string().uuid(),
   subjectId: z.string().uuid(),
@@ -105,6 +114,22 @@ export const SaveAnswersRequestSchema = z.object({
 });
 export type SaveAnswersRequest = z.infer<typeof SaveAnswersRequestSchema>;
 
+const GradedCriterionDtoSchema = z.object({
+  criterion: z.string(),
+  awarded: z.number(),
+  max: z.number(),
+  feedback: z.string(),
+});
+
+export const SecondOpinionDtoSchema = z.object({
+  model: z.string(),
+  awarded: z.number(),
+  criteria: z.array(GradedCriterionDtoSchema),
+  missing: z.array(z.string()),
+  at: z.string().datetime(),
+});
+export type SecondOpinionDto = z.infer<typeof SecondOpinionDtoSchema>;
+
 export const AttemptItemResultDtoSchema = z.object({
   itemId: z.string().uuid(),
   ord: z.number().int(),
@@ -112,11 +137,11 @@ export const AttemptItemResultDtoSchema = z.object({
   answer: z.string(),
   awarded: z.number(),
   max: z.number(),
-  criteria: z.array(
-    z.object({ criterion: z.string(), awarded: z.number(), max: z.number(), feedback: z.string() }),
-  ),
+  criteria: z.array(GradedCriterionDtoSchema),
   missing: z.array(z.string()),
   solution: z.string(),
   sourceRef: z.object({ docId: z.string().uuid(), page: z.number().int(), quote: z.string() }),
+  /** On-demand re-grade with a stronger model — alongside the original, never replacing it. */
+  secondOpinion: SecondOpinionDtoSchema.nullable(),
 });
 export type AttemptItemResultDto = z.infer<typeof AttemptItemResultDtoSchema>;

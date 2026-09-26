@@ -16,6 +16,7 @@ export const JobTypeSchema = z.enum([
   'extract_exam_profile',
   'generate_simulation',
   'grade_attempt',
+  'grade_item_second_opinion',
   'generate_plan',
   'extract_topics',
 ]);
