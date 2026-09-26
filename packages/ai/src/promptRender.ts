@@ -33,11 +33,16 @@ export function renderSimulationUserPrompt(input: SimulationPromptInput): string
     input.mode === 'esame_completo'
       ? `Modalità: esame completo, ${input.itemCount} esercizi, imitando il profilo.`
       : `Modalità: drill sull'argomento "${input.topicName ?? 'non specificato'}", ${input.itemCount} esercizi di difficoltà crescente.`;
+  const topicsLine =
+    input.mode === 'esame_completo'
+      ? `Argomenti della materia (assegna a ogni esercizio il nome esatto di uno di questi, o null se nessuno calza): ${JSON.stringify(input.topics.map((t) => t.name))}`
+      : null;
   return [
     `Materia: ${input.subjectName}`,
     modeLine,
     `Difficoltà: ${input.difficulty}/3.`,
     `Profilo d'esame (JSON): ${JSON.stringify(input.profile)}`,
+    ...(topicsLine ? [topicsLine] : []),
     '',
     documentsBlock(input.chunks),
   ].join('\n');

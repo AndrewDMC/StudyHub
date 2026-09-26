@@ -193,6 +193,17 @@ const PROMPT_TEMPLATES: Record<SimulationItemKind, (s: string) => string> = {
   mcq: (s) => `Vero o falso? Motiva la risposta: «${truncate(s, 140)}»`,
 };
 
+/** Best keyword-overlap match against `topics` — `null` when nothing shares a word with `sentence`. */
+function matchTopicName(sentence: string, topics: { id: string; name: string }[]): string | null {
+  const sentenceWords = new Set(keywords(sentence));
+  let best: { name: string; overlap: number } | null = null;
+  for (const topic of topics) {
+    const overlap = keywords(topic.name).filter((w) => sentenceWords.has(w)).length;
+    if (overlap > 0 && (!best || overlap > best.overlap)) best = { name: topic.name, overlap };
+  }
+  return best?.name ?? null;
+}
+
 export function fakeGenerateSimulation(input: SimulationPromptInput): SimulationOutput {
   const candidates: { chunk: ChunkRef; sentence: string }[] = [];
   for (const chunk of input.chunks) {
@@ -247,6 +258,8 @@ export function fakeGenerateSimulation(input: SimulationPromptInput): Simulation
       rubric,
       solution: sentence,
       sourceRef: { docId: chunk.docId, page: chunk.page, quote: sentence },
+      topicName:
+        input.mode === 'esame_completo' ? matchTopicName(sentence, input.topics) : (input.topicName ?? null),
     };
   });
 

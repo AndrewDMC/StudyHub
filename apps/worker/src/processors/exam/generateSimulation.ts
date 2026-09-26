@@ -102,6 +102,14 @@ export async function processGenerateSimulation(
     topicName = topic.name;
   }
 
+  // Per-item topic tagging in `esame_completo` mode (docs/fasi/F5-esami-simulazioni.md
+  // "Non implementato": prima solo i drill avevano un topicId, fisso e unico).
+  const subjectTopics: { id: string; name: string }[] = await db
+    .select({ id: topics.id, name: topics.name })
+    .from(topics)
+    .where(eq(topics.subjectId, input.subjectId));
+  const topicIdByName = new Map(subjectTopics.map((t) => [t.name.toLowerCase(), t.id]));
+
   let docIds = input.docIds;
   if (!docIds || docIds.length === 0) {
     // Study material, never the past exams themselves: items must be new, not copies.
@@ -136,6 +144,7 @@ export async function processGenerateSimulation(
       itemCount,
       difficulty: input.difficulty,
       topicName,
+      topics: subjectTopics,
     },
     model,
   );
@@ -210,7 +219,7 @@ export async function processGenerateSimulation(
       id: randomUUID(),
       simulationId: artifactId,
       ord,
-      topicId: input.topicId ?? null,
+      topicId: input.topicId ?? (item.topicName ? (topicIdByName.get(item.topicName.toLowerCase()) ?? null) : null),
       prompt: item.prompt,
       kind: item.kind,
       points: item.points,

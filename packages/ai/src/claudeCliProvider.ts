@@ -196,7 +196,7 @@ export class ClaudeCliProvider implements AiProvider {
     input: SimulationPromptInput,
     model: string,
   ): Promise<GeneratedWithMeta<SimulationOutput>> {
-    const { text: system, promptVersion } = loadPrompt('simulation', 1);
+    const { text: system, promptVersion } = loadPrompt('simulation', 2);
     const { data, usage } = await this.callWithSchema(
       system,
       renderSimulationUserPrompt(input),

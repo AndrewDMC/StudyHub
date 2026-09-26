@@ -75,6 +75,12 @@ export interface SimulationPromptInput {
   difficulty: 1 | 2 | 3;
   /** Only for `drill_argomento`. */
   topicName?: string | undefined;
+  /**
+   * Every topic in the subject, for `esame_completo` per-item tagging — the
+   * model must pick `topicName` from these names (or `null`), never invent
+   * one. Empty when the subject has no topics yet.
+   */
+  topics: { id: string; name: string }[];
 }
 
 export interface GradePromptInput {

@@ -118,6 +118,7 @@ describe('fakeGenerateSimulation', () => {
       mode: 'esame_completo',
       itemCount: 3,
       difficulty: 2,
+      topics: [],
     });
 
     expect(SimulationOutputSchema.safeParse(output).success).toBe(true);
@@ -142,8 +143,25 @@ describe('fakeGenerateSimulation', () => {
       itemCount: 2,
       difficulty: 1,
       topicName: 'Carnot',
+      topics: [],
     });
     expect(output.items.every((i) => /carnot/i.test(i.sourceRef.quote))).toBe(true);
+  });
+
+  it('tags an esame_completo item with the best-matching topic name, or null', () => {
+    const output = fakeGenerateSimulation({
+      subjectName: 'Fisica 1',
+      chunks: STUDY_MATERIAL,
+      profile: profileFixture(),
+      mode: 'esame_completo',
+      itemCount: 3,
+      difficulty: 2,
+      topics: [{ id: 'carnot-id', name: 'Carnot' }],
+    });
+    const carnotItem = output.items.find((i) => /carnot/i.test(i.sourceRef.quote));
+    expect(carnotItem?.topicName).toBe('Carnot');
+    const otherItem = output.items.find((i) => !/carnot/i.test(i.sourceRef.quote));
+    expect(otherItem?.topicName).toBeNull();
   });
 
   it('throws a clear error when the material is too thin to build items from', () => {
@@ -155,6 +173,7 @@ describe('fakeGenerateSimulation', () => {
         mode: 'esame_completo',
         itemCount: 2,
         difficulty: 1,
+        topics: [],
       }),
     ).toThrow(/materiale insufficiente/);
   });
@@ -168,6 +187,7 @@ describe('fakeGradeAnswer', () => {
     mode: 'esame_completo',
     itemCount: 1,
     difficulty: 2,
+    topics: [],
   }).items;
 
   it('gives 0 to an empty answer and lists every expected point as missing', () => {

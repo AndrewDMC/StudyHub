@@ -118,6 +118,14 @@ export const SimulationItemSchema = z.object({
   rubric: z.array(RubricCriterionSchema).min(1),
   solution: z.string().min(1),
   sourceRef: AiSourceRefSchema,
+  /**
+   * The subject topic this item belongs to, verbatim from the `topics` list
+   * given in the prompt — `null` when none fits (docs/fasi/F5-esami-simulazioni.md
+   * "Non implementato": tag dell'argomento sugli esercizi di una simulazione
+   * completa). Matched to a `topicId` in the worker, not trusted as-is — a
+   * name outside the given list is treated as no match, not rejected.
+   */
+  topicName: z.string().min(1).nullable(),
 });
 export type SimulationItem = z.infer<typeof SimulationItemSchema>;
 

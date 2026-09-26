@@ -102,6 +102,7 @@ describe('AnthropicProvider — F5 capabilities against a mocked client', () => 
     rubric: [{ criterion: 'Enunciato corretto', points: 10 }],
     solution: "L'entropia di un sistema isolato non diminuisce.",
     sourceRef: { docId, page: 3, quote: "L'entropia di un sistema isolato non diminuisce." },
+    topicName: null,
   };
 
   it('gradeAnswer wraps the answer in <answer> and neutralizes an injected closing tag', async () => {
@@ -149,12 +150,13 @@ describe('AnthropicProvider — F5 capabilities against a mocked client', () => 
         mode: 'esame_completo',
         itemCount: 1,
         difficulty: 2,
+        topics: [],
       },
       'claude-opus-5',
     );
 
     expect(result.data.items).toHaveLength(1);
-    expect(result.promptVersion).toBe('simulation/v1');
+    expect(result.promptVersion).toBe('simulation/v2');
   });
 
   it('extractExamProfile escapes a </document> inside exam text', async () => {

@@ -109,6 +109,9 @@ export async function processGradeAttempt(
           rubric: item.rubric,
           solution: item.solution,
           sourceRef: item.sourceRef,
+          // Not used by the grading prompt (docs/03 §3.4) — topic tagging only
+          // matters at generation time, already persisted on the item row.
+          topicName: null,
         },
         answer,
       },

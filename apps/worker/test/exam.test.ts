@@ -246,6 +246,7 @@ describe('F5 worker pipeline', () => {
           quote:
             'Il rendimento di una macchina di Carnot dipende solo dalle temperature delle sorgenti.',
         },
+        topicName: null,
       };
       const provider = providerWith({
         async generateSimulation() {
@@ -275,6 +276,18 @@ describe('F5 worker pipeline', () => {
       );
       expect(result.itemCount).toBe(1);
       expect(result.discardedCount).toBe(2);
+    });
+
+    it('tags a full-exam item with an existing subject topic when its content matches', async () => {
+      const result = await generateExam();
+      const items = await db
+        .select()
+        .from(simulationItems)
+        .where(eq(simulationItems.simulationId, result.artifactId));
+      const carnotItem = items.find((i) => /carnot/i.test(i.sourceRef.quote));
+      expect(carnotItem?.topicId).toBe(topicId);
+      const otherItem = items.find((i) => !/carnot/i.test(i.sourceRef.quote));
+      expect(otherItem?.topicId).toBeNull();
     });
 
     it('tags every drill item with its topic, and rejects a topic from another subject', async () => {

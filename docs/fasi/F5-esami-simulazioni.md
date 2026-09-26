@@ -83,9 +83,20 @@ BullMQ vera (`apps/worker/test/queue.test.ts`), verificato fallire col vecchio n
 
 - Input multimodale (pagine degli esami come immagini) — il profilo si basa solo sul testo estratto.
 - "Seconda opinione con modello superiore su singolo item": non esposta in UI.
-- Tag dell'argomento sugli esercizi di una simulazione _completa_ (solo i drill ce l'hanno): per ora
-  `weak_topics` nasce solo dai drill.
 - Confronto di trend per argomento in grafico: c'è lo storico per simulazione, non la vista per argomento.
+
+## Aggiornamento — tag dell'argomento anche sugli esercizi di una simulazione completa (2026-09-26)
+
+Il gap "solo i drill hanno un topicId" qui sopra è chiuso: `generate_simulation` (prompt
+`simulation/v2`) passa al modello l'elenco degli argomenti della materia e, in modalità
+`esame_completo`, chiede per ogni esercizio il `topicName` esatto (o `null`) — non inventato, un
+nome preso dall'elenco dato. Il worker (`apps/worker/src/processors/exam/generateSimulation.ts`)
+risolve quel nome a un `topicId` reale con un lookup case-insensitive, senza fidarsi della stringa;
+un nome fuori elenco (o mancante) resta `null` invece di far scartare l'item. `weak_topics` e
+`recomputeTopicMastery` (`apps/worker/src/processors/exam/gradeAttempt.ts`) erano già generici sul
+`topicId` per item — nessuna modifica lì: la correzione di un esame completo alimenta la heatmap
+per argomento esattamente come un drill, per costruzione. Il drill continua come prima (un solo
+`topicId` fisso per l'intera simulazione, dato dall'utente).
 
 ## Aggiornamento — mastery ricalcolata anche dopo ogni review FSRS (2026-09-24)
 

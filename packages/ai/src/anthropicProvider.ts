@@ -154,7 +154,7 @@ export class AnthropicProvider implements AiProvider {
     input: SimulationPromptInput,
     model: string,
   ): Promise<GeneratedWithMeta<SimulationOutput>> {
-    const { text: system, promptVersion } = loadPrompt('simulation', 1);
+    const { text: system, promptVersion } = loadPrompt('simulation', 2);
     const { data, usage } = await this.callWithTool(
       'emit_simulation',
       system,
