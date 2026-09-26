@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { and, eq, isNull, lte, or, isNotNull, sql } from 'drizzle-orm';
 import {
   artifacts,
@@ -10,14 +9,8 @@ import {
   topics,
   type Database,
 } from '@studyhub/db';
-import {
-  disambiguateSlug,
-  listSubjectSlugsOnDisk,
-  moveSubjectFolderToTrash,
-  scaffoldSubject,
-  slugify,
-  createManifest,
-} from '@studyhub/core';
+import { moveSubjectFolderToTrash } from '@studyhub/core';
+import { createSubjectRow } from '@studyhub/services';
 import type { CreateSubjectRequest, SubjectDto, SubjectSummaryDto } from '@studyhub/contracts';
 import { SubjectNotFoundError } from './errors';
 
@@ -148,38 +141,7 @@ export async function createSubject(
   dataRoot: string,
   input: CreateSubjectRequest,
 ): Promise<SubjectDto> {
-  const dbSlugRows: { slug: string }[] = await db.select({ slug: subjects.slug }).from(subjects);
-  const existingDbSlugs = new Set<string>(dbSlugRows.map((r) => r.slug));
-  const onDiskSlugs = new Set<string>(await listSubjectSlugsOnDisk(dataRoot));
-  for (const s of onDiskSlugs) existingDbSlugs.add(s);
-
-  const baseSlug = slugify(input.name);
-  const slug = disambiguateSlug(baseSlug, existingDbSlugs);
-
-  const manifest = createManifest({
-    id: randomUUID(),
-    name: input.name,
-    slug,
-    color: input.color,
-    professor: input.professor,
-    cfu: input.cfu,
-  });
-
-  const folderPath = await scaffoldSubject(dataRoot, manifest);
-
-  const [row] = await db
-    .insert(subjects)
-    .values({
-      id: manifest.id,
-      slug: manifest.slug,
-      name: manifest.name,
-      color: manifest.color,
-      professor: manifest.professor ?? null,
-      cfu: manifest.cfu ?? null,
-      folderPath,
-    })
-    .returning();
-
+  const row = await createSubjectRow(db, dataRoot, input);
   return toDto(row);
 }
 

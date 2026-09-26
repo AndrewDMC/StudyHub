@@ -5,6 +5,8 @@ import { useQuery } from '@tanstack/react-query';
 import type { SubjectSummaryDto } from '@studyhub/contracts';
 import { SubjectCard } from './SubjectCard';
 import { CreateSubjectForm } from './CreateSubjectForm';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 async function fetchSubjects(includeArchived: boolean): Promise<SubjectSummaryDto[]> {
   const res = await fetch(`/api/subjects${includeArchived ? '?includeArchived=1' : ''}`);
@@ -34,23 +36,20 @@ export function MaterieClient() {
             />
             Mostra archiviate
           </label>
-          {!creating && (
-            <button
-              type="button"
-              onClick={() => setCreating(true)}
-              className="rounded-[var(--radius-control)] bg-accent px-3 py-1.5 text-sm font-medium text-white transition-colors duration-120 hover:bg-accent-hover"
-            >
-              Nuova materia
-            </button>
-          )}
+          <Button type="button" onClick={() => setCreating(true)}>
+            Nuova materia
+          </Button>
         </div>
       </div>
 
-      {creating && (
-        <div className="mb-6 max-w-md">
+      <Dialog open={creating} onOpenChange={setCreating}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nuova materia</DialogTitle>
+          </DialogHeader>
           <CreateSubjectForm onDone={() => setCreating(false)} />
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
 
       {query.isLoading && (
         <div

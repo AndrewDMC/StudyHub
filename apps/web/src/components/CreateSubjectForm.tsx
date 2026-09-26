@@ -5,6 +5,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { SUBJECT_COLORS, type SubjectColor } from '@studyhub/core/browser';
 import type { CreateSubjectRequest, SubjectDto } from '@studyhub/contracts';
 import { SUBJECT_COLOR_HEX } from '@/lib/subjectColors';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 async function postSubject(input: CreateSubjectRequest): Promise<SubjectDto> {
   const res = await fetch('/api/subjects', {
@@ -35,7 +38,6 @@ export function CreateSubjectForm({ onDone }: { onDone: () => void }) {
 
   return (
     <form
-      className="rounded-[var(--radius-card)] border border-border bg-bg-surface p-4"
       onSubmit={(e) => {
         e.preventDefault();
         mutation.mutate({
@@ -46,26 +48,21 @@ export function CreateSubjectForm({ onDone }: { onDone: () => void }) {
       }}
     >
       <div className="flex flex-col gap-3">
-        <label className="flex flex-col gap-1 text-xs text-fg-secondary">
+        <Label className="flex flex-col gap-1">
           Nome materia
-          <input
+          <Input
             required
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="es. Fisica 1"
-            className="rounded-[var(--radius-control)] border border-border bg-bg-inset px-3 py-2 text-sm text-fg-primary outline-none focus:border-accent"
           />
-        </label>
+        </Label>
 
-        <label className="flex flex-col gap-1 text-xs text-fg-secondary">
+        <Label className="flex flex-col gap-1">
           Docente (opzionale)
-          <input
-            value={professor}
-            onChange={(e) => setProfessor(e.target.value)}
-            className="rounded-[var(--radius-control)] border border-border bg-bg-inset px-3 py-2 text-sm text-fg-primary outline-none focus:border-accent"
-          />
-        </label>
+          <Input value={professor} onChange={(e) => setProfessor(e.target.value)} />
+        </Label>
 
         <div className="flex flex-col gap-1">
           <span className="text-xs text-fg-secondary">Colore</span>
@@ -95,20 +92,12 @@ export function CreateSubjectForm({ onDone }: { onDone: () => void }) {
         )}
 
         <div className="flex gap-2 pt-1">
-          <button
-            type="submit"
-            disabled={mutation.isPending}
-            className="rounded-[var(--radius-control)] bg-accent px-3 py-1.5 text-sm font-medium text-white transition-colors duration-120 hover:bg-accent-hover disabled:opacity-60"
-          >
+          <Button type="submit" disabled={mutation.isPending}>
             {mutation.isPending ? 'Creazione…' : 'Crea materia'}
-          </button>
-          <button
-            type="button"
-            onClick={onDone}
-            className="rounded-[var(--radius-control)] border border-border px-3 py-1.5 text-sm text-fg-secondary hover:text-fg-primary"
-          >
+          </Button>
+          <Button type="button" variant="secondary" onClick={onDone}>
             Annulla
-          </button>
+          </Button>
         </div>
       </div>
     </form>
