@@ -22,6 +22,7 @@ import {
   moveTaskInPlan,
   NoDraftPlanError,
   PlanNotFoundError,
+  reabsorbTaskInPlan,
   setTaskStatus,
   TaskNotFoundError,
   updateDraftTask,
@@ -267,6 +268,23 @@ describe('plan draft/commit lifecycle', () => {
     expect(moved.pinned).toBe(true);
 
     await expect(moveTaskInPlan(db, subjectSlug, taskId, '2026-03-01')).rejects.toThrow(
+      MoveRefusedError,
+    );
+  });
+
+  it('reabsorbTaskInPlan ("Debito" — riassorbi) picks the first day from today with room, refusing when none is left', async () => {
+    const draftId = await insertDraftPlan();
+    const taskId = await insertTask(draftId, { date: '2026-01-06' });
+
+    // 2026-01-12 is a Monday (120min/day available) — the earliest day
+    // on/after "today" with room, since nothing else is scheduled there.
+    const plan = await reabsorbTaskInPlan(db, subjectSlug, taskId, '2026-01-12');
+    const moved = plan.tasks.find((t) => t.id === taskId)!;
+    expect(moved.date).toBe('2026-01-12');
+    expect(moved.pinned).toBe(true);
+
+    // "today" past the plan's own window: no candidate day exists at all.
+    await expect(reabsorbTaskInPlan(db, subjectSlug, taskId, '2026-03-01')).rejects.toThrow(
       MoveRefusedError,
     );
   });

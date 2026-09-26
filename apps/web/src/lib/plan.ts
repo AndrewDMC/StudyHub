@@ -318,13 +318,8 @@ export async function createManualTask(
  * once, at generation time) or enforce topic prerequisites (not persisted
  * after Fase A) — see docs/fasi/F6-planner-calendario.md "Stato".
  */
-export async function moveTaskInPlan(
-  db: AnyDb,
-  subjectSlug: string,
-  taskId: string,
-  newDate: string,
-): Promise<PlanDto> {
-  const subject = await requireSubject(db, subjectSlug);
+/** Loads the target task's plan + sibling tasks + capacity — the fixed setup `moveTaskInPlan` and `reabsorbTaskInPlan` both need before calling into `coreMoveTask`. */
+async function loadMoveContext(db: AnyDb, subject: { id: string }, taskId: string) {
   const target = await requireTask(db, subject.id, taskId);
   const [plan] = await db.select().from(studyPlans).where(eq(studyPlans.id, target.planId));
   if (!plan || plan.status === 'superseded') throw new PlanNotFoundError(target.planId);
@@ -337,7 +332,6 @@ export async function moveTaskInPlan(
     topics: [],
     prefs: plan.prefs,
   } as PlannerInput);
-
   const taskLikes = planTasks.map((t) => ({
     key: t.taskKey,
     date: t.date,
@@ -347,13 +341,17 @@ export async function moveTaskInPlan(
     pinned: t.pinned,
     title: t.title,
   }));
-  const result = coreMoveTask(taskLikes, target.taskKey, newDate, {
-    capacity,
-    targetDate: plan.targetDate,
-    prerequisites: new Map(),
-  });
-  if (!result.ok) throw new MoveRefusedError(result.reason);
 
+  return { target, plan, planTasks, capacity, taskLikes };
+}
+
+/** Persists a successful `coreMoveTask` result (the moved task plus any displaced siblings) and returns the refreshed plan. */
+async function applyMoveResult(
+  db: AnyDb,
+  plan: StudyPlan,
+  planTasks: Task[],
+  result: Extract<ReturnType<typeof coreMoveTask>, { ok: true }>,
+): Promise<PlanDto> {
   const byKey = new Map(planTasks.map((t) => [t.taskKey, t]));
   for (const t of result.tasks) {
     const original = byKey.get(t.key);
@@ -367,6 +365,58 @@ export async function moveTaskInPlan(
 
   const taskRows: Task[] = await db.select().from(tasks).where(eq(tasks.planId, plan.id));
   return toPlanDto(plan, taskRows);
+}
+
+export async function moveTaskInPlan(
+  db: AnyDb,
+  subjectSlug: string,
+  taskId: string,
+  newDate: string,
+): Promise<PlanDto> {
+  const subject = await requireSubject(db, subjectSlug);
+  const { target, plan, planTasks, capacity, taskLikes } = await loadMoveContext(
+    db,
+    subject,
+    taskId,
+  );
+  const result = coreMoveTask(taskLikes, target.taskKey, newDate, {
+    capacity,
+    targetDate: plan.targetDate,
+    prerequisites: new Map(),
+  });
+  if (!result.ok) throw new MoveRefusedError(result.reason);
+  return applyMoveResult(db, plan, planTasks, result);
+}
+
+/**
+ * "Debito" — _riassorbi nel piano_ (docs/fasi/F6-planner-calendario.md "Decisioni": an overdue task
+ * doesn't just pile up — rimanda/riassorbi/archivia). Unlike `moveTaskInPlan` (a date the user
+ * picked), this tries each day from `today` onward and takes the first one `coreMoveTask` accepts
+ * — the algorithm picks the slot, not the user.
+ */
+export async function reabsorbTaskInPlan(
+  db: AnyDb,
+  subjectSlug: string,
+  taskId: string,
+  today: string,
+): Promise<PlanDto> {
+  const subject = await requireSubject(db, subjectSlug);
+  const { target, plan, planTasks, capacity, taskLikes } = await loadMoveContext(
+    db,
+    subject,
+    taskId,
+  );
+  const candidateDays = [...capacity.keys()].filter((d) => d >= today).sort();
+
+  for (const day of candidateDays) {
+    const result = coreMoveTask(taskLikes, target.taskKey, day, {
+      capacity,
+      targetDate: plan.targetDate,
+      prerequisites: new Map(),
+    });
+    if (result.ok) return applyMoveResult(db, plan, planTasks, result);
+  }
+  throw new MoveRefusedError('Nessun giorno del piano ha spazio libero per riassorbire questa task.');
 }
 
 /** Daily Task widget (docs/fasi/F7-dashboard-polish.md "Oggi"): today's actionable tasks from the *active* plan. Overdue `todo`/`doing` tasks from the last 7 days are included as debt — see docs/fasi/F6 "Stato" for the full "Debito" UI this doesn't build yet. */

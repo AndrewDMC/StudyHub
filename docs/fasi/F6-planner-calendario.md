@@ -155,8 +155,6 @@ Cosa c'è, con test reali:
   fattibilità e le 3 strategie si vedono solo dopo, nella bozza generata — non prima di spendere la
   chiamata Fase A.
 - **Azioni bulk** ("sposta la settimana di 2 giorni", "riduci il carico del 20%", "escludi argomento").
-- **Schermata "Debito"** per le task scadute (rimanda/riassorbi/archivia): `getDailyTasks` include le
-  task scadute nella lista piatta di "Oggi", senza le azioni di triage previste.
 - **`starts_at`/`ends_at`** (fasce orarie): le task hanno una `date`, non un orario — nessuna vista
   Settimana avrebbe comunque senso senza questo.
 - **CLI**: `studyhub plan generate`/`ls` esistono ora (vedi "Aggiornamento" in fondo al file) — manca
@@ -236,3 +234,20 @@ implementato**: aggiornamento push del feed (un client calendario ripolla second
 intervallo, tipicamente ore — nessun meccanismo per notificarlo prima); `CalendarExamDtoSchema` è
 stato esteso con `status`/`location`/`description` (già letti dalla query esistente, solo non
 esposti) per permettere questo filtro — cambio additivo, nessun consumer esistente rotto.
+
+## Aggiornamento (2026-09-26): schermata "Debito" per le task scadute
+
+Chiuso il gap "getDailyTasks include le task scadute nella lista piatta, senza triage". Il pannello
+Oggi (`DailyTasksPanel`) ora separa le task con `date < oggi` in una sezione "Debito" a parte, con
+le tre azioni previste in `docs/fasi/F6-planner-calendario.md` "Decisioni":
+
+- **Rimanda a oggi**: `moveTaskInPlan` con la data odierna — l'utente sceglie il giorno (qui: oggi).
+- **Riassorbi nel piano** (`reabsorbTaskInPlan`, `apps/web/src/lib/plan.ts`, nuovo
+  `POST .../plan/tasks/:taskId/reabsorb`): prova ogni giorno del piano da oggi in poi, nell'ordine,
+  e si ferma al primo che `coreMoveTask` accetta — è l'algoritmo a scegliere lo slot, non l'utente.
+  Rifiuta (`MoveRefusedError`) se nessun giorno del piano ha spazio.
+- **Archivia**: `setTaskStatus(taskId, 'skipped')`, già esistente — nessun codice nuovo, solo
+  esposta nella sezione Debito.
+
+`moveTaskInPlan` e `reabsorbTaskInPlan` condividono ora il setup (carico del piano/task/capacità
+via `loadMoveContext`) e l'applicazione del risultato (`applyMoveResult`), prima duplicati.
