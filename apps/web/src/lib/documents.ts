@@ -35,8 +35,12 @@ function toDto(row: Document, topicIds: string[] = []): DocumentDto {
     pages: row.pages,
     status: row.status,
     mdPath: row.mdPath,
+    mdEdited: row.mdEdited,
+    mdConflict: row.mdConflict,
     verificationStatus: row.verificationStatus,
     blockedBlocks: row.blockedBlocks,
+    typeSuggested: row.typeSuggested,
+    typeConfidence: row.typeConfidence,
     createdAt: row.createdAt.toISOString(),
     topicIds,
   };
@@ -140,6 +144,39 @@ export async function getDocument(
   if (!row) throw new DocumentNotFoundError(documentId);
 
   return toDto(row, await getDocumentTopicIds(db, documentId));
+}
+
+/**
+ * Applies or dismisses the AI's suggested type (`documents.typeSuggested`,
+ * set by `classify_document_type`) — always a one-click, explicit user
+ * decision, never automatic (docs/fasi/F1-ingest.md "Pagina di Triage").
+ */
+export async function resolveDocumentType(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  subjectSlug: string,
+  documentId: string,
+  accept: boolean,
+): Promise<DocumentDto> {
+  const [subject] = await db.select().from(subjects).where(eq(subjects.slug, subjectSlug));
+  if (!subject) throw new UploadError('subject_not_found', `Materia non trovata: ${subjectSlug}`);
+
+  const [row] = await db
+    .select()
+    .from(documents)
+    .where(and(eq(documents.id, documentId), eq(documents.subjectId, subject.id)));
+  if (!row) throw new DocumentNotFoundError(documentId);
+
+  const [updated] = await db
+    .update(documents)
+    .set({
+      type: accept && row.typeSuggested ? row.typeSuggested : row.type,
+      typeSuggested: null,
+    })
+    .where(eq(documents.id, documentId))
+    .returning();
+
+  return toDto(updated, await getDocumentTopicIds(db, documentId));
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

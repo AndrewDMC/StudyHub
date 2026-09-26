@@ -17,13 +17,22 @@ export const DocumentDtoSchema = z.object({
   pages: z.number().int().nonnegative().nullable(),
   status: DocumentStatusSchema,
   mdPath: z.string().nullable(),
+  mdEdited: z.boolean(),
+  mdConflict: z.boolean(),
   verificationStatus: VerificationStatusSchema,
   blockedBlocks: z.number().int().nonnegative(),
+  /** Set by `classify_document_type` only when it disagrees with `type` — never applied automatically. */
+  typeSuggested: DocumentTypeSchema.nullable(),
+  typeConfidence: z.number().min(0).max(1).nullable(),
   createdAt: z.string().datetime(),
   /** Argomenti a cui il documento è collegato (docs/fasi/F2-materie.md "Stato": document_topics). */
   topicIds: z.array(z.string().uuid()),
 });
 export type DocumentDto = z.infer<typeof DocumentDtoSchema>;
+
+/** PATCH body: applies the AI's suggested type, or dismisses it. */
+export const ResolveDocumentTypeRequestSchema = z.object({ accept: z.boolean() });
+export type ResolveDocumentTypeRequest = z.infer<typeof ResolveDocumentTypeRequestSchema>;
 
 export const UploadDocumentResponseSchema = z.object({
   document: DocumentDtoSchema,

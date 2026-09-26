@@ -1,17 +1,22 @@
 import type {
   AiProvider,
+  ClassifyDocumentTypePromptInput,
+  DistillHandwritingProfilePromptInput,
   EstimateTopicsPromptInput,
   ExamProfilePromptInput,
   ExtractTopicsPromptInput,
   FlashcardsPromptInput,
   GeneratedWithMeta,
   GradePromptInput,
+  OcrTextPromptInput,
   SchemaPromptInput,
   SchemaTranscriptionPromptInput,
   SimulationPromptInput,
   SummaryPromptInput,
 } from './provider.js';
 import type {
+  ClassifyDocumentTypeOutput,
+  DistillHandwritingProfileOutput,
   EstimateTopicsOutput,
   ExamProfile,
   ExtractedTopic,
@@ -19,9 +24,10 @@ import type {
   FlashcardsOutput,
   GeneratedFlashcard,
   GradeOutput,
+  OcrTextOutput,
+  SchemaGraphOutput,
   SchemaNode,
   SchemaOutput,
-  SchemaTranscriptionOutput,
   SimulationOutput,
   SummaryOutput,
   TopicEstimate,
@@ -30,11 +36,14 @@ import { estimateTokens } from './pricing.js';
 import { keywords, splitSentences, truncate } from './text.js';
 import { fakeExtractExamProfile, fakeGenerateSimulation, fakeGradeAnswer } from './fakeExam.js';
 import {
+  CLASSIFY_DOCUMENT_TYPE_PROMPT_VERSION,
+  DISTILL_HANDWRITING_PROFILE_PROMPT_VERSION,
   ESTIMATE_TOPICS_PROMPT_VERSION,
   EXAM_PROFILE_PROMPT_VERSION,
   EXTRACT_TOPICS_PROMPT_VERSION,
   FLASHCARDS_PROMPT_VERSION,
   GRADING_PROMPT_VERSION,
+  OCR_TEXT_PROMPT_VERSION,
   SCHEMA_PROMPT_VERSION,
   SCHEMA_TRANSCRIPTION_PROMPT_VERSION,
   SIMULATION_PROMPT_VERSION,
@@ -126,7 +135,8 @@ export class FakeProvider implements AiProvider {
     _model: string,
   ): Promise<GeneratedWithMeta<SchemaOutput>> {
     const nodes: SchemaNode[] = input.chunks.map((chunk, i) => {
-      const quote = splitSentences(chunk.text).find((s) => s.length >= 20) ?? chunk.text.slice(0, 50);
+      const quote =
+        splitSentences(chunk.text).find((s) => s.length >= 20) ?? chunk.text.slice(0, 50);
       return {
         nodeId: `n${i + 1}`,
         label: truncate(quote, 60),
@@ -134,9 +144,7 @@ export class FakeProvider implements AiProvider {
       };
     });
 
-    const sections = nodes.map(
-      (n) => `## ${n.label}\n\n- Fonte: pag. ${n.sourceRef.page}`,
-    );
+    const sections = nodes.map((n) => `## ${n.label}\n\n- Fonte: pag. ${n.sourceRef.page}`);
     const markdown = [`# Schema — ${input.subjectName}`, '', ...sections, ''].join('\n\n');
 
     // A 'confronto' reads better as a table in Markdown alone (docs/03 §3.2) — no diagram.
@@ -172,21 +180,88 @@ export class FakeProvider implements AiProvider {
   async transcribeSchema(
     _input: SchemaTranscriptionPromptInput,
     _model: string,
-  ): Promise<GeneratedWithMeta<SchemaTranscriptionOutput>> {
-    const data: SchemaTranscriptionOutput = {
-      blocks: [
+  ): Promise<GeneratedWithMeta<SchemaGraphOutput>> {
+    const data: SchemaGraphOutput = {
+      nodes: [
         {
-          text: 'Trascrizione non disponibile in modalità simulata — inserisci i blocchi a mano.',
-          confidence: 'illegible',
-          note: 'FakeProvider non legge immagini: serve AI_PROVIDER=claude-cli o ANTHROPIC_API_KEY.',
+          key: 'n1',
+          label: 'Trascrizione non disponibile in modalità simulata — inserisci i nodi a mano.',
+          kind: 'concetto',
+          crop: null,
+          confidence: 'unreadable',
         },
       ],
+      edges: [],
+      groups: [],
     };
     return {
       data,
       usage: { inputTokens: 0, outputTokens: 0 },
       model: FAKE_MODEL,
       promptVersion: SCHEMA_TRANSCRIPTION_PROMPT_VERSION,
+    };
+  }
+
+  /** Same "no honest pixel-reading offline" reasoning as transcribeSchema. */
+  async ocrText(
+    _input: OcrTextPromptInput,
+    _model: string,
+  ): Promise<GeneratedWithMeta<OcrTextOutput>> {
+    const data: OcrTextOutput = {
+      text: '',
+      confidence: 'illegible',
+    };
+    return {
+      data,
+      usage: { inputTokens: 0, outputTokens: 0 },
+      model: FAKE_MODEL,
+      promptVersion: OCR_TEXT_PROMPT_VERSION,
+    };
+  }
+
+  /**
+   * Unlike vision, this one *can* be honestly simulated from text: a few
+   * keyword heuristics genuinely correlate with the document type, so this
+   * returns a real (if crude) guess with a correspondingly modest
+   * confidence, rather than punting outright.
+   */
+  async classifyDocumentType(
+    input: ClassifyDocumentTypePromptInput,
+    _model: string,
+  ): Promise<GeneratedWithMeta<ClassifyDocumentTypeOutput>> {
+    const sample = (input.textSample ?? '').toLowerCase();
+    const data: ClassifyDocumentTypeOutput = (() => {
+      if (!sample.trim()) {
+        // No text sample (e.g. a photo) — FakeProvider can't read pixels either.
+        return { type: 'altro' as const, confidence: 0.1 };
+      }
+      if (/\besam[ei]\b|\bappell[oi]\b|\bcompito\b/.test(sample)) {
+        return { type: 'esami' as const, confidence: 0.55 };
+      }
+      if (/\bslide\b|\bdiapositiv/.test(sample)) {
+        return { type: 'slide' as const, confidence: 0.5 };
+      }
+      return { type: 'appunti' as const, confidence: 0.4 };
+    })();
+
+    return {
+      data,
+      usage: { inputTokens: estimateTokens(sample), outputTokens: 4 },
+      model: FAKE_MODEL,
+      promptVersion: CLASSIFY_DOCUMENT_TYPE_PROMPT_VERSION,
+    };
+  }
+
+  /** Real pattern distillation needs real judgment — honestly returns nothing rather than guessing. */
+  async distillHandwritingProfile(
+    _input: DistillHandwritingProfilePromptInput,
+    _model: string,
+  ): Promise<GeneratedWithMeta<DistillHandwritingProfileOutput>> {
+    return {
+      data: { lines: [] },
+      usage: { inputTokens: 0, outputTokens: 0 },
+      model: FAKE_MODEL,
+      promptVersion: DISTILL_HANDWRITING_PROFILE_PROMPT_VERSION,
     };
   }
 

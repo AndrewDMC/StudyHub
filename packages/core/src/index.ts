@@ -13,3 +13,4 @@ export * from './examTimer.js';
 export * from './planner/index.js';
 export * from './ics.js';
 export * from './csv.js';
+export * from './schemaGraphRender.js';

@@ -77,6 +77,10 @@ export async function POST(request: Request, { params }: RouteParams) {
       await getJobQueue()
         .add(jobType, { documentId: result.document.id }, { jobId: randomUUID() })
         .catch(() => {});
+      // Independent, best-effort suggestion — never blocks/delays extraction.
+      await getJobQueue()
+        .add('classify_document_type', { documentId: result.document.id }, { jobId: randomUUID() })
+        .catch(() => {});
     }
 
     return NextResponse.json(result, { status: result.duplicate ? 200 : 201 });

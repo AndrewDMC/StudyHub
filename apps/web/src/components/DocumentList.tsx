@@ -50,6 +50,58 @@ async function setDocumentTopics(
   }
 }
 
+async function resolveDocumentType(
+  slug: string,
+  documentId: string,
+  accept: boolean,
+): Promise<void> {
+  const res = await fetch(`/api/subjects/${slug}/documents/${documentId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ accept }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error?.message ?? 'Aggiornamento del tipo fallito');
+  }
+}
+
+/** `classify_document_type`'s suggestion (docs/fasi/F1-ingest.md "Pagina di Triage") — a one-click accept/dismiss, never applied automatically. */
+function TypeSuggestion({ subjectSlug, doc }: { subjectSlug: string; doc: DocumentDto }) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: (accept: boolean) => resolveDocumentType(subjectSlug, doc.id, accept),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['documents', subjectSlug] }),
+  });
+
+  if (!doc.typeSuggested) return null;
+  const pct = doc.typeConfidence !== null ? Math.round(doc.typeConfidence * 100) : null;
+
+  return (
+    <p className="mt-1 text-[11px] text-fg-secondary">
+      AI: {doc.typeSuggested}
+      {pct !== null ? ` (${pct}%)` : ''} —{' '}
+      <button
+        type="button"
+        disabled={mutation.isPending}
+        onClick={() => mutation.mutate(true)}
+        className="text-accent underline-offset-2 hover:underline"
+      >
+        conferma
+      </button>{' '}
+      ·{' '}
+      <button
+        type="button"
+        disabled={mutation.isPending}
+        onClick={() => mutation.mutate(false)}
+        className="text-fg-muted underline-offset-2 hover:underline"
+      >
+        ignora
+      </button>
+    </p>
+  );
+}
+
 function TopicTagger({
   subjectSlug,
   doc,
@@ -183,6 +235,7 @@ export function DocumentList({
                   {doc.type} · {formatBytes(doc.bytes)}
                   {doc.pages !== null ? ` · ${doc.pages} pag.` : ''}
                 </p>
+                <TypeSuggestion subjectSlug={subjectSlug} doc={doc} />
                 {topicsQuery.isSuccess && (
                   <TopicTagger subjectSlug={subjectSlug} doc={doc} topics={topicsQuery.data} />
                 )}
@@ -203,6 +256,16 @@ export function DocumentList({
                   }`}
                 >
                   {doc.blockedBlocks > 0 ? `${doc.blockedBlocks} da verificare` : 'Verifica'}
+                </Link>
+              )}
+              {doc.status === 'parsed' && doc.mdPath && (
+                <Link
+                  href={`/materie/${subjectSlug}/documenti/${doc.id}`}
+                  className={`text-[11px] underline-offset-2 hover:underline ${
+                    doc.mdConflict ? 'text-warn' : 'text-fg-muted'
+                  }`}
+                >
+                  {doc.mdConflict ? 'Conflitto da risolvere' : 'Vedi testo'}
                 </Link>
               )}
             </div>

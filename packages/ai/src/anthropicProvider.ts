@@ -5,34 +5,43 @@ import type { z } from 'zod';
 import type {
   AiProvider,
   AiUsage,
+  ClassifyDocumentTypePromptInput,
+  DistillHandwritingProfilePromptInput,
   EstimateTopicsPromptInput,
   ExamProfilePromptInput,
   ExtractTopicsPromptInput,
   FlashcardsPromptInput,
   GeneratedWithMeta,
   GradePromptInput,
+  OcrTextPromptInput,
   SchemaPromptInput,
   SchemaTranscriptionPromptInput,
   SimulationPromptInput,
   SummaryPromptInput,
 } from './provider.js';
 import {
+  ClassifyDocumentTypeOutputSchema,
+  DistillHandwritingProfileOutputSchema,
   EstimateTopicsOutputSchema,
   ExamProfileSchema,
   ExtractTopicsOutputSchema,
   FlashcardsOutputSchema,
   GradeOutputSchema,
+  OcrTextOutputSchema,
+  SchemaGraphOutputSchema,
   SchemaOutputSchema,
-  SchemaTranscriptionOutputSchema,
   SimulationOutputSchema,
   SummaryOutputSchema,
+  type ClassifyDocumentTypeOutput,
+  type DistillHandwritingProfileOutput,
   type EstimateTopicsOutput,
   type ExamProfile,
   type ExtractTopicsOutput,
   type FlashcardsOutput,
   type GradeOutput,
+  type OcrTextOutput,
+  type SchemaGraphOutput,
   type SchemaOutput,
-  type SchemaTranscriptionOutput,
   type SimulationOutput,
   type SummaryOutput,
 } from './schemas.js';
@@ -43,6 +52,7 @@ import {
   renderExtractTopicsUserPrompt,
   renderFlashcardsUserPrompt,
   renderGradeUserPrompt,
+  renderSchemaTranscriptionUserPrompt,
   renderSchemaUserPrompt,
   renderSimulationUserPrompt,
   renderSummaryUserPrompt,
@@ -119,17 +129,86 @@ export class AnthropicProvider implements AiProvider {
   async transcribeSchema(
     input: SchemaTranscriptionPromptInput,
     model: string,
-  ): Promise<GeneratedWithMeta<SchemaTranscriptionOutput>> {
-    const { text: system, promptVersion } = loadPrompt('schema_transcription', 1);
+  ): Promise<GeneratedWithMeta<SchemaGraphOutput>> {
+    const { text: system, promptVersion } = loadPrompt('schema_transcription', 2);
     const imageBase64 = (await readFile(input.imagePath)).toString('base64');
     const { data, usage } = await this.callWithTool(
       'emit_schema_transcription',
       system,
-      'Trascrivi i blocchi di contenuto dell\'immagine allegata.',
-      SchemaTranscriptionOutputSchema,
+      renderSchemaTranscriptionUserPrompt(input),
+      SchemaGraphOutputSchema,
       model,
       4096,
-      { mediaType: input.mime as Anthropic.ImageBlockParam.Source['media_type'], data: imageBase64 },
+      {
+        mediaType: input.mime as Anthropic.ImageBlockParam.Source['media_type'],
+        data: imageBase64,
+      },
+    );
+    return { data, usage, model, promptVersion };
+  }
+
+  /** Same OCR call as `ClaudeCliProvider.ocrText` — a printed page, not a hand-drawn schema. */
+  async ocrText(
+    input: OcrTextPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<OcrTextOutput>> {
+    const { text: system, promptVersion } = loadPrompt('ocr_text', 1);
+    const imageBase64 = (await readFile(input.imagePath)).toString('base64');
+    const { data, usage } = await this.callWithTool(
+      'emit_ocr_text',
+      system,
+      "Trascrivi il testo dell'immagine allegata.",
+      OcrTextOutputSchema,
+      model,
+      4096,
+      {
+        mediaType: input.mime as Anthropic.ImageBlockParam.Source['media_type'],
+        data: imageBase64,
+      },
+    );
+    return { data, usage, model, promptVersion };
+  }
+
+  async classifyDocumentType(
+    input: ClassifyDocumentTypePromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<ClassifyDocumentTypeOutput>> {
+    const { text: system, promptVersion } = loadPrompt('classify_document_type', 1);
+    const image =
+      input.imagePath && input.mime
+        ? {
+            mediaType: input.mime as Anthropic.ImageBlockParam.Source['media_type'],
+            data: (await readFile(input.imagePath)).toString('base64'),
+          }
+        : undefined;
+    const { data, usage } = await this.callWithTool(
+      'emit_document_type',
+      system,
+      input.textSample
+        ? `Campione del documento:\n\n${input.textSample}`
+        : "Suggerisci il tipo di documento dall'immagine allegata.",
+      ClassifyDocumentTypeOutputSchema,
+      model,
+      256,
+      image,
+    );
+    return { data, usage, model, promptVersion };
+  }
+
+  async distillHandwritingProfile(
+    input: DistillHandwritingProfilePromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<DistillHandwritingProfileOutput>> {
+    const { text: system, promptVersion } = loadPrompt('distill_handwriting_profile', 1);
+    const { data, usage } = await this.callWithTool(
+      'emit_handwriting_profile',
+      system,
+      `Correzioni recenti (prima -> dopo):\n\n${input.corrections
+        .map((c) => `- "${c.before ?? ''}" -> "${c.after ?? ''}" (${c.kind ?? 'n/d'})`)
+        .join('\n')}`,
+      DistillHandwritingProfileOutputSchema,
+      model,
+      512,
     );
     return { data, usage, model, promptVersion };
   }
@@ -234,7 +313,6 @@ export class AnthropicProvider implements AiProvider {
         ? `${userPrompt}\n\nIl tuo output precedente non era valido:\n${feedback}\nCorreggi e richiama lo strumento con un output valido.`
         : userPrompt;
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const response = await this.client.messages.create({
         model,
         max_tokens: maxTokens,
@@ -252,12 +330,16 @@ export class AnthropicProvider implements AiProvider {
             role: 'user',
             content: image
               ? [
-                  { type: 'image', source: { type: 'base64', media_type: image.mediaType, data: image.data } },
+                  {
+                    type: 'image',
+                    source: { type: 'base64', media_type: image.mediaType, data: image.data },
+                  },
                   { type: 'text', text: prompt },
                 ]
               : prompt,
           },
         ],
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any);
 
       usage.inputTokens += response.usage?.input_tokens ?? 0;

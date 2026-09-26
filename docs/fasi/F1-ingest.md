@@ -67,7 +67,13 @@ deliverable principale. Lo scope cresce: valutare uno split in **F1a (ingest + m
 - [ ] Dopo 5 schemi corretti il profilo di grafia contiene regole sensate e le incertezze calano.
 - [ ] Il `.canvas` esportato si apre in Obsidian con la struttura corretta.
 
-## Stato: slice deterministica implementata (2026-09-22)
+## Stato: slice deterministica implementata (2026-09-22), poi completata (2026-09-26)
+
+> Questa sezione era superata già prima dell'aggiornamento del 2026-09-26: un commit intermedio
+> (`f9d1c18`) aveva già aggiunto una pipeline vision reale per gli schemi (`transcribe_schema`,
+> `schema_blocks`, schermata di verifica a lista piatta) dopo che questo paragrafo era stato scritto.
+> Il paragrafo originale sotto resta per la cronologia — vedi "Aggiornamento 2026-09-26" per lo
+> stato vero.
 
 Implementata solo la parte di F1 che non richiede un provider AI o un modello di embedding —
 in pratica un F1a ridotto. **Non implementato** (richiede una decisione su provider/costo che
@@ -107,3 +113,85 @@ Decisioni prese _davvero_ durante l'implementazione:
   reale"; risolto con `apps/web/src/lib/errors.ts` (`formatError`, che scende in `err.errors[]`).
   Promemoria per le fasi successive: **testare in browser**, non fidarsi solo dei test unitari per
   i percorsi di errore — questa classe di bug non l'avrebbe presa nessun test con mock puliti.
+
+## Aggiornamento 2026-09-26 — OCR, grafo schemi, embeddings, editor
+
+Completati i quattro blocchi rimasti aperti (provider: `ClaudeCliProvider`; embedding: locale
+gratuito, `Xenova/all-MiniLM-L6-v2` via `@xenova/transformers`). Scope-down dichiarati rispetto
+alla visione completa di `docs/07-markdown-layer.md`: trascrizione schemi a **singolo passaggio**
+(non due-pass §5.4c), nessun preprocessing immagine (deskew/dewarp/tiling), vocabolario di
+contesto per keyword-frequency (non per embedding). La pagina di Triage con selezione multipla e
+scorciatoie `1/2/3/4` resta fuori scope (solo pre-classificazione per singolo documento).
+
+- **Embeddings + ricerca ibrida**: `chunks.embedding vector(384)` (migrazione `0011`, pgvector
+  abilitato con `CREATE EXTENSION vector`), job `embed_chunks` (chiamato in-process da
+  `extract_text`, non come job separato in coda — evita una race sull'ordine con i chunk appena
+  scritti). `apps/web/src/lib/search.ts`: FTS (`websearch_to_tsquery`) + similarità coseno
+  (`<=>`), fusione **RRF** (k=60), fallback a solo-FTS se il modello non è disponibile. UI: campo
+  di ricerca in `SubjectDetailClient` con risultati che aprono il documento alla pagina citata.
+- **OCR**: `AiProvider.ocrText` (stesso pattern I/O di `transcribeSchema`). `extractText.ts` ora
+  gestisce immagini (jpeg/png/webp, OCR diretto) e pagine PDF scansionate (rese in PNG via
+  `@napi-rs/canvas` + `pdfjs-dist`, poi OCR pagina per pagina) — le pagine col layer testo restano
+  invariate, zero chiamate AI per quelle.
+- **Pre-classificazione tipo documento**: `AiProvider.classifyDocumentType`, job
+  `classify_document_type` enqueued dopo ogni upload. Scrive `documents.typeSuggested`/
+  `typeConfidence`, **mai** sovrascrive `type` — la UI mostra "AI: schemi (86%)" con
+  conferma/ignora a un click (`DocumentList.tsx`).
+- **Grafo schemi a mano**: nuove tabelle `schema_nodes`/`schema_edges`/`schema_groups`/
+  `transcription_corrections` (migrazione `0011`), **accanto** a `schema_blocks` (non sostituita:
+  i documenti già trascritti col vecchio formato restano leggibili finché non vengono
+  ritrascritti). `transcribeSchema.ts` v2 produce un grafo con tassonomia chiusa
+  (`node.kind`/`edge.type` da `docs/07-markdown-layer.md` §5.2), scrive `content.md` con
+  front-matter YAML generato deterministicamente dai dati strutturati (mai markdown grezzo dal
+  modello). `VerifySchemaClient.tsx` riscritta: overlay dei bounding box (crop normalizzato 0..1)
+  sull'immagine, click per selezionare un nodo, "Prossimo incerto", select vincolata alla
+  tassonomia chiusa, export `.canvas` (JSON Canvas, via `packages/core/src/schemaGraphRender.ts`,
+  condiviso worker/web) e Mermaid (route dedicata, non ancora renderizzato graficamente in UI —
+  solo la stringa `graph TD`, l'integrazione della libreria `mermaid` client-side resta da fare).
+- **Profilo di grafia**: `AiProvider.distillHandwritingProfile` (modello haiku), job
+  `distill_handwriting_profile` enqueued dopo ogni correzione di label salvata (non in batch come
+  da §5.4b — semplificazione: ogni chiamata rilegge le ultime 20 correzioni, idempotente ma non
+  ottimale in costo se l'utente corregge molti nodi di fila). Scrive
+  `subjects/<slug>/.studyhub/handwriting-profile.md`, letto e passato come contesto extra alla
+  trascrizione successiva.
+- **Editor `content.md` con stickiness**: nuova pagina `/materie/[slug]/documenti/[documentId]`
+  (viewer + editor), `documents.mdEdited`/`mdConflict` (quest'ultima nuova). Un re-ingest con
+  `mdEdited=true` scrive `content.new.md` invece di sovrascrivere — mai silenzioso — e la UI
+  mostra un diff riga-per-riga (libreria `diff`) con "mantieni la mia versione"/"usa la nuova".
+  `content.orig.md` ora è scritto **una sola volta** (prima veniva sovrascritto a ogni re-ingest,
+  vanificando il suo scopo di base per il diff) — corretto sia in `extractText.ts` che nel
+  processor grafo, tramite l'helper condiviso `writeCanonicalMarkdown.ts`.
+
+**Scoperta seria durante la verifica Docker reale** (non l'avrebbe presa nessun test automatico,
+che gira su pglite/Node nudo, non nell'immagine di produzione): `onnxruntime-node` (dipendenza di
+`@xenova/transformers`) ships un binario nativo linkato contro **glibc** — nessuna build musl
+esiste a monte. Sotto Alpine, anche con `apk add libc6-compat`, **va in segfault**
+(`Ort::Exception`, exit 139) al primo caricamento del modello — lo shim copre lookup di simboli
+semplici, non un addon nativo di queste dimensioni. Risolto passando `docker/Dockerfile.worker` e
+`docker/Dockerfile.web` da `node:22-alpine` a `node:22-bookworm-slim` (Debian, glibc reale) —
+verificato che sia `@xenova/transformers` sia `@napi-rs/canvas` funzionano davvero nell'immagine
+risultante, non solo che l'immagine builda. Trovato anche un secondo problema nello stesso punto:
+il build Next.js di `apps/web` tentava di impacchettare il binario nativo di `onnxruntime-node` nel
+bundle webpack di qualunque route che importasse anche solo `resolveProvider` da `@studyhub/ai`
+(via il barrel `index.ts`), con `Module parse failed: Unexpected character`. `serverExternalPackages`
+non bastava (verificato: continuava a seguire l'import). Risolto isolando `embeddings.ts` dal
+barrel principale (subpath dedicato `@studyhub/ai/embeddings`) e importandolo in
+`apps/web/src/lib/search.ts` con `import(/* webpackIgnore: true */ ...)`, l'unico punto del pacchetto
+web che ne ha davvero bisogno.
+
+Verificato end-to-end su stack Docker reale (Postgres+pgvector, Redis, provider `FakeProvider` —
+nessuna `ANTHROPIC_API_KEY`/sessione `claude` disponibile in questo ambiente): upload PDF → OCR
+non necessario (layer testo presente) → embedding calcolato → ricerca "entropia" trova il chunk
+con la pagina esatta; upload immagine come `schemi` → `classify_document_type` e
+`transcribe_schema` completano senza errori (grafo con un nodo `unreadable` e messaggio onesto,
+essendo `FakeProvider` — corretto, non può leggere pixel); editor `content.md` e export
+`.canvas`/Mermaid rispondono con dati reali. **Non verificato dal vivo** in questa sessione (nessuna
+sessione `claude` autenticata né chiave Anthropic disponibili): la qualità reale della trascrizione
+vision (nodi/archi/confidenza plausibili su una foto vera di uno schema a mano), il costo/tempo
+reale di una sessione di verifica completa, e se il vocabolario di contesto migliora davvero le
+trascrizioni successive.
+
+`pnpm turbo run test`: 61 test `@studyhub/ai`, 90 `@studyhub/worker`, 178 `@studyhub/web`, oltre a
+`@studyhub/db`/`@studyhub/core`/`@studyhub/contracts`/`@studyhub/cli` — tutti verdi (eseguiti con
+`--concurrency=2`; con la concorrenza di default di turbo la macchina di sviluppo va OOM eseguendo
+tutte le build+test in parallelo, non è un problema del codice).

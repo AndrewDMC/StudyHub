@@ -5,34 +5,43 @@ import type { z } from 'zod';
 import type {
   AiProvider,
   AiUsage,
+  ClassifyDocumentTypePromptInput,
+  DistillHandwritingProfilePromptInput,
   EstimateTopicsPromptInput,
   ExamProfilePromptInput,
   ExtractTopicsPromptInput,
   FlashcardsPromptInput,
   GeneratedWithMeta,
   GradePromptInput,
+  OcrTextPromptInput,
   SchemaPromptInput,
   SchemaTranscriptionPromptInput,
   SimulationPromptInput,
   SummaryPromptInput,
 } from './provider.js';
 import {
+  ClassifyDocumentTypeOutputSchema,
+  DistillHandwritingProfileOutputSchema,
   EstimateTopicsOutputSchema,
   ExamProfileSchema,
   ExtractTopicsOutputSchema,
   FlashcardsOutputSchema,
   GradeOutputSchema,
+  OcrTextOutputSchema,
+  SchemaGraphOutputSchema,
   SchemaOutputSchema,
-  SchemaTranscriptionOutputSchema,
   SimulationOutputSchema,
   SummaryOutputSchema,
+  type ClassifyDocumentTypeOutput,
+  type DistillHandwritingProfileOutput,
   type EstimateTopicsOutput,
   type ExamProfile,
   type ExtractTopicsOutput,
   type FlashcardsOutput,
   type GradeOutput,
+  type OcrTextOutput,
+  type SchemaGraphOutput,
   type SchemaOutput,
-  type SchemaTranscriptionOutput,
   type SimulationOutput,
   type SummaryOutput,
 } from './schemas.js';
@@ -43,6 +52,7 @@ import {
   renderExtractTopicsUserPrompt,
   renderFlashcardsUserPrompt,
   renderGradeUserPrompt,
+  renderSchemaTranscriptionUserPrompt,
   renderSchemaUserPrompt,
   renderSimulationUserPrompt,
   renderSummaryUserPrompt,
@@ -162,18 +172,81 @@ export class ClaudeCliProvider implements AiProvider {
   async transcribeSchema(
     input: SchemaTranscriptionPromptInput,
     model: string,
-  ): Promise<GeneratedWithMeta<SchemaTranscriptionOutput>> {
-    const { text: system, promptVersion } = loadPrompt('schema_transcription', 1);
+  ): Promise<GeneratedWithMeta<SchemaGraphOutput>> {
+    const { text: system, promptVersion } = loadPrompt('schema_transcription', 2);
     const userPrompt = [
       `Leggi l'immagine al percorso esatto: ${input.imagePath}`,
-      'Poi trascrivi i suoi blocchi di contenuto secondo le istruzioni.',
+      'Poi trascrivi il suo grafo di nodi e archi secondo le istruzioni.',
+      '',
+      renderSchemaTranscriptionUserPrompt(input),
     ].join('\n');
     const { data, usage } = await this.callWithSchema(
       system,
       userPrompt,
-      SchemaTranscriptionOutputSchema,
+      SchemaGraphOutputSchema,
       model,
       { allowedTools: 'Read', addDir: dirname(input.imagePath) },
+    );
+    return { data, usage, model, promptVersion };
+  }
+
+  /** Same `Read`-tool grant as `transcribeSchema`, scoped to the image's directory — a printed page, not a hand-drawn schema. */
+  async ocrText(
+    input: OcrTextPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<OcrTextOutput>> {
+    const { text: system, promptVersion } = loadPrompt('ocr_text', 1);
+    const userPrompt = [
+      `Leggi l'immagine al percorso esatto: ${input.imagePath}`,
+      'Poi trascrivi il testo secondo le istruzioni.',
+    ].join('\n');
+    const { data, usage } = await this.callWithSchema(
+      system,
+      userPrompt,
+      OcrTextOutputSchema,
+      model,
+      {
+        allowedTools: 'Read',
+        addDir: dirname(input.imagePath),
+      },
+    );
+    return { data, usage, model, promptVersion };
+  }
+
+  async classifyDocumentType(
+    input: ClassifyDocumentTypePromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<ClassifyDocumentTypeOutput>> {
+    const { text: system, promptVersion } = loadPrompt('classify_document_type', 1);
+    const userPrompt = input.imagePath
+      ? [
+          `Leggi l'immagine al percorso esatto: ${input.imagePath}`,
+          'Poi suggerisci il tipo di documento secondo le istruzioni.',
+        ].join('\n')
+      : `Campione del documento:\n\n${input.textSample ?? ''}`;
+    const { data, usage } = await this.callWithSchema(
+      system,
+      userPrompt,
+      ClassifyDocumentTypeOutputSchema,
+      model,
+      input.imagePath ? { allowedTools: 'Read', addDir: dirname(input.imagePath) } : undefined,
+    );
+    return { data, usage, model, promptVersion };
+  }
+
+  async distillHandwritingProfile(
+    input: DistillHandwritingProfilePromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<DistillHandwritingProfileOutput>> {
+    const { text: system, promptVersion } = loadPrompt('distill_handwriting_profile', 1);
+    const userPrompt = `Correzioni recenti (prima -> dopo):\n\n${input.corrections
+      .map((c) => `- "${c.before ?? ''}" -> "${c.after ?? ''}" (${c.kind ?? 'n/d'})`)
+      .join('\n')}`;
+    const { data, usage } = await this.callWithSchema(
+      system,
+      userPrompt,
+      DistillHandwritingProfileOutputSchema,
+      model,
     );
     return { data, usage, model, promptVersion };
   }

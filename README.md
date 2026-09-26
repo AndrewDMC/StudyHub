@@ -4,8 +4,15 @@ Piattaforma self-hosted che trasforma materiale di studio grezzo (appunti, schem
 in un **piano quotidiano di azioni verificabili** verso un esame.
 Local-first: le materie sono cartelle reali su disco, l'AI è un worker eseguibile anche da terminale.
 
-> Stato: **F0 completa · F1–F7 a slice** — fondamenta, ingest deterministico (PDF+FTS), materie
-> (argomenti/esami/archiviazione), motore AI con provider **simulato** (`FakeProvider`, gratuito e
+> Stato: **F0 completa · F1 completa · F2–F7 a slice** — fondamenta, ingest con **OCR reale**
+> (immagini e PDF scansionati via `AiProvider.ocrText`), **ricerca ibrida** (FTS + vettoriale,
+> fusione RRF, embedding locale gratuito `Xenova/all-MiniLM-L6-v2`), **grafo nodi/archi per gli
+> schemi a mano** (tassonomia chiusa, schermata di verifica con bounding box, export
+> `.canvas`/Mermaid, profilo di grafia che impara dalle correzioni), **pre-classificazione AI del
+> tipo documento** (suggerimento a un click, mai automatico) ed **editor di `content.md`** con
+> stickiness (un re-ingest non sovrascrive mai una modifica manuale — mostra un conflitto
+> risolvibile), materie (argomenti/esami/archiviazione), motore AI con provider **simulato**
+> (`FakeProvider`, gratuito e
 > deterministico; `AnthropicProvider` reale pronto ma non testato dal vivo — serve una
 > `ANTHROPIC_API_KEY`; **`ClaudeCliProvider`** in alternativa, instrada le stesse chiamate sulla
 > CLI `claude` da terminale usando la subscription già loggata, niente API key — vedi README
@@ -26,7 +33,7 @@ Local-first: le materie sono cartelle reali su disco, l'AI è un worker eseguibi
 > `generate_simulation` di F5), con **`ModelPicker` + stima costo pre-flight** in UI prima di ogni
 > generazione. **Pagina `/admin`** (job, costi per mese, stato sync FS, reset indice). **Export CSV**
 > di un mazzo flashcard (importabile in Anki, mono-direzionale — niente ancora `.apkg` con stato
-> di scheduling). Niente ancora tema light, densità, distribuzione Docker. 449 test
+> di scheduling). Niente ancora tema light, densità, distribuzione Docker. 533 test
 > (`pnpm turbo run test`), tutti verdi. Dettagli e limiti dichiarati nella sezione "Stato" di ogni
 > `docs/fasi/F*.md`; roadmap completa in
 > [docs/fasi/README.md](docs/fasi/README.md).
@@ -75,7 +82,7 @@ Per usarlo nell'ambiente Docker:
    ```
 
 Il worker chiama quindi `claude` da terminale dentro il container, riusando la sessione OAuth
-montata dall'host — nessuna chiave API in gioco. Nota: `pricing.ts` resta una stima *per token*
+montata dall'host — nessuna chiave API in gioco. Nota: `pricing.ts` resta una stima _per token_
 pensata per l'API a consumo — con la subscription il costo marginale reale per chiamata è zero,
 la cifra mostrata in UI/CLI è quindi puramente illustrativa quando si usa questo provider.
 

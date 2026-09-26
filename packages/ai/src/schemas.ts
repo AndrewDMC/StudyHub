@@ -180,6 +180,125 @@ export const ExtractTopicsOutputSchema = z.object({
 });
 export type ExtractTopicsOutput = z.infer<typeof ExtractTopicsOutputSchema>;
 
+/**
+ * `ocr_text` — plain-text reading of a printed (not hand-drawn) page image:
+ * a scanned PDF page with no text layer, or an uploaded photo/scan. One
+ * block per page/image, never structured/interpreted — same "mark it,
+ * don't guess it" discipline as `transcribe_schema`.
+ */
+export const OcrConfidenceSchema = z.enum(['ok', 'uncertain', 'illegible']);
+export type OcrConfidence = z.infer<typeof OcrConfidenceSchema>;
+
+export const OcrTextOutputSchema = z.object({
+  text: z.string(),
+  confidence: OcrConfidenceSchema,
+});
+export type OcrTextOutput = z.infer<typeof OcrTextOutputSchema>;
+
+/**
+ * `classify_document_type` — a suggestion only (apps/worker/src/processors/
+ * classifyDocumentType.ts never overrides a user-picked type), so low
+ * confidence is expected and fine; the UI shows it as "AI: schemi (62%)"
+ * with a one-click correction, not a silent auto-apply.
+ */
+export const DocumentTypeGuessSchema = z.enum(['appunti', 'schemi', 'esami', 'slide', 'altro']);
+export type DocumentTypeGuess = z.infer<typeof DocumentTypeGuessSchema>;
+
+export const ClassifyDocumentTypeOutputSchema = z.object({
+  type: DocumentTypeGuessSchema,
+  confidence: z.number().min(0).max(1),
+});
+export type ClassifyDocumentTypeOutput = z.infer<typeof ClassifyDocumentTypeOutputSchema>;
+
+/**
+ * `transcribe_schema` (v2, graph) — docs/07-markdown-layer.md §5.2. Replaces
+ * the flat `SchemaTranscriptionOutput` above for newly (re)transcribed
+ * documents (apps/worker/src/processors/transcribeSchema.ts); kept alongside
+ * it, not instead of it, so a document transcribed under the old shape stays
+ * readable until it's re-transcribed. Node/edge kinds are a **closed**
+ * taxonomy on purpose (docs/07 §5.2: "altrimenti il modello si inventa i
+ * tipi") — the worker generates `content.md`'s front-matter deterministically
+ * from this structured output, never trusting raw markdown from the model.
+ */
+export const SchemaNodeKindSchema = z.enum([
+  'concetto',
+  'definizione',
+  'formula',
+  'principio',
+  'grandezza',
+  'caso',
+  'esempio',
+  'condizione',
+  'conseguenza',
+  'domanda',
+]);
+export type SchemaNodeKindGuess = z.infer<typeof SchemaNodeKindSchema>;
+
+export const SchemaEdgeTypeSchema = z.enum([
+  'implica',
+  'causa',
+  'composto-da',
+  'esempio-di',
+  'opposto-a',
+  'precede',
+  'dipende-da',
+  'annota',
+]);
+export type SchemaEdgeTypeGuess = z.infer<typeof SchemaEdgeTypeSchema>;
+
+export const SchemaGraphNodeConfidenceSchema = z.enum(['ok', 'uncertain', 'unreadable']);
+export type SchemaGraphNodeConfidence = z.infer<typeof SchemaGraphNodeConfidenceSchema>;
+
+/** `crop` is page-relative, normalized 0..1 (works regardless of the source image's pixel size). */
+export const SchemaGraphNodeSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  kind: SchemaNodeKindSchema,
+  crop: z
+    .object({
+      x: z.number().min(0).max(1),
+      y: z.number().min(0).max(1),
+      w: z.number().min(0).max(1),
+      h: z.number().min(0).max(1),
+    })
+    .nullable(),
+  confidence: SchemaGraphNodeConfidenceSchema,
+});
+export type SchemaGraphNode = z.infer<typeof SchemaGraphNodeSchema>;
+
+export const SchemaGraphEdgeSchema = z.object({
+  from: z.string().min(1),
+  to: z.string().min(1),
+  type: SchemaEdgeTypeSchema,
+  label: z.string().nullable(),
+});
+export type SchemaGraphEdge = z.infer<typeof SchemaGraphEdgeSchema>;
+
+export const SchemaGraphGroupSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  nodeKeys: z.array(z.string().min(1)).min(1),
+});
+export type SchemaGraphGroup = z.infer<typeof SchemaGraphGroupSchema>;
+
+export const SchemaGraphOutputSchema = z.object({
+  nodes: z.array(SchemaGraphNodeSchema),
+  edges: z.array(SchemaGraphEdgeSchema),
+  groups: z.array(SchemaGraphGroupSchema),
+});
+export type SchemaGraphOutput = z.infer<typeof SchemaGraphOutputSchema>;
+
+/**
+ * `distill_handwriting_profile` — turns a batch of verification-screen
+ * corrections into a handful of durable convention lines
+ * (docs/07-markdown-layer.md §5.4b), e.g. "l'utente scrive Δ come una
+ * lambda capovolta" — not a transcript of the corrections themselves.
+ */
+export const DistillHandwritingProfileOutputSchema = z.object({
+  lines: z.array(z.string().min(1)),
+});
+export type DistillHandwritingProfileOutput = z.infer<typeof DistillHandwritingProfileOutputSchema>;
+
 export const GradeOutputSchema = z.object({
   criteria: z.array(
     z.object({

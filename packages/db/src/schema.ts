@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
   boolean,
+  customType,
   index,
   integer,
   jsonb,
@@ -13,6 +14,24 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
+
+/**
+ * pgvector's `vector(n)` type — drizzle-orm has no built-in column for it.
+ * Stored/read as a plain number[] on the JS side; `toDriver` formats it as
+ * pgvector's literal syntax (`[0.1,0.2,...]`), `fromDriver` parses it back.
+ * Dimension fixed at 384 (`Xenova/all-MiniLM-L6-v2`, packages/ai/src/embeddings.ts).
+ */
+const vector = customType<{ data: number[]; driverData: string }>({
+  dataType() {
+    return 'vector(384)';
+  },
+  toDriver(value: number[]): string {
+    return `[${value.join(',')}]`;
+  },
+  fromDriver(value: string): number[] {
+    return value.slice(1, -1).split(',').map(Number);
+  },
+});
 
 /**
  * F0 scope only: `subjects`, `jobs`, `settings` (docs/fasi/F0-fondamenta.md).
@@ -78,6 +97,7 @@ export const settings = pgTable('settings', {
 export type DocumentType = 'appunti' | 'schemi' | 'esami' | 'slide' | 'altro';
 export type DocumentStatus = 'uploaded' | 'parsing' | 'parsed' | 'failed' | 'missing';
 export type VerificationStatus = 'not_required' | 'pending' | 'partial' | 'verified';
+export type DocumentTypeSource = 'user' | 'ai';
 
 export const documents = pgTable('documents', {
   id: uuid('id').primaryKey(),
@@ -85,6 +105,15 @@ export const documents = pgTable('documents', {
     .notNull()
     .references(() => subjects.id, { onDelete: 'cascade' }),
   type: text('type').$type<DocumentType>().notNull(),
+  // Set by `classify_document_type` right after upload — never overrides a
+  // type the user picked explicitly, only annotates confidence in it/a
+  // suggestion (apps/worker/src/processors/classifyDocumentType.ts).
+  typeSource: text('type_source').$type<DocumentTypeSource>().notNull().default('user'),
+  typeConfidence: real('type_confidence'),
+  // The AI's own guess, kept separate from `type` (the user's actual choice)
+  // so a disagreement can be shown as a one-click suggestion, never applied
+  // automatically (apps/worker/src/processors/classifyDocumentType.ts).
+  typeSuggested: text('type_suggested').$type<DocumentType>(),
   originalName: text('original_name').notNull(),
   storedPath: text('stored_path').notNull(),
   mime: text('mime').notNull(),
@@ -97,6 +126,10 @@ export const documents = pgTable('documents', {
   mdPath: text('md_path'),
   mdEdited: boolean('md_edited').notNull().default(false),
   mdConfidence: real('md_confidence'),
+  // Set when a re-ingest finds `mdEdited=true`: the fresh output was written
+  // to `content.new.md` instead of overwriting the user's edit
+  // (apps/web/src/lib/documentContent.ts "stickiness").
+  mdConflict: boolean('md_conflict').notNull().default(false),
   verificationStatus: text('verification_status')
     .$type<VerificationStatus>()
     .notNull()
@@ -144,12 +177,123 @@ export const chunks = pgTable(
     ord: integer('ord').notNull(),
     text: text('text').notNull(),
     tokens: integer('tokens').notNull(),
-    // vector(1024) embedding column deferred to when an embedding model is wired in.
+    // Local, free embedding (Xenova/all-MiniLM-L6-v2, 384 dims) — computed by
+    // the `embed_chunks` job right after extraction. Null until embedded;
+    // hybrid search (apps/web/src/lib/search.ts) falls back to FTS-only rows.
+    embedding: vector('embedding'),
   },
   (table) => [
     index('chunks_text_fts_idx').using('gin', sql`to_tsvector('italian', ${table.text})`),
   ],
 );
+
+/**
+ * Node/edge graph for a `schemi`-type document (docs/07-markdown-layer.md
+ * §5.2), replacing the flat `schemaBlocks` for newly (re)transcribed
+ * documents — see apps/worker/src/processors/transcribeSchema.ts. Documents
+ * transcribed before this existed keep their `schemaBlocks` rows and the old
+ * flat verification view until re-transcribed; both can coexist per document,
+ * the UI picks whichever table has rows.
+ */
+export type SchemaNodeKind =
+  | 'concetto'
+  | 'definizione'
+  | 'formula'
+  | 'principio'
+  | 'grandezza'
+  | 'caso'
+  | 'esempio'
+  | 'condizione'
+  | 'conseguenza'
+  | 'domanda';
+export type SchemaEdgeType =
+  | 'implica'
+  | 'causa'
+  | 'composto-da'
+  | 'esempio-di'
+  | 'opposto-a'
+  | 'precede'
+  | 'dipende-da'
+  | 'annota';
+export type SchemaNodeConfidence = 'ok' | 'uncertain' | 'unreadable';
+
+export interface SchemaNodeCrop {
+  page: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export const schemaNodes = pgTable(
+  'schema_nodes',
+  {
+    id: uuid('id').primaryKey(),
+    documentId: uuid('document_id')
+      .notNull()
+      .references(() => documents.id, { onDelete: 'cascade' }),
+    nodeKey: text('node_key').notNull(), // e.g. "n7", model/us-assigned, unique within a document
+    label: text('label').notNull(),
+    kind: text('kind').$type<SchemaNodeKind>().notNull(),
+    crop: jsonb('crop').$type<SchemaNodeCrop>(),
+    confidence: text('confidence').$type<SchemaNodeConfidence>().notNull(),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    verifiedBy: text('verified_by'),
+    topicId: uuid('topic_id').references(() => topics.id, { onDelete: 'set null' }),
+    mdAnchor: text('md_anchor'), // "^n7" — links this row back to content.md
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('schema_nodes_document_confidence_idx').on(table.documentId, table.confidence)],
+);
+
+export const schemaEdges = pgTable(
+  'schema_edges',
+  {
+    id: uuid('id').primaryKey(),
+    documentId: uuid('document_id')
+      .notNull()
+      .references(() => documents.id, { onDelete: 'cascade' }),
+    fromNode: text('from_node').notNull(), // node_key, not a FK (nodes are replaced as a batch)
+    toNode: text('to_node').notNull(),
+    type: text('type').$type<SchemaEdgeType>().notNull(),
+    label: text('label'),
+    confidence: text('confidence').$type<SchemaNodeConfidence>(),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('schema_edges_from_node_idx').on(table.fromNode),
+    index('schema_edges_to_node_idx').on(table.toNode),
+  ],
+);
+
+export const schemaGroups = pgTable('schema_groups', {
+  id: uuid('id').primaryKey(),
+  documentId: uuid('document_id')
+    .notNull()
+    .references(() => documents.id, { onDelete: 'cascade' }),
+  groupKey: text('group_key').notNull(),
+  label: text('label').notNull(),
+  nodeKeys: jsonb('node_keys').$type<string[]>().notNull(),
+});
+
+/**
+ * One row per user correction made on the verification screen — the raw
+ * material `distill_handwriting_profile` reads to write
+ * `handwriting-profile.md` lines (docs/07-markdown-layer.md §5.4b).
+ */
+export const transcriptionCorrections = pgTable('transcription_corrections', {
+  id: uuid('id').primaryKey(),
+  documentId: uuid('document_id')
+    .notNull()
+    .references(() => documents.id, { onDelete: 'cascade' }),
+  nodeKey: text('node_key').notNull(),
+  before: text('before'),
+  after: text('after'),
+  kind: text('kind'), // 'label' | 'kind' | 'edge' | 'merge' | 'exclude'
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
 
 /**
  * F2 scope (docs/fasi/F2-materie.md), non-AI slice only: user-managed exams
@@ -619,3 +763,11 @@ export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
 export type DocumentTopic = typeof documentTopics.$inferSelect;
 export type NewDocumentTopic = typeof documentTopics.$inferInsert;
+export type SchemaNode = typeof schemaNodes.$inferSelect;
+export type NewSchemaNode = typeof schemaNodes.$inferInsert;
+export type SchemaEdge = typeof schemaEdges.$inferSelect;
+export type NewSchemaEdge = typeof schemaEdges.$inferInsert;
+export type SchemaGroup = typeof schemaGroups.$inferSelect;
+export type NewSchemaGroup = typeof schemaGroups.$inferInsert;
+export type TranscriptionCorrection = typeof transcriptionCorrections.$inferSelect;
+export type NewTranscriptionCorrection = typeof transcriptionCorrections.$inferInsert;

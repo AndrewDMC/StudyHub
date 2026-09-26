@@ -17,6 +17,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^0.1.53",
     "@studyhub/ai": "workspace:*",
     "@studyhub/contracts": "workspace:*",
     "@studyhub/core": "workspace:*",

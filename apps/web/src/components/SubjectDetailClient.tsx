@@ -4,7 +4,13 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import type { DocumentDto, ExamDto, FlashcardStatsDto, SubjectDto, TopicDto } from '@studyhub/contracts';
+import type {
+  DocumentDto,
+  ExamDto,
+  FlashcardStatsDto,
+  SubjectDto,
+  TopicDto,
+} from '@studyhub/contracts';
 import type { DocumentType } from '@studyhub/core/browser';
 import { SUBJECT_COLOR_HEX } from '@/lib/subjectColors';
 import { formatExamCountdown } from '@/lib/format';
@@ -17,6 +23,7 @@ import { GenerationPanel } from './GenerationPanel';
 import { StatsPanel } from './StatsPanel';
 import { ExamPrepPanel } from './ExamPrepPanel';
 import { DailyTasksPanel } from './DailyTasksPanel';
+import { SearchPanel } from './SearchPanel';
 
 const TABS = [
   { key: 'panoramica', label: 'Panoramica' },
@@ -95,7 +102,9 @@ function DocumentTypeTab({
           <DocumentUploadForm subjectSlug={subjectSlug} defaultType={type} />
         </section>
         <section>
-          <h2 className="mb-2 text-sm font-medium text-fg-secondary">{filtered.length} documenti</h2>
+          <h2 className="mb-2 text-sm font-medium text-fg-secondary">
+            {filtered.length} documenti
+          </h2>
           {filtered.length === 0 ? (
             <div className="rounded-[var(--radius-card)] border border-dashed border-border bg-bg-surface p-8 text-center text-sm text-fg-muted">
               Nessun documento di questo tipo ancora.
@@ -111,7 +120,11 @@ function DocumentTypeTab({
         </section>
       </div>
       <aside>
-        <GenerationPanel subjectSlug={subjectSlug} documents={documents} selectedDocIds={selectedDocIds} />
+        <GenerationPanel
+          subjectSlug={subjectSlug}
+          documents={documents}
+          selectedDocIds={selectedDocIds}
+        />
       </aside>
     </div>
   );
@@ -207,7 +220,10 @@ export function SubjectDetailClient({ slug }: { slug: string }) {
           {nextExam && (
             <div className="shrink-0 text-right text-[11px] text-fg-muted">
               esame{' '}
-              {new Date(nextExam.date).toLocaleDateString('it-IT', { day: 'numeric', month: 'long' })}
+              {new Date(nextExam.date).toLocaleDateString('it-IT', {
+                day: 'numeric',
+                month: 'long',
+              })}
               <b className="block font-mono text-[15px] font-semibold text-fg-primary">
                 {formatExamCountdown(nextExam.date)}
               </b>
@@ -216,6 +232,8 @@ export function SubjectDetailClient({ slug }: { slug: string }) {
           <SubjectActions subject={subject} />
         </div>
       </div>
+
+      <SearchPanel subjectSlug={subject.slug} />
 
       <div className="mb-6 flex items-center gap-1 border-b border-border">
         {TABS.map((tab) => (

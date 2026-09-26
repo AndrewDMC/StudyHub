@@ -188,7 +188,9 @@ describe('ClaudeCliProvider.transcribeSchema — the one call that grants Read a
   it('widens --tools to Read and scopes --add-dir to the image directory, mentions the path in the prompt', async () => {
     const run = vi.fn().mockResolvedValue(
       envelope({
-        blocks: [{ text: 'Sistema', confidence: 'ok', note: null }],
+        nodes: [{ key: 'n1', label: 'Sistema', kind: 'concetto', crop: null, confidence: 'ok' }],
+        edges: [],
+        groups: [],
       }),
     );
     const provider = new ClaudeCliProvider({ run });
@@ -198,8 +200,10 @@ describe('ClaudeCliProvider.transcribeSchema — the one call that grants Read a
       'claude-sonnet-5',
     );
 
-    expect(result.data.blocks).toEqual([{ text: 'Sistema', confidence: 'ok', note: null }]);
-    expect(result.promptVersion).toBe('schema_transcription/v1');
+    expect(result.data.nodes).toEqual([
+      { key: 'n1', label: 'Sistema', kind: 'concetto', crop: null, confidence: 'ok' },
+    ]);
+    expect(result.promptVersion).toBe('schema_transcription/v2');
 
     const [args, stdin] = run.mock.calls[0];
     expect(args).toContain('--tools');

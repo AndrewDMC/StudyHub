@@ -9,7 +9,10 @@ export const JobTypeSchema = z.enum([
   'ping',
   'reconcile',
   'extract_text',
+  'embed_chunks',
+  'classify_document_type',
   'transcribe_schema',
+  'distill_handwriting_profile',
   'generate_flashcards',
   'generate_schema',
   'generate_summary',
@@ -53,6 +56,27 @@ export const TranscribeSchemaJobInputSchema = z.object({
   model: z.string().optional(),
 });
 export type TranscribeSchemaJobInput = z.infer<typeof TranscribeSchemaJobInputSchema>;
+
+/** Computes the local embedding for every chunk of a document missing one. */
+export const EmbedChunksJobInputSchema = z.object({ documentId: z.string().uuid() });
+export type EmbedChunksJobInput = z.infer<typeof EmbedChunksJobInputSchema>;
+
+/** AI-suggested `documents.type`, enqueued right after upload — never overrides a user-picked type. */
+export const ClassifyDocumentTypeJobInputSchema = z.object({
+  documentId: z.string().uuid(),
+  model: z.string().optional(),
+});
+export type ClassifyDocumentTypeJobInput = z.infer<typeof ClassifyDocumentTypeJobInputSchema>;
+
+/** Distills recent `transcription_corrections` rows into handwriting-profile.md lines. */
+export const DistillHandwritingProfileJobInputSchema = z.object({
+  subjectSlug: z.string(),
+  documentId: z.string().uuid(),
+  model: z.string().optional(),
+});
+export type DistillHandwritingProfileJobInput = z.infer<
+  typeof DistillHandwritingProfileJobInputSchema
+>;
 
 export const JobProgressSchema = z.object({
   pct: z.number().min(0).max(100),

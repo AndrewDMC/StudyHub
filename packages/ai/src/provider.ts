@@ -1,12 +1,15 @@
 import type {
+  ClassifyDocumentTypeOutput,
+  DistillHandwritingProfileOutput,
   EstimateTopicsOutput,
   ExamProfile,
   ExtractTopicsOutput,
   FlashcardType,
   FlashcardsOutput,
   GradeOutput,
+  OcrTextOutput,
+  SchemaGraphOutput,
   SchemaOutput,
-  SchemaTranscriptionOutput,
   SimulationItem,
   SimulationOutput,
   SummaryOutput,
@@ -53,10 +56,37 @@ export interface SchemaPromptInput {
   style: 'gerarchico' | 'mappa' | 'timeline' | 'confronto';
 }
 
-/** The absolute path (host/container filesystem) of the schema photo to transcribe. */
+/** A printed page/photo to OCR — no interpretation, plain text out. */
+export interface OcrTextPromptInput {
+  imagePath: string;
+  mime: string;
+}
+
+/** A document to suggest a type for — whichever sample is available (text extract or photo). */
+export interface ClassifyDocumentTypePromptInput {
+  textSample?: string;
+  imagePath?: string;
+  mime?: string;
+}
+
+export interface DistillHandwritingProfilePromptInput {
+  corrections: { before: string | null; after: string | null; kind: string | null }[];
+}
+
+/**
+ * The absolute path (host/container filesystem) of the schema photo to
+ * transcribe, plus the two free "levers" from docs/07-markdown-layer.md
+ * §5.4 that don't need a second model call: `contextVocabulary` (terms
+ * likely to appear, built by keyword retrieval over the subject's existing
+ * chunks/topics — apps/worker/src/processors/schemaGraph/contextVocabulary.ts)
+ * and `handwritingProfile` (accumulated conventions for this user/subject,
+ * read from `handwriting-profile.md` if it exists).
+ */
 export interface SchemaTranscriptionPromptInput {
   imagePath: string;
   mime: string;
+  contextVocabulary?: string[];
+  handwritingProfile?: string;
 }
 
 /** Chunks come from documents of type `esami` (docs/03-ai-e-worker.md §2). */
@@ -138,7 +168,16 @@ export interface AiProvider {
   transcribeSchema(
     input: SchemaTranscriptionPromptInput,
     model: string,
-  ): Promise<GeneratedWithMeta<SchemaTranscriptionOutput>>;
+  ): Promise<GeneratedWithMeta<SchemaGraphOutput>>;
+  ocrText(input: OcrTextPromptInput, model: string): Promise<GeneratedWithMeta<OcrTextOutput>>;
+  classifyDocumentType(
+    input: ClassifyDocumentTypePromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<ClassifyDocumentTypeOutput>>;
+  distillHandwritingProfile(
+    input: DistillHandwritingProfilePromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<DistillHandwritingProfileOutput>>;
   extractExamProfile(
     input: ExamProfilePromptInput,
     model: string,

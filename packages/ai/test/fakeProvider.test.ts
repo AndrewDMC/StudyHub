@@ -308,3 +308,53 @@ describe('FakeProvider.generateSummary', () => {
     expect(data.markdown).toContain('Fisica 1');
   });
 });
+
+describe('FakeProvider.transcribeSchema', () => {
+  const provider = new FakeProvider();
+
+  it('honestly punts with a single unreadable node, never fabricating a graph', async () => {
+    const { data } = await provider.transcribeSchema(
+      { imagePath: '/irrelevant.jpg', mime: 'image/jpeg' },
+      'irrelevant',
+    );
+    expect(data.nodes).toHaveLength(1);
+    expect(data.nodes[0]?.confidence).toBe('unreadable');
+    expect(data.edges).toEqual([]);
+    expect(data.groups).toEqual([]);
+  });
+});
+
+describe('FakeProvider.ocrText', () => {
+  const provider = new FakeProvider();
+
+  it('honestly punts with empty, illegible text rather than fabricating a reading', async () => {
+    const { data } = await provider.ocrText(
+      { imagePath: '/irrelevant.jpg', mime: 'image/jpeg' },
+      'irrelevant',
+    );
+    expect(data.text).toBe('');
+    expect(data.confidence).toBe('illegible');
+  });
+});
+
+describe('FakeProvider.classifyDocumentType', () => {
+  const provider = new FakeProvider();
+
+  it('guesses esami from exam-related keywords in the text sample', async () => {
+    const { data } = await provider.classifyDocumentType(
+      { textSample: 'Appello del 12 giugno, esame scritto di Fisica 1' },
+      'irrelevant',
+    );
+    expect(data.type).toBe('esami');
+    expect(data.confidence).toBeGreaterThan(0);
+  });
+
+  it('falls back to a low-confidence altro guess with no text sample (a photo)', async () => {
+    const { data } = await provider.classifyDocumentType(
+      { imagePath: '/irrelevant.jpg' },
+      'irrelevant',
+    );
+    expect(data.type).toBe('altro');
+    expect(data.confidence).toBeLessThan(0.3);
+  });
+});

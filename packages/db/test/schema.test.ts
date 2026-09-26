@@ -5,6 +5,7 @@ import { createTestDb } from '../src/testDb.js';
 import {
   artifacts,
   attemptItemResults,
+  chunks,
   documentTopics,
   documents,
   examProfiles,
@@ -12,6 +13,9 @@ import {
   flashcards,
   jobs,
   reviews,
+  schemaEdges,
+  schemaGroups,
+  schemaNodes,
   settings,
   simulationAttempts,
   simulationItems,
@@ -20,6 +24,7 @@ import {
   subjects,
   tasks,
   topics,
+  transcriptionCorrections,
 } from '../src/schema.js';
 
 describe('subjects table', () => {
@@ -702,5 +707,144 @@ describe('document_topics table', () => {
 
     await db.delete(documents).where(eq(documents.id, documentId));
     expect(await db.select().from(documentTopics)).toHaveLength(0);
+  });
+});
+
+describe('chunks table — pgvector embedding column', () => {
+  async function fixtureDocument(db: Awaited<ReturnType<typeof createTestDb>>) {
+    const subjectId = randomUUID();
+    await db.insert(subjects).values({
+      id: subjectId,
+      slug: 'fisica-1',
+      name: 'Fisica 1',
+      color: 'blue',
+      folderPath: '/data/subjects/fisica-1',
+    });
+    const documentId = randomUUID();
+    await db.insert(documents).values({
+      id: documentId,
+      subjectId,
+      type: 'appunti',
+      originalName: 'lezione.pdf',
+      storedPath: '/irrelevant',
+      mime: 'application/pdf',
+      bytes: 10,
+      sha256: 'a'.repeat(64),
+    });
+    return { subjectId, documentId };
+  }
+
+  it('is null by default and round-trips a 384-dim vector once set', async () => {
+    const db = await createTestDb();
+    const { documentId } = await fixtureDocument(db);
+    const chunkId = randomUUID();
+    await db.insert(chunks).values({
+      id: chunkId,
+      documentId,
+      pageFrom: 1,
+      pageTo: 1,
+      ord: 0,
+      text: 'Il primo principio della termodinamica',
+      tokens: 6,
+    });
+
+    const [beforeRow] = await db.select().from(chunks).where(eq(chunks.id, chunkId));
+    expect(beforeRow?.embedding).toBeNull();
+
+    const embedding = Array.from({ length: 384 }, (_, i) => i / 384);
+    await db.update(chunks).set({ embedding }).where(eq(chunks.id, chunkId));
+
+    const [afterRow] = await db.select().from(chunks).where(eq(chunks.id, chunkId));
+    expect(afterRow?.embedding).toHaveLength(384);
+    expect(afterRow?.embedding?.[1]).toBeCloseTo(1 / 384, 5);
+  });
+});
+
+describe('schema graph tables (schema_nodes/schema_edges/schema_groups/transcription_corrections)', () => {
+  async function fixtureDocument(db: Awaited<ReturnType<typeof createTestDb>>) {
+    const subjectId = randomUUID();
+    await db.insert(subjects).values({
+      id: subjectId,
+      slug: 'fisica-1',
+      name: 'Fisica 1',
+      color: 'blue',
+      folderPath: '/data/subjects/fisica-1',
+    });
+    const documentId = randomUUID();
+    await db.insert(documents).values({
+      id: documentId,
+      subjectId,
+      type: 'schemi',
+      originalName: 'schema.jpg',
+      storedPath: '/irrelevant',
+      mime: 'image/jpeg',
+      bytes: 10,
+      sha256: 'b'.repeat(64),
+    });
+    return { subjectId, documentId };
+  }
+
+  it('stores nodes, edges and groups for a document and cascades on delete', async () => {
+    const db = await createTestDb();
+    const { documentId } = await fixtureDocument(db);
+
+    await db.insert(schemaNodes).values([
+      {
+        id: randomUUID(),
+        documentId,
+        nodeKey: 'n1',
+        label: 'Primo principio',
+        kind: 'principio',
+        confidence: 'ok',
+      },
+      {
+        id: randomUUID(),
+        documentId,
+        nodeKey: 'n2',
+        label: 'Trasf. adiabatica',
+        kind: 'caso',
+        confidence: 'uncertain',
+      },
+    ]);
+    await db.insert(schemaEdges).values({
+      id: randomUUID(),
+      documentId,
+      fromNode: 'n1',
+      toNode: 'n2',
+      type: 'implica',
+    });
+    await db.insert(schemaGroups).values({
+      id: randomUUID(),
+      documentId,
+      groupKey: 'g1',
+      label: 'Trasformazioni',
+      nodeKeys: ['n2'],
+    });
+
+    expect(await db.select().from(schemaNodes)).toHaveLength(2);
+    expect(await db.select().from(schemaEdges)).toHaveLength(1);
+    expect(await db.select().from(schemaGroups)).toHaveLength(1);
+
+    await db.delete(documents).where(eq(documents.id, documentId));
+    expect(await db.select().from(schemaNodes)).toHaveLength(0);
+    expect(await db.select().from(schemaEdges)).toHaveLength(0);
+    expect(await db.select().from(schemaGroups)).toHaveLength(0);
+  });
+
+  it('records a correction and cascades on document delete', async () => {
+    const db = await createTestDb();
+    const { documentId } = await fixtureDocument(db);
+    await db.insert(transcriptionCorrections).values({
+      id: randomUUID(),
+      documentId,
+      nodeKey: 'n1',
+      before: 'Trasf adiabbatica',
+      after: 'Trasf. adiabatica',
+      kind: 'label',
+    });
+
+    expect(await db.select().from(transcriptionCorrections)).toHaveLength(1);
+    await db.delete(documents).where(eq(documents.id, documentId));
+    expect(await db.select().from(transcriptionCorrections)).toHaveLength(0);
   });
 });

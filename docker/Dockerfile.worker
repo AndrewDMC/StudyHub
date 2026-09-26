@@ -2,14 +2,21 @@
 # apps/worker + apps/cli (same code, "invocato one-shot" per
 # docs/01-architettura.md §1) — multi-stage, non-root, healthcheck.
 # Build from the repo root: docker build -f docker/Dockerfile.worker -t studyhub/worker .
+#
+# Debian slim, not Alpine: `@xenova/transformers` (packages/ai/src/embeddings.ts)
+# ships `onnxruntime-node`'s native binding pre-built against glibc — no musl
+# build exists upstream. Verified for real: even Alpine + `libc6-compat`
+# **segfaults** (Ort::Exception, exit 139) the first time a model loads; the
+# shim covers simple symbol lookups, not a native addon this size. Every other
+# dependency here (`@napi-rs/canvas`, `sharp`, `pg`) supports glibc too, so
+# there's no corresponding tradeoff the other way.
 
-FROM node:22-alpine AS base
+FROM node:22-bookworm-slim AS base
 RUN corepack enable
 WORKDIR /app
 
 # --- prune -------------------------------------------------------------
 FROM base AS pruner
-RUN apk add --no-cache libc6-compat
 COPY . .
 RUN npx turbo prune @studyhub/worker @studyhub/cli --docker
 
@@ -35,13 +42,13 @@ RUN npx turbo run build --filter=@studyhub/worker --filter=@studyhub/cli
 RUN pnpm install --frozen-lockfile --prod --ignore-scripts
 
 # --- runtime -----------------------------------------------------------
-FROM node:22-alpine AS runtime
+FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
-# 1001, not 1000: current node:22-alpine already ships a `node` user/group at
+# 1001, not 1000: current node:22 images already ship a `node` user/group at
 # gid/uid 1000.
-RUN addgroup -g 1001 studyhub && adduser -u 1001 -G studyhub -s /bin/sh -D studyhub
+RUN groupadd -g 1001 studyhub && useradd -u 1001 -g studyhub -m -s /bin/sh studyhub
 
 COPY --from=build --chown=studyhub:studyhub /app .
 

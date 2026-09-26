@@ -2,6 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { jobs, type JobCost } from '@studyhub/db';
 import {
+  ClassifyDocumentTypeJobInputSchema,
+  DistillHandwritingProfileJobInputSchema,
+  EmbedChunksJobInputSchema,
   ExtractExamProfileJobInputSchema,
   ExtractTextJobInputSchema,
   ExtractTopicsJobInputSchema,
@@ -21,7 +24,10 @@ import {
 import { processPing } from './processors/ping.js';
 import { reconcileSubjects } from './processors/reconcile.js';
 import { processExtractText } from './processors/extractText.js';
+import { processEmbedChunks } from './processors/embedChunks.js';
+import { processClassifyDocumentType } from './processors/classifyDocumentType.js';
 import { processTranscribeSchema } from './processors/transcribeSchema.js';
+import { processDistillHandwritingProfile } from './processors/distillHandwritingProfile.js';
 import { processExtractTopics } from './processors/generation/extractTopics.js';
 import { processGenerateFlashcards } from './processors/generation/generateFlashcards.js';
 import { processGenerateSchema } from './processors/generation/generateSchema.js';
@@ -115,8 +121,18 @@ async function dispatch(
       return reconcileSubjects(db, dataRoot, ReconcileJobInputSchema.parse(data ?? {}));
     case 'extract_text':
       return processExtractText(db, dataRoot, ExtractTextJobInputSchema.parse(data));
+    case 'embed_chunks':
+      return processEmbedChunks(db, EmbedChunksJobInputSchema.parse(data));
+    case 'classify_document_type':
+      return processClassifyDocumentType(db, ClassifyDocumentTypeJobInputSchema.parse(data));
     case 'transcribe_schema':
-      return processTranscribeSchema(db, TranscribeSchemaJobInputSchema.parse(data));
+      return processTranscribeSchema(db, dataRoot, TranscribeSchemaJobInputSchema.parse(data));
+    case 'distill_handwriting_profile':
+      return processDistillHandwritingProfile(
+        db,
+        dataRoot,
+        DistillHandwritingProfileJobInputSchema.parse(data),
+      );
     case 'generate_flashcards':
       return processGenerateFlashcards(db, dataRoot, GenerateFlashcardsJobInputSchema.parse(data));
     case 'generate_schema':
