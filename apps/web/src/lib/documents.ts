@@ -9,6 +9,7 @@ import {
   type DocumentType,
 } from '@studyhub/core';
 import type { DocumentDto } from '@studyhub/contracts';
+import { DocumentNotFoundError } from './documentTopics';
 
 export const MAX_UPLOAD_BYTES = Number(process.env.STUDYHUB_MAX_UPLOAD_BYTES ?? 100 * 1024 * 1024);
 
@@ -35,6 +36,7 @@ function toDto(row: Document, topicIds: string[] = []): DocumentDto {
     status: row.status,
     mdPath: row.mdPath,
     verificationStatus: row.verificationStatus,
+    blockedBlocks: row.blockedBlocks,
     createdAt: row.createdAt.toISOString(),
     topicIds,
   };
@@ -120,6 +122,24 @@ export async function uploadDocument(
     .returning();
 
   return { document: toDto(row), duplicate: false };
+}
+
+export async function getDocument(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  subjectSlug: string,
+  documentId: string,
+): Promise<DocumentDto> {
+  const [subject] = await db.select().from(subjects).where(eq(subjects.slug, subjectSlug));
+  if (!subject) throw new UploadError('subject_not_found', `Materia non trovata: ${subjectSlug}`);
+
+  const [row] = await db
+    .select()
+    .from(documents)
+    .where(and(eq(documents.id, documentId), eq(documents.subjectId, subject.id)));
+  if (!row) throw new DocumentNotFoundError(documentId);
+
+  return toDto(row, await getDocumentTopicIds(db, documentId));
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

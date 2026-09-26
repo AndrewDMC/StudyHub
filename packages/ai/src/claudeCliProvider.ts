@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { dirname } from 'node:path';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import type { z } from 'zod';
 import type {
@@ -11,6 +12,7 @@ import type {
   GeneratedWithMeta,
   GradePromptInput,
   SchemaPromptInput,
+  SchemaTranscriptionPromptInput,
   SimulationPromptInput,
   SummaryPromptInput,
 } from './provider.js';
@@ -21,6 +23,7 @@ import {
   FlashcardsOutputSchema,
   GradeOutputSchema,
   SchemaOutputSchema,
+  SchemaTranscriptionOutputSchema,
   SimulationOutputSchema,
   SummaryOutputSchema,
   type EstimateTopicsOutput,
@@ -29,6 +32,7 @@ import {
   type FlashcardsOutput,
   type GradeOutput,
   type SchemaOutput,
+  type SchemaTranscriptionOutput,
   type SimulationOutput,
   type SummaryOutput,
 } from './schemas.js';
@@ -146,6 +150,34 @@ export class ClaudeCliProvider implements AiProvider {
     return { data, usage, model, promptVersion };
   }
 
+  /**
+   * The only vision call this provider makes: unlike the other methods
+   * (`--tools ''`, pure text completion), this one grants the `Read` tool —
+   * scoped via `--add-dir` to just the image's own directory, never the
+   * whole data root — so the `claude` CLI can actually look at the photo
+   * (Read supports images natively) before answering. Still no network
+   * access beyond what `claude` itself needs, no other tool, same
+   * `--json-schema` structured output as every other call here.
+   */
+  async transcribeSchema(
+    input: SchemaTranscriptionPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<SchemaTranscriptionOutput>> {
+    const { text: system, promptVersion } = loadPrompt('schema_transcription', 1);
+    const userPrompt = [
+      `Leggi l'immagine al percorso esatto: ${input.imagePath}`,
+      'Poi trascrivi i suoi blocchi di contenuto secondo le istruzioni.',
+    ].join('\n');
+    const { data, usage } = await this.callWithSchema(
+      system,
+      userPrompt,
+      SchemaTranscriptionOutputSchema,
+      model,
+      { allowedTools: 'Read', addDir: dirname(input.imagePath) },
+    );
+    return { data, usage, model, promptVersion };
+  }
+
   async extractExamProfile(
     input: ExamProfilePromptInput,
     model: string,
@@ -221,6 +253,8 @@ export class ClaudeCliProvider implements AiProvider {
     userPrompt: string,
     schema: z.ZodType<T>,
     model: string,
+    /** Widens the default no-tools sandbox — only `transcribeSchema` needs this, to read the image. */
+    toolAccess?: { allowedTools: string; addDir: string },
   ): Promise<{ data: T; usage: AiUsage }> {
     const jsonSchema = zodToJsonSchema(schema);
     delete (jsonSchema as Record<string, unknown>).$schema;
@@ -245,7 +279,8 @@ export class ClaudeCliProvider implements AiProvider {
         JSON.stringify(jsonSchema),
         '--strict-mcp-config',
         '--tools',
-        '',
+        toolAccess?.allowedTools ?? '',
+        ...(toolAccess ? ['--add-dir', toolAccess.addDir] : []),
       ];
       const { stdout, stderr, code } = await this.run(args, prompt);
 

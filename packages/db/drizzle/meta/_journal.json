@@ -57,6 +57,13 @@
       "when": 1790280823130,
       "tag": "0007_document_topics",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790379023360,
+      "tag": "0008_schema_blocks",
+      "breakpoints": true
     }
   ]
 }

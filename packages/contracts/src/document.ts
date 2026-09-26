@@ -18,6 +18,7 @@ export const DocumentDtoSchema = z.object({
   status: DocumentStatusSchema,
   mdPath: z.string().nullable(),
   verificationStatus: VerificationStatusSchema,
+  blockedBlocks: z.number().int().nonnegative(),
   createdAt: z.string().datetime(),
   /** Argomenti a cui il documento è collegato (docs/fasi/F2-materie.md "Stato": document_topics). */
   topicIds: z.array(z.string().uuid()),

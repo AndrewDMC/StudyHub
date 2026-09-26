@@ -7,6 +7,7 @@ import type {
   GeneratedWithMeta,
   GradePromptInput,
   SchemaPromptInput,
+  SchemaTranscriptionPromptInput,
   SimulationPromptInput,
   SummaryPromptInput,
 } from './provider.js';
@@ -20,6 +21,7 @@ import type {
   GradeOutput,
   SchemaNode,
   SchemaOutput,
+  SchemaTranscriptionOutput,
   SimulationOutput,
   SummaryOutput,
   TopicEstimate,
@@ -34,6 +36,7 @@ import {
   FLASHCARDS_PROMPT_VERSION,
   GRADING_PROMPT_VERSION,
   SCHEMA_PROMPT_VERSION,
+  SCHEMA_TRANSCRIPTION_PROMPT_VERSION,
   SIMULATION_PROMPT_VERSION,
   SUMMARY_PROMPT_VERSION,
 } from './versions.js';
@@ -155,6 +158,35 @@ export class FakeProvider implements AiProvider {
       usage: { inputTokens, outputTokens },
       model: FAKE_MODEL,
       promptVersion: SCHEMA_PROMPT_VERSION,
+    };
+  }
+
+  /**
+   * Unlike text extraction, a photo's pixels can't be read deterministically
+   * without a real vision model — there's nothing honest to fabricate here
+   * (docs/fasi/F3-ai-core.md "Stato" addendum spirit: simulate what can
+   * genuinely be computed offline, never invent what can't). Returns a
+   * single block explaining that, so the verification screen has something
+   * real to show instead of silently doing nothing.
+   */
+  async transcribeSchema(
+    _input: SchemaTranscriptionPromptInput,
+    _model: string,
+  ): Promise<GeneratedWithMeta<SchemaTranscriptionOutput>> {
+    const data: SchemaTranscriptionOutput = {
+      blocks: [
+        {
+          text: 'Trascrizione non disponibile in modalità simulata — inserisci i blocchi a mano.',
+          confidence: 'illegible',
+          note: 'FakeProvider non legge immagini: serve AI_PROVIDER=claude-cli o ANTHROPIC_API_KEY.',
+        },
+      ],
+    };
+    return {
+      data,
+      usage: { inputTokens: 0, outputTokens: 0 },
+      model: FAKE_MODEL,
+      promptVersion: SCHEMA_TRANSCRIPTION_PROMPT_VERSION,
     };
   }
 

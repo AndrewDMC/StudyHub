@@ -1,6 +1,7 @@
 export * from './job.js';
 export * from './subject.js';
 export * from './document.js';
+export * from './schemaBlock.js';
 export * from './topic.js';
 export * from './exam.js';
 export * from './generation.js';

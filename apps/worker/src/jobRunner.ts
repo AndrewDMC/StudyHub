@@ -14,11 +14,13 @@ import {
   JobTypeSchema,
   PingJobInputSchema,
   ReconcileJobInputSchema,
+  TranscribeSchemaJobInputSchema,
   type JobType,
 } from '@studyhub/contracts';
 import { processPing } from './processors/ping.js';
 import { reconcileSubjects } from './processors/reconcile.js';
 import { processExtractText } from './processors/extractText.js';
+import { processTranscribeSchema } from './processors/transcribeSchema.js';
 import { processExtractTopics } from './processors/generation/extractTopics.js';
 import { processGenerateFlashcards } from './processors/generation/generateFlashcards.js';
 import { processGenerateSchema } from './processors/generation/generateSchema.js';
@@ -111,6 +113,8 @@ async function dispatch(
       return reconcileSubjects(db, dataRoot, ReconcileJobInputSchema.parse(data ?? {}));
     case 'extract_text':
       return processExtractText(db, dataRoot, ExtractTextJobInputSchema.parse(data));
+    case 'transcribe_schema':
+      return processTranscribeSchema(db, TranscribeSchemaJobInputSchema.parse(data));
     case 'generate_flashcards':
       return processGenerateFlashcards(db, dataRoot, GenerateFlashcardsJobInputSchema.parse(data));
     case 'generate_schema':

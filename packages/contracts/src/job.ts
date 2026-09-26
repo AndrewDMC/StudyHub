@@ -9,6 +9,7 @@ export const JobTypeSchema = z.enum([
   'ping',
   'reconcile',
   'extract_text',
+  'transcribe_schema',
   'generate_flashcards',
   'generate_schema',
   'generate_summary',
@@ -39,6 +40,18 @@ export type ReconcileJobInput = z.infer<typeof ReconcileJobInputSchema>;
  */
 export const ExtractTextJobInputSchema = z.object({ documentId: z.string().uuid() });
 export type ExtractTextJobInput = z.infer<typeof ExtractTextJobInputSchema>;
+
+/**
+ * Vision transcription of a `schemi`-type document's photo into
+ * `schema_blocks` rows (docs/fasi/F1-ingest.md "Stato": schermata di
+ * verifica). `model` is optional like the other generation jobs — falls
+ * back to the routing default in the processor.
+ */
+export const TranscribeSchemaJobInputSchema = z.object({
+  documentId: z.string().uuid(),
+  model: z.string().optional(),
+});
+export type TranscribeSchemaJobInput = z.infer<typeof TranscribeSchemaJobInputSchema>;
 
 export const JobProgressSchema = z.object({
   pct: z.number().min(0).max(100),

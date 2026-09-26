@@ -6,6 +6,7 @@ import type {
   FlashcardsOutput,
   GradeOutput,
   SchemaOutput,
+  SchemaTranscriptionOutput,
   SimulationItem,
   SimulationOutput,
   SummaryOutput,
@@ -50,6 +51,12 @@ export interface SchemaPromptInput {
   chunks: ChunkRef[];
   depth: 1 | 2 | 3 | 4;
   style: 'gerarchico' | 'mappa' | 'timeline' | 'confronto';
+}
+
+/** The absolute path (host/container filesystem) of the schema photo to transcribe. */
+export interface SchemaTranscriptionPromptInput {
+  imagePath: string;
+  mime: string;
 }
 
 /** Chunks come from documents of type `esami` (docs/03-ai-e-worker.md §2). */
@@ -122,6 +129,10 @@ export interface AiProvider {
     model: string,
   ): Promise<GeneratedWithMeta<SummaryOutput>>;
   generateSchema(input: SchemaPromptInput, model: string): Promise<GeneratedWithMeta<SchemaOutput>>;
+  transcribeSchema(
+    input: SchemaTranscriptionPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<SchemaTranscriptionOutput>>;
   extractExamProfile(
     input: ExamProfilePromptInput,
     model: string,

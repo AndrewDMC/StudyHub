@@ -71,9 +71,11 @@ export async function POST(request: Request, { params }: RouteParams) {
     if (!result.duplicate) {
       // Fire-and-forget: upload succeeds even if the queue enqueue fails —
       // a later `reconcile`/manual retry can pick it up. Never blocks the
-      // response on Redis being up.
+      // response on Redis being up. `schemi` (hand-drawn photos) go through
+      // vision transcription instead of the PDF text-layer extractor.
+      const jobType = type === 'schemi' ? 'transcribe_schema' : 'extract_text';
       await getJobQueue()
-        .add('extract_text', { documentId: result.document.id }, { jobId: randomUUID() })
+        .add(jobType, { documentId: result.document.id }, { jobId: randomUUID() })
         .catch(() => {});
     }
 

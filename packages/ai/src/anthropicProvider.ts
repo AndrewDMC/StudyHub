@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import Anthropic from '@anthropic-ai/sdk';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import type { z } from 'zod';
@@ -11,6 +12,7 @@ import type {
   GeneratedWithMeta,
   GradePromptInput,
   SchemaPromptInput,
+  SchemaTranscriptionPromptInput,
   SimulationPromptInput,
   SummaryPromptInput,
 } from './provider.js';
@@ -21,6 +23,7 @@ import {
   FlashcardsOutputSchema,
   GradeOutputSchema,
   SchemaOutputSchema,
+  SchemaTranscriptionOutputSchema,
   SimulationOutputSchema,
   SummaryOutputSchema,
   type EstimateTopicsOutput,
@@ -29,6 +32,7 @@ import {
   type FlashcardsOutput,
   type GradeOutput,
   type SchemaOutput,
+  type SchemaTranscriptionOutput,
   type SimulationOutput,
   type SummaryOutput,
 } from './schemas.js';
@@ -107,6 +111,25 @@ export class AnthropicProvider implements AiProvider {
       SchemaOutputSchema,
       model,
       4096,
+    );
+    return { data, usage, model, promptVersion };
+  }
+
+  /** Same vision call as `ClaudeCliProvider.transcribeSchema`, here as a Messages API image content block instead of the CLI's Read tool. */
+  async transcribeSchema(
+    input: SchemaTranscriptionPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<SchemaTranscriptionOutput>> {
+    const { text: system, promptVersion } = loadPrompt('schema_transcription', 1);
+    const imageBase64 = (await readFile(input.imagePath)).toString('base64');
+    const { data, usage } = await this.callWithTool(
+      'emit_schema_transcription',
+      system,
+      'Trascrivi i blocchi di contenuto dell\'immagine allegata.',
+      SchemaTranscriptionOutputSchema,
+      model,
+      4096,
+      { mediaType: input.mime as Anthropic.ImageBlockParam.Source['media_type'], data: imageBase64 },
     );
     return { data, usage, model, promptVersion };
   }
@@ -198,6 +221,7 @@ export class AnthropicProvider implements AiProvider {
     schema: z.ZodType<T>,
     model: string,
     maxTokens: number,
+    image?: { mediaType: Anthropic.ImageBlockParam.Source['media_type']; data: string },
   ): Promise<{ data: T; usage: AiUsage }> {
     const inputSchema =
       zodToJsonSchema(schema, toolName).definitions?.[toolName] ?? zodToJsonSchema(schema);
@@ -223,7 +247,17 @@ export class AnthropicProvider implements AiProvider {
           },
         ],
         tool_choice: { type: 'tool', name: toolName },
-        messages: [{ role: 'user', content: prompt }],
+        messages: [
+          {
+            role: 'user',
+            content: image
+              ? [
+                  { type: 'image', source: { type: 'base64', media_type: image.mediaType, data: image.data } },
+                  { type: 'text', text: prompt },
+                ]
+              : prompt,
+          },
+        ],
       } as any);
 
       usage.inputTokens += response.usage?.input_tokens ?? 0;

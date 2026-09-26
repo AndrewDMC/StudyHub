@@ -183,3 +183,50 @@ describe('ClaudeCliProvider — F5 capabilities against a mocked CLI runner', ()
     expect(stdin.match(/<\/document>/g)).toHaveLength(1);
   });
 });
+
+describe('ClaudeCliProvider.transcribeSchema — the one call that grants Read access', () => {
+  it('widens --tools to Read and scopes --add-dir to the image directory, mentions the path in the prompt', async () => {
+    const run = vi.fn().mockResolvedValue(
+      envelope({
+        blocks: [{ text: 'Sistema', confidence: 'ok', note: null }],
+      }),
+    );
+    const provider = new ClaudeCliProvider({ run });
+
+    const result = await provider.transcribeSchema(
+      { imagePath: '/data/subjects/fisica-1/sources/schemi/abc.jpg', mime: 'image/jpeg' },
+      'claude-sonnet-5',
+    );
+
+    expect(result.data.blocks).toEqual([{ text: 'Sistema', confidence: 'ok', note: null }]);
+    expect(result.promptVersion).toBe('schema_transcription/v1');
+
+    const [args, stdin] = run.mock.calls[0];
+    expect(args).toContain('--tools');
+    expect(args[args.indexOf('--tools') + 1]).toBe('Read');
+    expect(args).toContain('--add-dir');
+    expect(args[args.indexOf('--add-dir') + 1]).toBe('/data/subjects/fisica-1/sources/schemi');
+    expect(stdin).toContain('/data/subjects/fisica-1/sources/schemi/abc.jpg');
+  });
+
+  it('every other call still disables all tools (unaffected by the transcribeSchema opt-in)', async () => {
+    const run = vi.fn().mockResolvedValue(envelope(validFlashcardsOutput));
+    const provider = new ClaudeCliProvider({ run });
+
+    await provider.generateFlashcards(
+      {
+        subjectName: 'Fisica 1',
+        chunks: [{ docId, page: 1, text: 'Risposta.' }],
+        count: 1,
+        types: ['basic'],
+        difficulty: 1,
+        lang: 'it',
+      },
+      'claude-sonnet-5',
+    );
+
+    const args: string[] = run.mock.calls[0][0];
+    expect(args[args.indexOf('--tools') + 1]).toBe('');
+    expect(args).not.toContain('--add-dir');
+  });
+});

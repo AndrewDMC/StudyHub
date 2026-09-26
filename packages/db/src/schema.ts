@@ -105,6 +105,32 @@ export const documents = pgTable('documents', {
   ingestedAt: timestamp('ingested_at', { withTimezone: true }),
 });
 
+/**
+ * `transcribe_schema` output (docs/fasi/F1-ingest.md "Stato": schermata di
+ * verifica) — one row per transcribed block of a `schemi`-type document's
+ * photo. `verified` is the human decision (independent from the model's own
+ * `confidence`): a block starts pre-verified only when the model was
+ * confident (`confidence = 'ok'`); `documents.blockedBlocks` counts
+ * `verified = false` rows so the UI never has to recompute it from scratch.
+ * Re-running the transcription (`transcribe` again) replaces every row for
+ * that document — there's no history to reconcile, just a fresh read.
+ */
+export type SchemaBlockConfidence = 'ok' | 'uncertain' | 'illegible';
+
+export const schemaBlocks = pgTable('schema_blocks', {
+  id: uuid('id').primaryKey(),
+  documentId: uuid('document_id')
+    .notNull()
+    .references(() => documents.id, { onDelete: 'cascade' }),
+  ord: integer('ord').notNull(),
+  text: text('text').notNull(),
+  confidence: text('confidence').$type<SchemaBlockConfidence>().notNull(),
+  note: text('note'),
+  verified: boolean('verified').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const chunks = pgTable(
   'chunks',
   {
@@ -530,6 +556,8 @@ export type NewJob = typeof jobs.$inferInsert;
 export type Setting = typeof settings.$inferSelect;
 export type Document = typeof documents.$inferSelect;
 export type NewDocument = typeof documents.$inferInsert;
+export type SchemaBlock = typeof schemaBlocks.$inferSelect;
+export type NewSchemaBlock = typeof schemaBlocks.$inferInsert;
 export type Chunk = typeof chunks.$inferSelect;
 export type NewChunk = typeof chunks.$inferInsert;
 export type Exam = typeof exams.$inferSelect;

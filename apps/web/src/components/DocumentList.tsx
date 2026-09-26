@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { DocumentDto, TopicDto } from '@studyhub/contracts';
 
@@ -187,12 +188,24 @@ export function DocumentList({
                 )}
               </div>
             </div>
-            <span
-              className="shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium"
-              style={{ color: STATUS_COLOR[doc.status], borderColor: STATUS_COLOR[doc.status] }}
-            >
-              {STATUS_LABEL[doc.status]}
-            </span>
+            <div className="flex shrink-0 flex-col items-end gap-1">
+              <span
+                className="rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                style={{ color: STATUS_COLOR[doc.status], borderColor: STATUS_COLOR[doc.status] }}
+              >
+                {STATUS_LABEL[doc.status]}
+              </span>
+              {doc.type === 'schemi' && doc.status === 'parsed' && (
+                <Link
+                  href={`/materie/${subjectSlug}/documenti/${doc.id}/verifica`}
+                  className={`text-[11px] underline-offset-2 hover:underline ${
+                    doc.blockedBlocks > 0 ? 'text-warn' : 'text-fg-muted'
+                  }`}
+                >
+                  {doc.blockedBlocks > 0 ? `${doc.blockedBlocks} da verificare` : 'Verifica'}
+                </Link>
+              )}
+            </div>
           </li>
         ))}
       </ul>

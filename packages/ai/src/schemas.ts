@@ -48,6 +48,29 @@ export const SchemaOutputSchema = z.object({
 });
 export type SchemaOutput = z.infer<typeof SchemaOutputSchema>;
 
+/**
+ * `transcribe_schema` — vision transcription of a hand-drawn schema photo
+ * into a flat, ordered list of blocks (docs/fasi/F1-ingest.md "Stato":
+ * "schermata di verifica"). Deliberately no nodes/edges/coordinates: just
+ * the transcribed text and how confident the model is, so a human can
+ * review and correct it before it's trusted for anything downstream.
+ */
+export const SchemaBlockConfidenceSchema = z.enum(['ok', 'uncertain', 'illegible']);
+export type SchemaBlockConfidence = z.infer<typeof SchemaBlockConfidenceSchema>;
+
+export const TranscribedSchemaBlockSchema = z.object({
+  text: z.string().min(1),
+  confidence: SchemaBlockConfidenceSchema,
+  /** Why it's uncertain/illegible — null for 'ok'. */
+  note: z.string().nullable(),
+});
+export type TranscribedSchemaBlock = z.infer<typeof TranscribedSchemaBlockSchema>;
+
+export const SchemaTranscriptionOutputSchema = z.object({
+  blocks: z.array(TranscribedSchemaBlockSchema),
+});
+export type SchemaTranscriptionOutput = z.infer<typeof SchemaTranscriptionOutputSchema>;
+
 /** docs/03-ai-e-worker.md §3.3. */
 export const SummaryOutputSchema = z.object({
   markdown: z.string().min(1),

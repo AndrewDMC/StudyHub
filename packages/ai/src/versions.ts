@@ -6,6 +6,7 @@ import { loadPrompt } from './promptLoader.js';
 export const FLASHCARDS_PROMPT_VERSION = loadPrompt('flashcards', 1).promptVersion;
 export const SUMMARY_PROMPT_VERSION = loadPrompt('summary', 1).promptVersion;
 export const SCHEMA_PROMPT_VERSION = loadPrompt('schema', 1).promptVersion;
+export const SCHEMA_TRANSCRIPTION_PROMPT_VERSION = loadPrompt('schema_transcription', 1).promptVersion;
 export const EXAM_PROFILE_PROMPT_VERSION = loadPrompt('exam_profile', 1).promptVersion;
 export const SIMULATION_PROMPT_VERSION = loadPrompt('simulation', 1).promptVersion;
 export const GRADING_PROMPT_VERSION = loadPrompt('grading', 1).promptVersion;
