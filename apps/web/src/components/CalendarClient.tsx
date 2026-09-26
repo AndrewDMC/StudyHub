@@ -59,6 +59,17 @@ async function fetchRange(start: string, end: string): Promise<CalendarRangeDto>
   return body as CalendarRangeDto;
 }
 
+async function importIcs(file: File): Promise<{ imported: number; updated: number; skipped: number }> {
+  const res = await fetch('/api/calendar/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/calendar' },
+    body: await file.text(),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error?.message ?? 'Import ICS fallito');
+  return body;
+}
+
 async function moveTask(subjectSlug: string, taskId: string, date: string) {
   const res = await fetch(`/api/subjects/${subjectSlug}/plan/tasks/${taskId}/move`, {
     method: 'POST',
@@ -75,21 +86,33 @@ function DayAgenda({
   date,
   dayTasks,
   dayExams,
+  dayImportedEvents,
   onMove,
 }: {
   date: string;
   dayTasks: CalendarRangeDto['tasks'];
   dayExams: CalendarRangeDto['exams'];
+  dayImportedEvents: CalendarRangeDto['importedEvents'];
   onMove: (subjectSlug: string, taskId: string, date: string) => void;
 }) {
   const [moveTarget, setMoveTarget] = useState<Record<string, string>>({});
 
-  if (dayTasks.length === 0 && dayExams.length === 0) {
+  if (dayTasks.length === 0 && dayExams.length === 0 && dayImportedEvents.length === 0) {
     return <p className="text-sm text-fg-muted">Nessuna task o esame — {date}.</p>;
   }
 
   return (
     <div className="space-y-2">
+      {dayImportedEvents.map((event) => (
+        <div
+          key={event.id}
+          className="flex items-center gap-2 rounded-[var(--radius-control)] border border-border bg-bg-inset px-3 py-2 text-sm text-fg-secondary"
+        >
+          <span className="text-xs">📅</span>
+          <span className="font-medium">{event.title}</span>
+          <span className="text-[11px] text-fg-muted">importato da ICS</span>
+        </div>
+      ))}
       {dayExams.map((exam) => (
         <div
           key={exam.id}
@@ -172,12 +195,51 @@ function IcsFeedLink() {
   );
 }
 
+function ImportIcsButton({ onImported }: { onImported: () => void }) {
+  const mutation = useMutation({
+    mutationFn: importIcs,
+    onSuccess: onImported,
+  });
+
+  return (
+    <div className="mb-3 flex items-center gap-2 text-xs">
+      <label className="cursor-pointer rounded-[var(--radius-control)] border border-border px-2 py-1 text-fg-secondary hover:text-fg-primary">
+        Importa ICS
+        <input
+          type="file"
+          accept=".ics,text/calendar"
+          className="hidden"
+          disabled={mutation.isPending}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) mutation.mutate(file);
+            e.target.value = '';
+          }}
+        />
+      </label>
+      {mutation.isPending && <span className="text-fg-muted">Import in corso…</span>}
+      {mutation.isSuccess && (
+        <span className="text-ok">
+          {mutation.data.imported} nuovi, {mutation.data.updated} aggiornati
+          {mutation.data.skipped > 0 ? `, ${mutation.data.skipped} scartati` : ''}
+        </span>
+      )}
+      {mutation.isError && (
+        <span role="alert" className="text-danger">
+          {(mutation.error as Error).message}
+        </span>
+      )}
+    </div>
+  );
+}
+
 /**
  * Cross-subject month calendar (docs/fasi/F6-planner-calendario.md "Scope").
  * **Not built in this slice** (see F6 "Stato"): pointer drag&drop (moves go
  * through the date field below, not dragging a card), week/agenda views,
- * blackout-date editing, ICS import (export is a subscribable feed — see
- * `IcsFeedLink` above).
+ * blackout-date editing. ICS import exists (see `ImportIcsButton` above) but
+ * only shows the events on the calendar — they aren't yet subtracted from
+ * the Planner's capacity when generating a plan.
  */
 export function CalendarClient() {
   const queryClient = useQueryClient();
@@ -216,12 +278,15 @@ export function CalendarClient() {
 
   const tasksByDay = new Map<string, CalendarRangeDto['tasks']>();
   const examsByDay = new Map<string, CalendarRangeDto['exams']>();
+  const importedEventsByDay = new Map<string, CalendarRangeDto['importedEvents']>();
   for (const t of rangeQuery.data?.tasks ?? [])
     tasksByDay.set(t.date, [...(tasksByDay.get(t.date) ?? []), t]);
   for (const e of rangeQuery.data?.exams ?? []) {
     const d = e.date.slice(0, 10);
     examsByDay.set(d, [...(examsByDay.get(d) ?? []), e]);
   }
+  for (const e of rangeQuery.data?.importedEvents ?? [])
+    importedEventsByDay.set(e.date, [...(importedEventsByDay.get(e.date) ?? []), e]);
 
   const subjectsInRange = new Map<string, string>(); // slug -> color
   for (const t of rangeQuery.data?.tasks ?? [])
@@ -269,6 +334,7 @@ export function CalendarClient() {
       </div>
 
       <IcsFeedLink />
+      <ImportIcsButton onImported={() => queryClient.invalidateQueries({ queryKey: ['calendar'] })} />
 
       {subjectsInRange.size > 0 && (
         <div className="mb-3 flex flex-wrap gap-3 text-xs text-fg-secondary">
@@ -313,6 +379,7 @@ export function CalendarClient() {
           const inMonth = fromIso(date).getUTCMonth() === cursor.month;
           const dayTasks = tasksByDay.get(date) ?? [];
           const dayExams = examsByDay.get(date) ?? [];
+          const dayImportedEvents = importedEventsByDay.get(date) ?? [];
           const minutes = dayTasks.reduce((s, t) => s + t.minutes, 0);
           const subjectDots = [...new Set(dayTasks.map((t) => t.subjectColor))];
           const isSelected = date === selectedDay;
@@ -342,6 +409,7 @@ export function CalendarClient() {
                   />
                 ))}
                 {dayExams.length > 0 && <span className="text-[10px]">🎯</span>}
+                {dayImportedEvents.length > 0 && <span className="text-[10px]">📅</span>}
               </div>
               {minutes > 0 && (
                 <span className="font-mono text-[10px] text-fg-muted">{minutes}′</span>
@@ -357,6 +425,7 @@ export function CalendarClient() {
           date={selectedDay}
           dayTasks={tasksByDay.get(selectedDay) ?? []}
           dayExams={examsByDay.get(selectedDay) ?? []}
+          dayImportedEvents={importedEventsByDay.get(selectedDay) ?? []}
           onMove={(subjectSlug, taskId, date) => move.mutate({ subjectSlug, taskId, date })}
         />
       </div>

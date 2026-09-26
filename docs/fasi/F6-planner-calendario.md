@@ -148,9 +148,6 @@ Cosa c'è, con test reali:
   campo data + bottone). Niente editing di blackout dates dalla UI (il campo esiste nel modello e nel
   wizard di generazione, non nel Calendario). Niente indicatore di fattibilità/sovraccarico sulla cella
   del giorno oltre al totale minuti.
-- **Import ICS**: non iniziato (export sì, vedi "Aggiornamento" in fondo al file). `calendar_events`
-  (per esami/lezioni/ICS importato come vincoli d'ingresso, distinti dalle task —
-  `docs/04-planner.md` §9.4) non esiste come tabella.
 - **Anteprima di fattibilità _prima_ di generare**: il wizard lancia sempre il job; il verdetto di
   fattibilità e le 3 strategie si vedono solo dopo, nella bozza generata — non prima di spendere la
   chiamata Fase A.
@@ -251,3 +248,30 @@ le tre azioni previste in `docs/fasi/F6-planner-calendario.md` "Decisioni":
 
 `moveTaskInPlan` e `reabsorbTaskInPlan` condividono ora il setup (carico del piano/task/capacità
 via `loadMoveContext`) e l'applicazione del risultato (`applyMoveResult`), prima duplicati.
+
+## Aggiornamento (2026-09-26): import ICS
+
+Chiuso il gap "non iniziato" per la metà import di "Export ICS + import ICS" (export era già
+fatto, vedi Aggiornamento precedente). Nuova tabella `calendar_events` (migrazione
+`0010_calendar_events.sql`, globale — non per materia: un impegno importato vincola la
+disponibilità di ogni materia allo stesso modo), distinta da `tasks` come previsto da
+`docs/04-planner.md` §9.4.
+
+- **Parser** (`packages/core/src/ics.ts::parseIcsCalendar`): il contrario di `buildIcsCalendar` —
+  unfold delle continuation line (RFC 5545 §3.1), un solo formato accettato in questa app
+  (all-day: un `DTSTART` con orario viene troncato alla data, mai rifiutato). Un VEVENT senza
+  `UID` o senza un `DTSTART` interpretabile viene scartato singolarmente, non manda in errore
+  l'intero import — 14 casi in `packages/core/test/ics.test.ts`, incluso un round-trip con
+  `buildIcsCalendar`.
+- **`POST /api/calendar/import`** (`apps/web/src/lib/calendar.ts::importIcsCalendar`): corpo il
+  file `.ics` grezzo. Upsert per `(source, uid)` — reimportare lo stesso file aggiorna le righe
+  già viste invece di duplicarle, dato che un client esporta spesso lo stesso file più volte.
+  Risponde `{ imported, updated, skipped }` (`skipped` conta i VEVENT che il parser ha scartato).
+- **UI**: `ImportIcsButton` in `/calendario` (upload di un file `.ics`), gli eventi importati
+  compaiono nella cella del giorno (📅) e nell'agenda del giorno selezionato, accanto a task ed
+  esami — `getCalendarRange` ora restituisce anche `importedEvents`.
+
+**Non implementato in questa slice**: gli eventi importati sono solo mostrati, non ancora
+sottratti dalla capacità del Planner in `buildCapacity`/`schedulePlan` — un impegno importato non
+riduce ancora i minuti disponibili di un giorno quando si genera un piano. Nessuna cancellazione
+di un evento importato dalla UI (solo reimport, che aggiorna).

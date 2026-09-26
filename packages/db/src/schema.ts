@@ -10,6 +10,7 @@ import {
   real,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 
@@ -557,6 +558,33 @@ export const tasks = pgTable(
   ],
 );
 
+/**
+ * "Import ICS" (docs/fasi/F6-planner-calendario.md "Non implementato"; the concept is spec'd in
+ * docs/04-planner.md §9.4: "esami, lezioni, impegni importati da ICS esterno... vincoli in
+ * ingresso per lo scheduler, non suoi output" — distinct from `tasks`, which *are* the calendar
+ * events the Planner produces). Global, not per-subject: an imported calendar (lectures, personal
+ * commitments) constrains every subject's availability alike. `uid` is unique per import source so
+ * re-importing the same file updates existing rows instead of duplicating them — see
+ * docs/fasi/F6-planner-calendario.md "Stato" for what this slice does and doesn't wire up yet
+ * (display only; not yet subtracted from the Planner's capacity).
+ */
+export const calendarEvents = pgTable(
+  'calendar_events',
+  {
+    id: uuid('id').primaryKey(),
+    source: text('source').notNull().default('ics_import'),
+    uid: text('uid').notNull(),
+    date: text('date').notNull(),
+    title: text('title').notNull(),
+    description: text('description'),
+    importedAt: timestamp('imported_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('calendar_events_source_uid_idx').on(table.source, table.uid),
+    index('calendar_events_date_idx').on(table.date),
+  ],
+);
+
 export type Subject = typeof subjects.$inferSelect;
 export type NewSubject = typeof subjects.$inferInsert;
 export type Job = typeof jobs.$inferSelect;
@@ -570,6 +598,8 @@ export type Chunk = typeof chunks.$inferSelect;
 export type NewChunk = typeof chunks.$inferInsert;
 export type Exam = typeof exams.$inferSelect;
 export type NewExam = typeof exams.$inferInsert;
+export type CalendarEvent = typeof calendarEvents.$inferSelect;
+export type NewCalendarEvent = typeof calendarEvents.$inferInsert;
 export type Topic = typeof topics.$inferSelect;
 export type NewTopic = typeof topics.$inferInsert;
 export type Artifact = typeof artifacts.$inferSelect;

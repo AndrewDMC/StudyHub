@@ -71,6 +71,13 @@
       "when": 1790437889147,
       "tag": "0009_second_opinion",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790441287113,
+      "tag": "0010_calendar_events",
+      "breakpoints": true
     }
   ]
 }

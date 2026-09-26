@@ -1,7 +1,23 @@
-import { and, eq, gte, lt } from 'drizzle-orm';
-import { exams, studyPlans, subjects, tasks, type Exam, type Task } from '@studyhub/db';
-import { buildIcsCalendar, type IcsEvent } from '@studyhub/core';
-import type { CalendarExamDto, CalendarRangeDto, CalendarTaskDto } from '@studyhub/contracts';
+import { randomUUID } from 'node:crypto';
+import { and, eq, gte, inArray, lt } from 'drizzle-orm';
+import {
+  calendarEvents,
+  exams,
+  studyPlans,
+  subjects,
+  tasks,
+  type CalendarEvent,
+  type Exam,
+  type Task,
+} from '@studyhub/db';
+import { buildIcsCalendar, parseIcsCalendar, type IcsEvent } from '@studyhub/core';
+import type {
+  CalendarExamDto,
+  CalendarImportedEventDto,
+  CalendarRangeDto,
+  CalendarTaskDto,
+  ImportIcsResponse,
+} from '@studyhub/contracts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyDb = any;
@@ -32,6 +48,10 @@ function toCalendarTaskDto(row: Task, subject: SubjectMeta): CalendarTaskDto {
     subjectName: subject.name,
     subjectColor: subject.color as CalendarTaskDto['subjectColor'],
   };
+}
+
+function toCalendarImportedEventDto(row: CalendarEvent): CalendarImportedEventDto {
+  return { id: row.id, date: row.date, title: row.title, description: row.description };
 }
 
 function toCalendarExamDto(row: Exam, subject: SubjectMeta): CalendarExamDto {
@@ -118,6 +138,11 @@ export async function getCalendarRange(
         ),
       );
 
+  const importedEventRows: CalendarEvent[] = await db
+    .select()
+    .from(calendarEvents)
+    .where(and(gte(calendarEvents.date, start), lt(calendarEvents.date, end)));
+
   return {
     tasks: taskRows.map((r) =>
       toCalendarTaskDto(r, { slug: r.subjectSlug, name: r.subjectName, color: r.subjectColor }),
@@ -125,7 +150,49 @@ export async function getCalendarRange(
     exams: examRows.map((r) =>
       toCalendarExamDto(r, { slug: r.subjectSlug, name: r.subjectName, color: r.subjectColor }),
     ),
+    importedEvents: importedEventRows.map(toCalendarImportedEventDto),
   };
+}
+
+/**
+ * "Import ICS" (docs/fasi/F6-planner-calendario.md "Non implementato"). Upserts by
+ * `(source, uid)`: re-importing the same file updates the title/date/description of an event
+ * already seen instead of duplicating it — an .ics a client re-exports daily should converge, not
+ * pile up. A VEVENT the parser can't make sense of (no UID or no parseable DTSTART) is already
+ * dropped by `parseIcsCalendar` itself; `skipped` here counts those against the file's total.
+ */
+export async function importIcsCalendar(db: AnyDb, raw: string): Promise<ImportIcsResponse> {
+  const parsed = parseIcsCalendar(raw);
+  const totalVevents = raw.match(/BEGIN:VEVENT/g)?.length ?? 0;
+  const skipped = Math.max(0, totalVevents - parsed.length);
+  if (parsed.length === 0) return { imported: 0, updated: 0, skipped };
+
+  const uids = parsed.map((e) => e.uid);
+  const existing: { uid: string }[] = await db
+    .select({ uid: calendarEvents.uid })
+    .from(calendarEvents)
+    .where(and(eq(calendarEvents.source, 'ics_import'), inArray(calendarEvents.uid, uids)));
+  const existingUids = new Set(existing.map((r) => r.uid));
+
+  for (const event of parsed) {
+    await db
+      .insert(calendarEvents)
+      .values({
+        id: randomUUID(),
+        source: 'ics_import',
+        uid: event.uid,
+        date: event.date,
+        title: event.summary,
+        description: event.description,
+      })
+      .onConflictDoUpdate({
+        target: [calendarEvents.source, calendarEvents.uid],
+        set: { date: event.date, title: event.summary, description: event.description },
+      });
+  }
+
+  const updated = parsed.filter((e) => existingUids.has(e.uid)).length;
+  return { imported: parsed.length - updated, updated, skipped };
 }
 
 const TASK_KIND_LABELS: Record<CalendarTaskDto['kind'], string> = {

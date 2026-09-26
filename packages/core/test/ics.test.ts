@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildIcsCalendar, type IcsEvent } from '../src/ics.js';
+import { buildIcsCalendar, parseIcsCalendar, type IcsEvent } from '../src/ics.js';
 
 const NOW = new Date('2026-01-15T10:30:00.000Z');
 
@@ -81,5 +81,107 @@ describe('buildIcsCalendar', () => {
     const bIndex = ics.indexOf('UID:b@studyhub');
     expect(aIndex).toBeGreaterThan(-1);
     expect(bIndex).toBeGreaterThan(aIndex);
+  });
+});
+
+describe('parseIcsCalendar', () => {
+  it('round-trips what buildIcsCalendar writes, including escaped text', () => {
+    const events: IcsEvent[] = [
+      {
+        uid: 'x@studyhub',
+        dateStart: '2026-02-03',
+        summary: 'Studia; ripassa, formula\\teorema',
+        description: 'Riga uno\nRiga due',
+      },
+    ];
+    const parsed = parseIcsCalendar(buildIcsCalendar(events, NOW));
+    expect(parsed).toEqual([
+      {
+        uid: 'x@studyhub',
+        date: '2026-02-03',
+        summary: 'Studia; ripassa, formula\\teorema',
+        description: 'Riga uno\nRiga due',
+      },
+    ]);
+  });
+
+  it('unfolds a continuation line (RFC 5545 §3.1: starts with a space)', () => {
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'BEGIN:VEVENT',
+      'UID:a@ext',
+      'DTSTART;VALUE=DATE:20260210',
+      'SUMMARY:Riga lunga che',
+      ' continua qui',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n');
+    expect(parseIcsCalendar(ics)).toEqual([
+      { uid: 'a@ext', date: '2026-02-10', summary: 'Riga lunga checontinua qui', description: null },
+    ]);
+  });
+
+  it('truncates a timed DTSTART to its date, with or without a trailing Z', () => {
+    const ics = [
+      'BEGIN:VEVENT',
+      'UID:b@ext',
+      'DTSTART:20260315T090000Z',
+      'SUMMARY:Lezione',
+      'END:VEVENT',
+    ].join('\r\n');
+    expect(parseIcsCalendar(ics)).toEqual([
+      { uid: 'b@ext', date: '2026-03-15', summary: 'Lezione', description: null },
+    ]);
+  });
+
+  it('skips a VEVENT with no UID or no parseable DTSTART, keeping the others', () => {
+    const ics = [
+      'BEGIN:VEVENT',
+      'DTSTART;VALUE=DATE:20260210',
+      'SUMMARY:Senza UID',
+      'END:VEVENT',
+      'BEGIN:VEVENT',
+      'UID:no-date@ext',
+      'SUMMARY:Senza data',
+      'END:VEVENT',
+      'BEGIN:VEVENT',
+      'UID:ok@ext',
+      'DTSTART;VALUE=DATE:20260211',
+      'SUMMARY:Valido',
+      'END:VEVENT',
+    ].join('\r\n');
+    expect(parseIcsCalendar(ics)).toEqual([
+      { uid: 'ok@ext', date: '2026-02-11', summary: 'Valido', description: null },
+    ]);
+  });
+
+  it('ignores content outside any VEVENT (VCALENDAR/VTIMEZONE headers)', () => {
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'BEGIN:VTIMEZONE',
+      'TZID:Europe/Rome',
+      'END:VTIMEZONE',
+      'BEGIN:VEVENT',
+      'UID:c@ext',
+      'DTSTART;VALUE=DATE:20260401',
+      'SUMMARY:Reale',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n');
+    expect(parseIcsCalendar(ics)).toEqual([
+      { uid: 'c@ext', date: '2026-04-01', summary: 'Reale', description: null },
+    ]);
+  });
+
+  it('defaults a missing SUMMARY to a placeholder rather than an empty string', () => {
+    const ics = ['BEGIN:VEVENT', 'UID:d@ext', 'DTSTART;VALUE=DATE:20260210', 'END:VEVENT'].join(
+      '\r\n',
+    );
+    expect(parseIcsCalendar(ics)[0]?.summary).toBe('(senza titolo)');
+  });
+
+  it('returns an empty array for a calendar with no VEVENT', () => {
+    expect(parseIcsCalendar('BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n')).toEqual([]);
   });
 });

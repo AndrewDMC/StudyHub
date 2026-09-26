@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createTestDb } from '@studyhub/db/testDb';
-import { exams, studyPlans, tasks } from '@studyhub/db';
+import { calendarEvents, exams, studyPlans, tasks } from '@studyhub/db';
 import { createSubject } from '../src/lib/subjects';
-import { getCalendarRange, getIcsFeed } from '../src/lib/calendar';
+import { getCalendarRange, getIcsFeed, importIcsCalendar } from '../src/lib/calendar';
 
 const AVAILABILITY = { perWeekday: [0, 120, 120, 120, 120, 120, 0], blackoutDates: [] };
 const PREFS = {
@@ -203,6 +203,86 @@ describe('getCalendarRange', () => {
       subjectSlug: subject.slug,
       subjectColor: 'blue',
     });
+  });
+
+  it('includes imported ICS events within the date range', async () => {
+    await db.insert(calendarEvents).values([
+      { id: randomUUID(), source: 'ics_import', uid: 'a@ext', date: '2026-01-20', title: 'Lezione' },
+      { id: randomUUID(), source: 'ics_import', uid: 'b@ext', date: '2026-03-01', title: 'Fuori range' },
+    ]);
+
+    const range = await getCalendarRange(db, '2026-01-01', '2026-02-01');
+    expect(range.importedEvents).toHaveLength(1);
+    expect(range.importedEvents[0]).toMatchObject({ date: '2026-01-20', title: 'Lezione' });
+  });
+});
+
+describe('importIcsCalendar', () => {
+  let dataRoot: string;
+  let db: Awaited<ReturnType<typeof createTestDb>>;
+
+  beforeEach(async () => {
+    dataRoot = await mkdtemp(join(tmpdir(), 'studyhub-ics-import-'));
+    db = await createTestDb();
+  });
+  afterEach(async () => {
+    await rm(dataRoot, { recursive: true, force: true });
+  });
+
+  function ics(events: { uid: string; date: string; summary: string }[]): string {
+    const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0'];
+    for (const e of events) {
+      lines.push(
+        'BEGIN:VEVENT',
+        `UID:${e.uid}`,
+        `DTSTART;VALUE=DATE:${e.date.replaceAll('-', '')}`,
+        `SUMMARY:${e.summary}`,
+        'END:VEVENT',
+      );
+    }
+    lines.push('END:VCALENDAR');
+    return lines.join('\r\n');
+  }
+
+  it('inserts every event on first import, reporting nothing updated', async () => {
+    const raw = ics([{ uid: 'a@ext', date: '2026-01-20', summary: 'Lezione 1' }]);
+    const result = await importIcsCalendar(db, raw);
+    expect(result).toEqual({ imported: 1, updated: 0, skipped: 0 });
+
+    const rows = await db.select().from(calendarEvents);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ uid: 'a@ext', date: '2026-01-20', title: 'Lezione 1' });
+  });
+
+  it('re-importing the same file updates the existing row instead of duplicating it', async () => {
+    await importIcsCalendar(db, ics([{ uid: 'a@ext', date: '2026-01-20', summary: 'Lezione 1' }]));
+    const result = await importIcsCalendar(
+      db,
+      ics([{ uid: 'a@ext', date: '2026-01-21', summary: 'Lezione 1 (spostata)' }]),
+    );
+    expect(result).toEqual({ imported: 0, updated: 1, skipped: 0 });
+
+    const rows = await db.select().from(calendarEvents);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ date: '2026-01-21', title: 'Lezione 1 (spostata)' });
+  });
+
+  it('counts a VEVENT the parser drops (no UID) as skipped', async () => {
+    const raw = [
+      'BEGIN:VCALENDAR',
+      'BEGIN:VEVENT',
+      'DTSTART;VALUE=DATE:20260120',
+      'SUMMARY:Senza UID',
+      'END:VEVENT',
+      'BEGIN:VEVENT',
+      'UID:ok@ext',
+      'DTSTART;VALUE=DATE:20260121',
+      'SUMMARY:Valido',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n');
+    const result = await importIcsCalendar(db, raw);
+    expect(result).toEqual({ imported: 1, updated: 0, skipped: 1 });
   });
 });
 
