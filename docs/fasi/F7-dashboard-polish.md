@@ -132,5 +132,14 @@ materia attribuita — non ne hanno una singola da dare senza una query aggiunti
 funzione non deve fare. Testato in `apps/worker/test/jobRunner.test.ts` (attribuzione reale,
 nessuna attribuzione per un job senza `subjectId`, fallback per un `subjectId` inesistente).
 
-**Non implementato**: nessuna cancellazione/retry di un singolo job dalla UI (solo lettura + il
-reset indice complessivo); nessun filtro per tipo di job o per materia, solo per stato.
+**Non implementato**: nessuna cancellazione di un singolo job dalla UI; nessun filtro per tipo di
+job o per materia, solo per stato.
+
+## Aggiornamento (2026-09-26): retry di un singolo job
+
+`POST /api/admin/jobs/:jobId/retry` (`apps/web/src/lib/admin.ts::retryJob`) rilancia un job
+`failed` con lo stesso `type` e lo stesso `input` — persistito su `jobs.input` fin da quando il job
+è stato accodato la prima volta, quindi nessun bisogno di ricostruirlo — sotto un nuovo id: un
+nuovo tentativo, non una mutazione della riga fallita. Rifiuta un job non `failed`
+(`JobNotRetryableError`) o inesistente (`JobNotFoundError`). Bottone "Rilancia" in `AdminClient`
+solo sulle righe `failed`. Non copre ancora la cancellazione di un job.

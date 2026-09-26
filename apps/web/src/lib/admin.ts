@@ -121,3 +121,37 @@ export async function enqueueReconcile(
   await queue.add('reconcile', {}, { jobId });
   return { jobId };
 }
+
+export class JobNotFoundError extends Error {
+  constructor(jobId: string) {
+    super(`Job non trovato: ${jobId}`);
+    this.name = 'JobNotFoundError';
+  }
+}
+
+export class JobNotRetryableError extends Error {
+  constructor(status: string) {
+    super(`Solo un job "failed" può essere rilanciato (stato attuale: ${status})`);
+    this.name = 'JobNotRetryableError';
+  }
+}
+
+/**
+ * `/admin` single-job retry (docs/fasi/F7-dashboard-polish.md "Non implementato": "nessuna
+ * cancellazione/retry di un singolo job dalla UI"). Re-enqueues the same `type`+`input` a failed
+ * job was run with — `jobs.input` is stored precisely for this — under a fresh job id, so it's a
+ * new attempt, not a mutation of the failed row.
+ */
+export async function retryJob(
+  db: AnyDb,
+  queue: Pick<Queue, 'add'>,
+  jobId: string,
+): Promise<{ jobId: string }> {
+  const [job] = await db.select().from(jobs).where(eq(jobs.id, jobId));
+  if (!job) throw new JobNotFoundError(jobId);
+  if (job.status !== 'failed') throw new JobNotRetryableError(job.status);
+
+  const newJobId = randomUUID();
+  await queue.add(job.type, job.input ?? {}, { jobId: newJobId });
+  return { jobId: newJobId };
+}

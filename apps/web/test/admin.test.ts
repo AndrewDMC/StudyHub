@@ -6,7 +6,14 @@ import { randomUUID } from 'node:crypto';
 import { createTestDb } from '@studyhub/db/testDb';
 import { jobs } from '@studyhub/db';
 import { createSubject } from '../src/lib/subjects';
-import { enqueueReconcile, getAdminOverview, listAdminJobs } from '../src/lib/admin';
+import {
+  enqueueReconcile,
+  getAdminOverview,
+  JobNotFoundError,
+  JobNotRetryableError,
+  listAdminJobs,
+  retryJob,
+} from '../src/lib/admin';
 
 function fakeQueue() {
   return { add: vi.fn().mockResolvedValue({ id: 'job-123' }) };
@@ -158,5 +165,45 @@ describe('enqueueReconcile', () => {
     const result = await enqueueReconcile(queue);
     expect(result.jobId).toEqual(expect.any(String));
     expect(queue.add).toHaveBeenCalledWith('reconcile', {}, { jobId: result.jobId });
+  });
+});
+
+describe('retryJob', () => {
+  let db: Awaited<ReturnType<typeof createTestDb>>;
+
+  beforeEach(async () => {
+    db = await createTestDb();
+  });
+
+  it('re-enqueues a failed job under a new id, with its original type and input', async () => {
+    const jobId = randomUUID();
+    await db.insert(jobs).values({
+      id: jobId,
+      type: 'generate_flashcards',
+      status: 'failed',
+      input: { subjectId: 'sub-1', scope: { docIds: ['doc-1'] } },
+      error: { code: 'job_failed', message: 'boom', retryable: true },
+    });
+
+    const queue = fakeQueue();
+    const result = await retryJob(db, queue, jobId);
+
+    expect(result.jobId).not.toBe(jobId);
+    expect(queue.add).toHaveBeenCalledWith(
+      'generate_flashcards',
+      { subjectId: 'sub-1', scope: { docIds: ['doc-1'] } },
+      { jobId: result.jobId },
+    );
+  });
+
+  it('throws JobNotFoundError for an unknown job id', async () => {
+    await expect(retryJob(db, fakeQueue(), randomUUID())).rejects.toThrow(JobNotFoundError);
+  });
+
+  it('refuses to retry a job that is not failed', async () => {
+    const jobId = randomUUID();
+    await db.insert(jobs).values({ id: jobId, type: 'reconcile', status: 'succeeded' });
+
+    await expect(retryJob(db, fakeQueue(), jobId)).rejects.toThrow(JobNotRetryableError);
   });
 });

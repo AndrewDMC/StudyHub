@@ -40,6 +40,13 @@ async function postReconcile(): Promise<{ jobId: string }> {
   return body as { jobId: string };
 }
 
+async function postRetryJob(jobId: string): Promise<{ jobId: string }> {
+  const res = await fetch(`/api/admin/jobs/${jobId}/retry`, { method: 'POST' });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error?.message ?? 'Rilancio job fallito');
+  return body as { jobId: string };
+}
+
 function formatCost(costEur: number): string {
   return costEur === 0 ? 'gratis' : `€${costEur.toFixed(4)}`;
 }
@@ -156,10 +163,18 @@ function CostsByMonthCard({ overview }: { overview: AdminOverviewDto }) {
 function JobsTable() {
   const [status, setStatus] = useState<StatusFilter>('tutti');
   const [offset, setOffset] = useState(0);
+  const queryClient = useQueryClient();
 
   const query = useQuery({
     queryKey: ['admin-jobs', status, offset],
     queryFn: () => fetchJobs(status, offset),
+  });
+
+  const retryMutation = useMutation({
+    mutationFn: postRetryJob,
+    onSuccess: () => {
+      setTimeout(() => queryClient.invalidateQueries({ queryKey: ['admin-jobs'] }), 3000);
+    },
   });
 
   return (
@@ -209,10 +224,25 @@ function JobsTable() {
                     <span className="font-mono text-fg-muted">{formatCost(job.costEur)}</span>
                   )}
                   <StatusBadge status={job.status} />
+                  {job.status === 'failed' && (
+                    <button
+                      type="button"
+                      disabled={retryMutation.isPending && retryMutation.variables === job.id}
+                      onClick={() => retryMutation.mutate(job.id)}
+                      className="rounded-[var(--radius-control)] border border-border px-1.5 py-0.5 text-[11px] text-fg-secondary hover:text-fg-primary disabled:opacity-50"
+                    >
+                      Rilancia
+                    </button>
+                  )}
                 </span>
               </li>
             ))}
           </ul>
+          {retryMutation.isError && (
+            <p role="alert" className="mt-2 text-[11px] text-danger">
+              {(retryMutation.error as Error).message}
+            </p>
+          )}
           <div className="mt-3 flex items-center justify-between text-[11px] text-fg-muted">
             <span>
               {offset + 1}–{offset + query.data.jobs.length} di {query.data.total}
