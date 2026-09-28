@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq, lt, or } from 'drizzle-orm';
 import {
   artifacts,
   flashcards,
@@ -13,9 +13,10 @@ import {
   newCardSchedule,
   scheduleReview,
   type FlashcardSchedule,
+  type FsrsCardState,
   type FsrsRating,
 } from '@studyhub/core';
-import type { FlashcardDto } from '@studyhub/contracts';
+import type { FlashcardDto, FlashcardPageDto } from '@studyhub/contracts';
 import { SubjectNotFoundError } from './errors';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -161,6 +162,67 @@ export async function submitReview(
   if (card.topicId) await recomputeTopicMastery(db, card.topicId);
 
   return toDto(updated);
+}
+
+export interface ListFlashcardsOptions {
+  topicId?: string | undefined;
+  state?: FsrsCardState | undefined;
+  suspended?: boolean | undefined;
+  cursor?: string | undefined;
+  limit?: number | undefined;
+}
+
+function encodeCursor(row: Flashcard): string {
+  return Buffer.from(`${row.createdAt.toISOString()}|${row.id}`, 'utf-8').toString('base64url');
+}
+
+function decodeCursor(cursor: string): { createdAt: Date; id: string } {
+  const [iso, id] = Buffer.from(cursor, 'base64url').toString('utf-8').split('|');
+  return { createdAt: new Date(iso!), id: id! };
+}
+
+/**
+ * Read-only flashcard list for the Flashcard tab (docs/fasi/F2-materie.md — the bulk editor
+ * stays F4). Cursor-based on `(createdAt, id)` DESC, newest first: a deck can hold thousands of
+ * cards, and offset pagination would only get slower as the user pages deeper in.
+ */
+export async function listFlashcards(
+  db: AnyDb,
+  subjectSlug: string,
+  options: ListFlashcardsOptions = {},
+): Promise<FlashcardPageDto> {
+  const subject = await requireSubject(db, subjectSlug);
+  const limit = Math.min(options.limit ?? 50, 200);
+
+  const conditions = [eq(artifacts.subjectId, subject.id)];
+  if (options.topicId) conditions.push(eq(flashcards.topicId, options.topicId));
+  if (options.state) conditions.push(eq(flashcards.state, options.state));
+  if (options.suspended !== undefined) conditions.push(eq(flashcards.suspended, options.suspended));
+  if (options.cursor) {
+    const { createdAt, id } = decodeCursor(options.cursor);
+    conditions.push(
+      or(
+        lt(flashcards.createdAt, createdAt),
+        and(eq(flashcards.createdAt, createdAt), lt(flashcards.id, id))!,
+      )!,
+    );
+  }
+
+  const joined: { f: Flashcard }[] = await db
+    .select({ f: flashcards })
+    .from(flashcards)
+    .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
+    .where(and(...conditions))
+    .orderBy(desc(flashcards.createdAt), desc(flashcards.id))
+    .limit(limit + 1);
+  const rows = joined.map((r) => r.f);
+
+  const hasMore = rows.length > limit;
+  const page = rows.slice(0, limit);
+  return {
+    items: page.map(toDto),
+    nextCursor: hasMore ? encodeCursor(page[page.length - 1]!) : null,
+  };
 }
 
 export async function setFlashcardSuspended(

@@ -11,7 +11,12 @@ import {
 } from '@studyhub/db';
 import { moveSubjectFolderToTrash } from '@studyhub/core';
 import { createSubjectRow } from '@studyhub/services';
-import type { CreateSubjectRequest, SubjectDto, SubjectSummaryDto } from '@studyhub/contracts';
+import type {
+  CreateSubjectRequest,
+  SubjectDto,
+  SubjectSummaryDto,
+  UpdateSubjectRequest,
+} from '@studyhub/contracts';
 import { SubjectNotFoundError } from './errors';
 
 // Both the real Postgres client and the pglite test client expose the same
@@ -29,6 +34,7 @@ function toDto(row: typeof subjects.$inferSelect): SubjectDto {
     cfu: row.cfu,
     folderPath: row.folderPath,
     archivedAt: row.archivedAt ? row.archivedAt.toISOString() : null,
+    sortOrder: row.sortOrder,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -47,7 +53,10 @@ async function averageMasteryBySubject(db: AnyDb): Promise<Map<string, number>> 
   }
   const result = new Map<string, number>();
   for (const [subjectId, values] of bySubject) {
-    result.set(subjectId, Math.round((values.reduce((s, v) => s + v, 0) / values.length) * 1000) / 1000);
+    result.set(
+      subjectId,
+      Math.round((values.reduce((s, v) => s + v, 0) / values.length) * 1000) / 1000,
+    );
   }
   return result;
 }
@@ -99,7 +108,7 @@ export async function listSubjectSummaries(
       .leftJoin(exams, eq(exams.subjectId, subjects.id))
       .where(options.includeArchived ? undefined : isNull(subjects.archivedAt))
       .groupBy(subjects.id)
-      .orderBy(subjects.name),
+      .orderBy(subjects.sortOrder, subjects.name),
     averageMasteryBySubject(db),
     dueCardsTodayBySubject(db),
   ]);
@@ -150,19 +159,65 @@ export async function getSubjectBySlug(db: AnyDb, slug: string): Promise<Subject
   return row ? toDto(row) : null;
 }
 
+/**
+ * Applies any subset of editable fields (docs/fasi/F2-materie.md "Modifica"). Renaming never
+ * touches the slug or the on-disk folder — `folderPath`/`slug` stay whatever they were at
+ * creation, so nothing on the filesystem can go stale from an edit here. `professor`/`cfu`
+ * accept `null` to clear a previously-set value.
+ */
+export async function updateSubject(
+  db: AnyDb,
+  slug: string,
+  patch: UpdateSubjectRequest,
+): Promise<SubjectDto> {
+  const set: Partial<typeof subjects.$inferInsert> = {};
+  if (patch.name !== undefined) set.name = patch.name;
+  if (patch.color !== undefined) set.color = patch.color;
+  if (patch.professor !== undefined) set.professor = patch.professor;
+  if (patch.cfu !== undefined) set.cfu = patch.cfu;
+  if (patch.archived !== undefined) set.archivedAt = patch.archived ? new Date() : null;
+
+  const [row] = await db.update(subjects).set(set).where(eq(subjects.slug, slug)).returning();
+  if (!row) throw new SubjectNotFoundError(slug);
+  return toDto(row);
+}
+
 /** Archive is soft and reversible: sets/clears `archived_at`, never touches the filesystem. */
 export async function setSubjectArchived(
   db: AnyDb,
   slug: string,
   archived: boolean,
 ): Promise<SubjectDto> {
-  const [row] = await db
-    .update(subjects)
-    .set({ archivedAt: archived ? new Date() : null })
-    .where(eq(subjects.slug, slug))
-    .returning();
-  if (!row) throw new SubjectNotFoundError(slug);
-  return toDto(row);
+  return updateSubject(db, slug, { archived });
+}
+
+/**
+ * Reassigns `sortOrder` to every listed subject, in the given order (docs/fasi/F2-materie.md
+ * "riordina"). `slugs` must be the full set of non-archived subjects — a partial or stale list
+ * (e.g. from a client that raced a create/delete) is rejected rather than silently reordering
+ * only some subjects, which could leave siblings interleaved in a confusing way.
+ */
+export async function reorderSubjects(db: AnyDb, slugs: string[]): Promise<void> {
+  await db.transaction(async (tx: AnyDb) => {
+    const rows: { id: string; slug: string }[] = await tx
+      .select({ id: subjects.id, slug: subjects.slug })
+      .from(subjects)
+      .where(isNull(subjects.archivedAt));
+    const bySlug = new Map(rows.map((r) => [r.slug, r.id]));
+
+    if (rows.length !== slugs.length || !slugs.every((s) => bySlug.has(s))) {
+      throw new Error(
+        'La lista di riordino deve contenere esattamente tutte le materie non archiviate',
+      );
+    }
+
+    for (const [index, slug] of slugs.entries()) {
+      await tx
+        .update(subjects)
+        .set({ sortOrder: index })
+        .where(eq(subjects.id, bySlug.get(slug)!));
+    }
+  });
 }
 
 /**

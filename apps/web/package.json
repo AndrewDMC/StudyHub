@@ -24,6 +24,7 @@
     "@studyhub/db": "workspace:*",
     "@studyhub/services": "workspace:*",
     "@tanstack/react-query": "^5.62.7",
+    "@tanstack/react-virtual": "^3.14.13",
     "bullmq": "^5.34.5",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

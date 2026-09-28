@@ -1,4 +1,4 @@
-import { and, eq, gt, isNotNull, lte, or } from 'drizzle-orm';
+import { and, eq, gt, isNotNull, isNull, lte, or } from 'drizzle-orm';
 import { artifacts, exams, flashcards, subjects, topics } from '@studyhub/db';
 import { addDays, diffDays, type IsoDate } from '@studyhub/core';
 import type { DashboardSummaryDto } from '@studyhub/contracts';
@@ -11,14 +11,22 @@ type AnyDb = any;
 
 const UPCOMING_DAYS = 14; // docs/fasi/F7-dashboard-polish.md §5: "prossimi 14 giorni"
 
-/** Cards due *by the end of `today`* (docs/fasi/F4-flashcard.md daily queue rule): new, or past/at their `dueAt`. */
+/**
+ * Cards due *by the end of `today`* (docs/fasi/F4-flashcard.md daily queue rule): new, or
+ * past/at their `dueAt`. Joins subjects to exclude archived ones — a card doesn't stop being
+ * "due" when its subject is archived, but it should stop showing up on the dashboard home
+ * (docs/fasi/F2-materie.md "Archivio una materia: sparisce dalla dashboard").
+ */
 async function countDueCards(db: AnyDb, endOfToday: Date): Promise<number> {
   const rows: { id: string }[] = await db
     .select({ id: flashcards.id })
     .from(flashcards)
+    .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
+    .innerJoin(subjects, eq(artifacts.subjectId, subjects.id))
     .where(
       and(
         eq(flashcards.suspended, false),
+        isNull(subjects.archivedAt),
         or(
           eq(flashcards.state, 'new'),
           and(isNotNull(flashcards.dueAt), lte(flashcards.dueAt, endOfToday)),
@@ -34,9 +42,11 @@ async function countDueCardsBySubject(db: AnyDb, endOfToday: Date): Promise<Map<
     .select({ subjectId: artifacts.subjectId })
     .from(flashcards)
     .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
+    .innerJoin(subjects, eq(artifacts.subjectId, subjects.id))
     .where(
       and(
         eq(flashcards.suspended, false),
+        isNull(subjects.archivedAt),
         or(
           eq(flashcards.state, 'new'),
           and(isNotNull(flashcards.dueAt), lte(flashcards.dueAt, endOfToday)),
@@ -49,15 +59,16 @@ async function countDueCardsBySubject(db: AnyDb, endOfToday: Date): Promise<Map<
 }
 
 /**
- * `mastery` (docs/02-filesystem-e-dati.md §5) is `null` on every topic in
- * practice today — nothing in the app writes it yet (see docs/fasi/F7
- * "Stato"). This returns `null` for `averageMastery` in that (current, real)
- * case rather than pretending there is data.
+ * `mastery` (docs/02-filesystem-e-dati.md §5) is `null` on many topics still — only those with
+ * a reviewed card, a simulation, or assigned material get one (`recomputeTopicMastery`). Joins
+ * subjects to exclude archived ones from the average (same reasoning as `countDueCards`).
  */
 async function averageMastery(db: AnyDb): Promise<number | null> {
   const rows: { mastery: number | null }[] = await db
     .select({ mastery: topics.mastery })
-    .from(topics);
+    .from(topics)
+    .innerJoin(subjects, eq(topics.subjectId, subjects.id))
+    .where(isNull(subjects.archivedAt));
   const values = rows.map((r) => r.mastery).filter((m): m is number => m !== null);
   if (values.length === 0) return null;
   return Math.round((values.reduce((s, v) => s + v, 0) / values.length) * 1000) / 1000;
@@ -74,7 +85,9 @@ async function nextExam(db: AnyDb, startOfToday: Date) {
     })
     .from(exams)
     .innerJoin(subjects, eq(exams.subjectId, subjects.id))
-    .where(and(eq(exams.status, 'scheduled'), gt(exams.date, startOfToday)))
+    .where(
+      and(eq(exams.status, 'scheduled'), gt(exams.date, startOfToday), isNull(subjects.archivedAt)),
+    )
     .orderBy(exams.date)
     .limit(1);
   return row ?? null;

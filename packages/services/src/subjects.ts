@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { sql } from 'drizzle-orm';
 import { subjects, type Database } from '@studyhub/db';
 import {
   createManifest,
@@ -54,6 +55,14 @@ export async function createSubjectRow(
   });
   const folderPath = await scaffoldSubject(dataRoot, manifest);
 
+  // New subjects append to the end of the Materie grid (docs/fasi/F2-materie.md "riordina"):
+  // one after the current highest `sortOrder`, so reordering by hand is never disturbed by
+  // a later creation landing in the middle.
+  const maxOrderRows: { maxOrder: number }[] = await db
+    .select({ maxOrder: sql<number>`coalesce(max(${subjects.sortOrder}), -1)`.mapWith(Number) })
+    .from(subjects);
+  const maxOrder = maxOrderRows[0]!.maxOrder;
+
   const [row] = await db
     .insert(subjects)
     .values({
@@ -64,6 +73,7 @@ export async function createSubjectRow(
       professor: manifest.professor ?? null,
       cfu: manifest.cfu ?? null,
       folderPath,
+      sortOrder: maxOrder + 1,
     })
     .returning();
 

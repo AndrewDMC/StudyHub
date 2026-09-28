@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import type { DocumentDto, TopicDto } from '@studyhub/contracts';
 
 const STATUS_LABEL: Record<DocumentDto['status'], string> = {
@@ -193,6 +194,7 @@ export function DocumentList({
     queryKey: ['topics', subjectSlug],
     queryFn: () => fetchTopics(subjectSlug),
   });
+  const parentRef = useRef<HTMLDivElement>(null);
 
   const toggleSelected = (docId: string) => {
     if (!onSelectionChange) return;
@@ -201,6 +203,16 @@ export function DocumentList({
     else next.add(docId);
     onSelectionChange(next);
   };
+
+  // Virtualized (docs/fasi/F2-materie.md "La pagina con 200 documenti e 2000 flashcard resta
+  // reattiva"): row height varies with `TopicTagger`'s open/closed state, so rows are measured
+  // (`measureElement`) rather than fixed — `estimateSize` is only the first-paint guess.
+  const rowVirtualizer = useVirtualizer({
+    count: documents.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 96,
+    overscan: 8,
+  });
 
   return (
     <div>
@@ -216,62 +228,85 @@ export function DocumentList({
           </button>
         </div>
       )}
-      <ul className="divide-y divide-border rounded-[var(--radius-card)] border border-border bg-bg-surface">
-        {documents.map((doc) => (
-          <li key={doc.id} className="flex items-center justify-between gap-3 px-4 py-3">
-            <div className="flex min-w-0 items-start gap-2.5">
-              {onSelectionChange && doc.status === 'parsed' && (
-                <input
-                  type="checkbox"
-                  checked={selectedDocIds?.has(doc.id) ?? false}
-                  onChange={() => toggleSelected(doc.id)}
-                  aria-label={`Seleziona ${doc.originalName}`}
-                  className="mt-1 shrink-0"
-                />
-              )}
-              <div className="min-w-0">
-                <p className="truncate text-sm text-fg-primary">{doc.originalName}</p>
-                <p className="mt-0.5 font-mono text-[11px] text-fg-muted">
-                  {doc.type} · {formatBytes(doc.bytes)}
-                  {doc.pages !== null ? ` · ${doc.pages} pag.` : ''}
-                </p>
-                <TypeSuggestion subjectSlug={subjectSlug} doc={doc} />
-                {topicsQuery.isSuccess && (
-                  <TopicTagger subjectSlug={subjectSlug} doc={doc} topics={topicsQuery.data} />
-                )}
-              </div>
-            </div>
-            <div className="flex shrink-0 flex-col items-end gap-1">
-              <span
-                className="rounded-full border px-2 py-0.5 text-[11px] font-medium"
-                style={{ color: STATUS_COLOR[doc.status], borderColor: STATUS_COLOR[doc.status] }}
+      <div
+        ref={parentRef}
+        className="max-h-[70vh] overflow-y-auto rounded-[var(--radius-card)] border border-border bg-bg-surface"
+      >
+        <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative' }}>
+          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+            const doc = documents[virtualRow.index]!;
+            return (
+              <div
+                key={doc.id}
+                data-index={virtualRow.index}
+                ref={rowVirtualizer.measureElement}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+                className="flex items-center justify-between gap-3 border-b border-border px-4 py-3"
               >
-                {STATUS_LABEL[doc.status]}
-              </span>
-              {doc.type === 'schemi' && doc.status === 'parsed' && (
-                <Link
-                  href={`/materie/${subjectSlug}/documenti/${doc.id}/verifica`}
-                  className={`text-[11px] underline-offset-2 hover:underline ${
-                    doc.blockedBlocks > 0 ? 'text-warn' : 'text-fg-muted'
-                  }`}
-                >
-                  {doc.blockedBlocks > 0 ? `${doc.blockedBlocks} da verificare` : 'Verifica'}
-                </Link>
-              )}
-              {doc.status === 'parsed' && doc.mdPath && (
-                <Link
-                  href={`/materie/${subjectSlug}/documenti/${doc.id}`}
-                  className={`text-[11px] underline-offset-2 hover:underline ${
-                    doc.mdConflict ? 'text-warn' : 'text-fg-muted'
-                  }`}
-                >
-                  {doc.mdConflict ? 'Conflitto da risolvere' : 'Vedi testo'}
-                </Link>
-              )}
-            </div>
-          </li>
-        ))}
-      </ul>
+                <div className="flex min-w-0 items-start gap-2.5">
+                  {onSelectionChange && doc.status === 'parsed' && (
+                    <input
+                      type="checkbox"
+                      checked={selectedDocIds?.has(doc.id) ?? false}
+                      onChange={() => toggleSelected(doc.id)}
+                      aria-label={`Seleziona ${doc.originalName}`}
+                      className="mt-1 shrink-0"
+                    />
+                  )}
+                  <div className="min-w-0">
+                    <p className="truncate text-sm text-fg-primary">{doc.originalName}</p>
+                    <p className="mt-0.5 font-mono text-[11px] text-fg-muted">
+                      {doc.type} · {formatBytes(doc.bytes)}
+                      {doc.pages !== null ? ` · ${doc.pages} pag.` : ''}
+                    </p>
+                    <TypeSuggestion subjectSlug={subjectSlug} doc={doc} />
+                    {topicsQuery.isSuccess && (
+                      <TopicTagger subjectSlug={subjectSlug} doc={doc} topics={topicsQuery.data} />
+                    )}
+                  </div>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <span
+                    className="rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                    style={{
+                      color: STATUS_COLOR[doc.status],
+                      borderColor: STATUS_COLOR[doc.status],
+                    }}
+                  >
+                    {STATUS_LABEL[doc.status]}
+                  </span>
+                  {doc.type === 'schemi' && doc.status === 'parsed' && (
+                    <Link
+                      href={`/materie/${subjectSlug}/documenti/${doc.id}/verifica`}
+                      className={`text-[11px] underline-offset-2 hover:underline ${
+                        doc.blockedBlocks > 0 ? 'text-warn' : 'text-fg-muted'
+                      }`}
+                    >
+                      {doc.blockedBlocks > 0 ? `${doc.blockedBlocks} da verificare` : 'Verifica'}
+                    </Link>
+                  )}
+                  {doc.status === 'parsed' && doc.mdPath && (
+                    <Link
+                      href={`/materie/${subjectSlug}/documenti/${doc.id}`}
+                      className={`text-[11px] underline-offset-2 hover:underline ${
+                        doc.mdConflict ? 'text-warn' : 'text-fg-muted'
+                      }`}
+                    >
+                      {doc.mdConflict ? 'Conflitto da risolvere' : 'Vedi testo'}
+                    </Link>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

@@ -85,6 +85,13 @@
       "when": 1790454910087,
       "tag": "0011_search_and_classification",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790591542649,
+      "tag": "0012_add_subjects_sort_order",
+      "breakpoints": true
     }
   ]
 }

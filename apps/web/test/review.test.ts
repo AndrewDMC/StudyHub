@@ -10,6 +10,7 @@ import { createSubject } from '../src/lib/subjects';
 import {
   FlashcardNotFoundError,
   getReviewQueue,
+  listFlashcards,
   setFlashcardSuspended,
   submitReview,
 } from '../src/lib/review';
@@ -175,5 +176,64 @@ describe('review queue + submitReview + suspend', () => {
 
     await setFlashcardSuspended(db, subjectSlug, cardId, false);
     expect(await getReviewQueue(db, subjectSlug)).toHaveLength(1);
+  });
+
+  describe('listFlashcards', () => {
+    it('lists newest-first, isolated to the subject (docs/fasi/F2-materie.md tab Flashcard)', async () => {
+      const other = await createSubject(db, dataRoot, { name: 'Chimica 1', color: 'green' });
+      const { cardId: older } = await seedDeckAndCard(db, subjectId, {
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      });
+      const { cardId: newer } = await seedDeckAndCard(db, subjectId, {
+        createdAt: new Date('2026-01-02T00:00:00.000Z'),
+      });
+      await seedDeckAndCard(db, other.id); // must not leak into subjectSlug's list
+
+      const page = await listFlashcards(db, subjectSlug);
+      expect(page.items.map((c) => c.id)).toEqual([newer, older]);
+      expect(page.nextCursor).toBeNull();
+    });
+
+    it('filters by topicId, state and suspended independently', async () => {
+      const topicId = randomUUID();
+      await db.insert(topics).values({ id: topicId, subjectId, name: 'A', slug: 'a' });
+      const { cardId: tagged } = await seedDeckAndCard(db, subjectId, { topicId, state: 'review' });
+      await seedDeckAndCard(db, subjectId, { state: 'new' });
+      const { cardId: suspended } = await seedDeckAndCard(db, subjectId, {
+        state: 'review', // distinct from the other two — isolates the `state: 'new'` assertion below
+        suspended: true,
+      });
+
+      expect((await listFlashcards(db, subjectSlug, { topicId })).items.map((c) => c.id)).toEqual([
+        tagged,
+      ]);
+      expect((await listFlashcards(db, subjectSlug, { state: 'new' })).items).toHaveLength(1);
+      expect(
+        (await listFlashcards(db, subjectSlug, { suspended: true })).items.map((c) => c.id),
+      ).toEqual([suspended]);
+    });
+
+    it('paginates via cursor, splitting an exact-multiple set with no trailing empty page', async () => {
+      for (let i = 0; i < 4; i++) {
+        await seedDeckAndCard(db, subjectId, {
+          createdAt: new Date(`2026-01-0${i + 1}T00:00:00.000Z`),
+        });
+      }
+
+      const first = await listFlashcards(db, subjectSlug, { limit: 2 });
+      expect(first.items).toHaveLength(2);
+      expect(first.nextCursor).not.toBeNull();
+
+      const second = await listFlashcards(db, subjectSlug, { limit: 2, cursor: first.nextCursor! });
+      expect(second.items).toHaveLength(2);
+      expect(second.nextCursor).toBeNull();
+
+      const allIds = [...first.items, ...second.items].map((c) => c.id);
+      expect(new Set(allIds).size).toBe(4); // no overlap or gap across the two pages
+    });
+
+    it('throws SubjectNotFoundError for an unknown slug', async () => {
+      await expect(listFlashcards(db, 'nope')).rejects.toBeInstanceOf(SubjectNotFoundError);
+    });
   });
 });

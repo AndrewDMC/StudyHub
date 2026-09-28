@@ -2,11 +2,13 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FlashcardDto } from '@studyhub/contracts';
 
-async function fetchQueue(slug: string): Promise<FlashcardDto[]> {
-  const res = await fetch(`/api/subjects/${slug}/review/queue`);
+async function fetchQueue(slug: string, topicId: string | null): Promise<FlashcardDto[]> {
+  const qs = topicId ? `?topicId=${encodeURIComponent(topicId)}` : '';
+  const res = await fetch(`/api/subjects/${slug}/review/queue${qs}`);
   const body = await res.json();
   if (!res.ok) throw new Error(body.error?.message ?? 'Impossibile caricare la coda di ripasso');
   return body.queue as FlashcardDto[];
@@ -51,9 +53,12 @@ const RATING_LABELS: Record<1 | 2 | 3 | 4, string> = {
  */
 export function ReviewSessionClient({ subjectSlug }: { subjectSlug: string }) {
   const queryClient = useQueryClient();
+  // ?topicId=... (docs/fasi/F2-materie.md "drill su questo argomento", linked from AiPanel.tsx)
+  // scopes the session to one topic's cards instead of the whole subject's due queue.
+  const topicId = useSearchParams().get('topicId');
   const query = useQuery({
-    queryKey: ['review-queue', subjectSlug],
-    queryFn: () => fetchQueue(subjectSlug),
+    queryKey: ['review-queue', subjectSlug, topicId],
+    queryFn: () => fetchQueue(subjectSlug, topicId),
   });
   const [index, setIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);

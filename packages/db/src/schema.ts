@@ -47,6 +47,9 @@ export const subjects = pgTable('subjects', {
   cfu: integer('cfu'),
   folderPath: text('folder_path').notNull(),
   archivedAt: timestamp('archived_at', { withTimezone: true }),
+  // User-controlled display order in the Materie grid (docs/fasi/F2-materie.md "riordina").
+  // Assigned max+1 at creation, reassigned wholesale by `reorderSubjects`; ties break on `name`.
+  sortOrder: integer('sort_order').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

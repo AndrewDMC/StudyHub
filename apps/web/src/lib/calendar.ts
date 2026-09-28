@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq, gte, inArray, lt } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, lt } from 'drizzle-orm';
 import {
   calendarEvents,
   exams,
@@ -74,7 +74,11 @@ function toCalendarExamDto(row: Exam, subject: SubjectMeta): CalendarExamDto {
  * (`tasks.date` is a plain IsoDate string, compared lexically; exam
  * timestamps are compared as real dates). Only *active* plans' tasks are
  * visible: a `draft` is invisible outside its own review screen
- * (docs/04-planner.md §9.1) — same rule `getDailyTasks` follows.
+ * (docs/04-planner.md §9.1) — same rule `getDailyTasks` follows. Tasks and
+ * exams of an archived subject are excluded too (docs/fasi/F2-materie.md
+ * "Archivio una materia: sparisce dalla dashboard") — archiving pauses a
+ * subject everywhere it would otherwise surface, not just its own grid card;
+ * imported ICS events aren't subject-scoped, so they're unaffected.
  */
 export async function getCalendarRange(
   db: AnyDb,
@@ -108,7 +112,14 @@ export async function getCalendarRange(
       .from(tasks)
       .innerJoin(studyPlans, eq(tasks.planId, studyPlans.id))
       .innerJoin(subjects, eq(tasks.subjectId, subjects.id))
-      .where(and(eq(studyPlans.status, 'active'), gte(tasks.date, start), lt(tasks.date, end)));
+      .where(
+        and(
+          eq(studyPlans.status, 'active'),
+          gte(tasks.date, start),
+          lt(tasks.date, end),
+          isNull(subjects.archivedAt),
+        ),
+      );
 
   const examRows: (Exam & { subjectSlug: string; subjectName: string; subjectColor: string })[] =
     await db
@@ -135,6 +146,7 @@ export async function getCalendarRange(
         and(
           gte(exams.date, new Date(`${start}T00:00:00.000Z`)),
           lt(exams.date, new Date(`${end}T00:00:00.000Z`)),
+          isNull(subjects.archivedAt),
         ),
       );
 

@@ -22,6 +22,8 @@ function buildTree(topics: TopicDto[]): Map<string | null, TopicDto[]> {
   return byParent;
 }
 
+const EMPTY_SELECTION = new Set<string>();
+
 // docs/02-filesystem-e-dati.md §5 — "niente numeri magici": la formula è
 // sempre visibile nel tooltip, non solo il numero finale.
 const MASTERY_FORMULA =
@@ -55,6 +57,8 @@ function TopicNode({
   depth,
   allTopics,
   mergingId,
+  selectedTopicIds,
+  onToggleSelect,
   onDelete,
   onStartMerge,
   onConfirmMerge,
@@ -65,6 +69,8 @@ function TopicNode({
   depth: number;
   allTopics: TopicDto[];
   mergingId: string | null;
+  selectedTopicIds: Set<string>;
+  onToggleSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onStartMerge: (id: string) => void;
   onConfirmMerge: (sourceId: string, targetId: string) => void;
@@ -72,17 +78,28 @@ function TopicNode({
 }) {
   const children = byParent.get(topic.id) ?? [];
   const isMerging = mergingId === topic.id;
+  const isSelected = selectedTopicIds.has(topic.id);
   const otherTopics = allTopics.filter((t) => t.id !== topic.id);
   return (
     <li>
       <div
-        className="group flex items-center justify-between rounded-[var(--radius-control)] px-2 py-1 hover:bg-bg-raised"
+        className={`group flex items-center justify-between rounded-[var(--radius-control)] px-2 py-1 hover:bg-bg-raised ${
+          isSelected ? 'bg-accent/10' : ''
+        }`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
       >
-        <span className="flex min-w-0 items-center gap-1.5 text-sm text-fg-primary">
+        <button
+          type="button"
+          onClick={() => onToggleSelect(topic.id)}
+          aria-pressed={isSelected}
+          className={`flex min-w-0 flex-1 items-center gap-1.5 text-left text-sm ${
+            isSelected ? 'font-medium text-accent' : 'text-fg-primary'
+          }`}
+          title="Filtra la pagina e scopa il pannello AI su questo argomento"
+        >
           <MasteryDot mastery={topic.mastery} />
           <span className="truncate">{topic.name}</span>
-        </span>
+        </button>
         <span className="hidden gap-2 group-hover:flex">
           <button
             type="button"
@@ -147,6 +164,8 @@ function TopicNode({
               depth={depth + 1}
               allTopics={allTopics}
               mergingId={mergingId}
+              selectedTopicIds={selectedTopicIds}
+              onToggleSelect={onToggleSelect}
               onDelete={onDelete}
               onStartMerge={onStartMerge}
               onConfirmMerge={onConfirmMerge}
@@ -163,10 +182,16 @@ export function TopicsPanel({
   subjectSlug,
   documents,
   selectedDocIds,
+  selectedTopicIds,
+  onToggleTopic,
 }: {
   subjectSlug: string;
   documents: DocumentDto[];
   selectedDocIds?: Set<string>;
+  /** Filtro globale della pagina (docs/fasi/F2-materie.md "Sinistra"): clic su un argomento lo
+   * seleziona, filtra le liste della tab corrente e scopa il pannello AI su di esso. */
+  selectedTopicIds?: Set<string>;
+  onToggleTopic?: (id: string) => void;
 }) {
   const [name, setName] = useState('');
   const [mergingId, setMergingId] = useState<string | null>(null);
@@ -250,9 +275,18 @@ export function TopicsPanel({
 
   return (
     <div className="rounded-[var(--radius-card)] border border-border bg-bg-surface p-3">
-      <h2 className="mb-2 px-1 text-xs font-medium uppercase tracking-wide text-fg-muted">
-        Argomenti
-      </h2>
+      <div className="mb-2 flex items-center justify-between px-1">
+        <h2 className="text-xs font-medium uppercase tracking-wide text-fg-muted">Argomenti</h2>
+        {onToggleTopic && (selectedTopicIds?.size ?? 0) > 0 && (
+          <button
+            type="button"
+            onClick={() => selectedTopicIds?.forEach((id) => onToggleTopic(id))}
+            className="text-[11px] text-fg-muted underline-offset-2 hover:text-fg-primary hover:underline"
+          >
+            Deseleziona
+          </button>
+        )}
+      </div>
 
       {query.isLoading && <p className="px-1 text-xs text-fg-muted">Caricamento…</p>}
       {query.isError && (
@@ -278,6 +312,8 @@ export function TopicsPanel({
               depth={0}
               allTopics={query.data}
               mergingId={mergingId}
+              selectedTopicIds={selectedTopicIds ?? EMPTY_SELECTION}
+              onToggleSelect={onToggleTopic ?? (() => {})}
               onDelete={(id) => deleteMutation.mutate(id)}
               onStartMerge={setMergingId}
               onConfirmMerge={(sourceId, targetId) => mergeMutation.mutate({ sourceId, targetId })}

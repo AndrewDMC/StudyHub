@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { UpdateSubjectRequestSchema } from '@studyhub/contracts';
 import { getDb } from '@/lib/db';
 import { getDataRoot } from '@/lib/dataRoot';
-import { deleteSubjectPermanently, getSubjectBySlug, setSubjectArchived } from '@/lib/subjects';
+import { deleteSubjectPermanently, getSubjectBySlug, updateSubject } from '@/lib/subjects';
 import { formatError, SubjectNotFoundError } from '@/lib/errors';
 
 export const dynamic = 'force-dynamic';
@@ -28,7 +28,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
   }
 }
 
-/** Archive/unarchive (soft, reversible — never touches the filesystem). */
+/** Edits any subset of fields, including archive/unarchive (never touches the filesystem). */
 export async function PATCH(request: Request, { params }: RouteParams) {
   const { slug } = await params;
   const body = await request.json().catch(() => null);
@@ -46,7 +46,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
   }
 
   try {
-    const subject = await setSubjectArchived(getDb(), slug, parsed.data.archived);
+    const subject = await updateSubject(getDb(), slug, parsed.data);
     return NextResponse.json({ subject });
   } catch (err) {
     if (err instanceof SubjectNotFoundError) {

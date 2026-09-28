@@ -19,7 +19,9 @@ import {
   deleteSubjectPermanently,
   getSubjectBySlug,
   listSubjectSummaries,
+  reorderSubjects,
   setSubjectArchived,
+  updateSubject,
 } from '../src/lib/subjects';
 import { SubjectNotFoundError } from '../src/lib/errors';
 
@@ -284,6 +286,140 @@ describe('listSubjectSummaries — aggregation and archived filtering', () => {
     await createSubject(db, dataRoot, { name: 'Fisica 1', color: 'blue' });
     const [summary] = await listSubjectSummaries(db);
     expect(summary?.topicCoverage).toBeNull();
+  });
+});
+
+describe('listSubjectSummaries — order', () => {
+  it('lists newly-created subjects in creation order, appended after any manual reorder', async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), 'studyhub-order-'));
+    try {
+      const db = await createTestDb();
+      const a = await createSubject(db, dataRoot, { name: 'Zeta', color: 'blue' });
+      const b = await createSubject(db, dataRoot, { name: 'Alfa', color: 'green' });
+
+      // Name-alphabetical would put Alfa first — creation order should win instead.
+      expect((await listSubjectSummaries(db)).map((s) => s.slug)).toEqual([a.slug, b.slug]);
+
+      await reorderSubjects(db, [b.slug, a.slug]);
+      expect((await listSubjectSummaries(db)).map((s) => s.slug)).toEqual([b.slug, a.slug]);
+
+      const c = await createSubject(db, dataRoot, { name: 'Beta', color: 'rose' });
+      expect((await listSubjectSummaries(db)).map((s) => s.slug)).toEqual([b.slug, a.slug, c.slug]);
+    } finally {
+      await rm(dataRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('updateSubject', () => {
+  it('renames without touching slug or folderPath, and updates color/professor/cfu', async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), 'studyhub-update-'));
+    try {
+      const db = await createTestDb();
+      const subject = await createSubject(db, dataRoot, {
+        name: 'Fisica 1',
+        color: 'blue',
+        professor: 'Rossi',
+        cfu: 9,
+      });
+
+      const updated = await updateSubject(db, subject.slug, {
+        name: 'Fisica Generale',
+        color: 'green',
+        professor: 'Bianchi',
+        cfu: 12,
+      });
+
+      expect(updated.name).toBe('Fisica Generale');
+      expect(updated.color).toBe('green');
+      expect(updated.professor).toBe('Bianchi');
+      expect(updated.cfu).toBe(12);
+      expect(updated.slug).toBe(subject.slug);
+      expect(updated.folderPath).toBe(subject.folderPath);
+
+      const s = await stat(join(dataRoot, 'subjects', subject.slug));
+      expect(s.isDirectory()).toBe(true);
+    } finally {
+      await rm(dataRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('clears professor/cfu when patched with null, leaves them untouched when omitted', async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), 'studyhub-update-partial-'));
+    try {
+      const db = await createTestDb();
+      const subject = await createSubject(db, dataRoot, {
+        name: 'Fisica 1',
+        color: 'blue',
+        professor: 'Rossi',
+        cfu: 9,
+      });
+
+      const renamedOnly = await updateSubject(db, subject.slug, { name: 'Fisica 1 bis' });
+      expect(renamedOnly.professor).toBe('Rossi'); // untouched: key was absent from the patch
+      expect(renamedOnly.cfu).toBe(9);
+
+      const cleared = await updateSubject(db, subject.slug, { professor: null, cfu: null });
+      expect(cleared.professor).toBeNull();
+      expect(cleared.cfu).toBeNull();
+      expect(cleared.name).toBe('Fisica 1 bis'); // untouched by the second patch
+    } finally {
+      await rm(dataRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('throws SubjectNotFoundError for an unknown slug', async () => {
+    const db = await createTestDb();
+    await expect(updateSubject(db, 'nope', { name: 'x' })).rejects.toBeInstanceOf(
+      SubjectNotFoundError,
+    );
+  });
+});
+
+describe('reorderSubjects', () => {
+  it('reassigns sortOrder to match the given slug order', async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), 'studyhub-reorder-'));
+    try {
+      const db = await createTestDb();
+      const a = await createSubject(db, dataRoot, { name: 'A', color: 'blue' });
+      const b = await createSubject(db, dataRoot, { name: 'B', color: 'green' });
+      const c = await createSubject(db, dataRoot, { name: 'C', color: 'rose' });
+
+      await reorderSubjects(db, [c.slug, a.slug, b.slug]);
+
+      expect((await listSubjectSummaries(db)).map((s) => s.slug)).toEqual([c.slug, a.slug, b.slug]);
+    } finally {
+      await rm(dataRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a list that omits a non-archived subject, leaving order unchanged', async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), 'studyhub-reorder-partial-'));
+    try {
+      const db = await createTestDb();
+      const a = await createSubject(db, dataRoot, { name: 'A', color: 'blue' });
+      const b = await createSubject(db, dataRoot, { name: 'B', color: 'green' });
+
+      await expect(reorderSubjects(db, [a.slug])).rejects.toThrow();
+
+      expect((await listSubjectSummaries(db)).map((s) => s.slug)).toEqual([a.slug, b.slug]);
+    } finally {
+      await rm(dataRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects an archived subject appearing in the list', async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), 'studyhub-reorder-archived-'));
+    try {
+      const db = await createTestDb();
+      const a = await createSubject(db, dataRoot, { name: 'A', color: 'blue' });
+      const b = await createSubject(db, dataRoot, { name: 'B', color: 'green' });
+      await setSubjectArchived(db, b.slug, true);
+
+      await expect(reorderSubjects(db, [a.slug, b.slug])).rejects.toThrow();
+    } finally {
+      await rm(dataRoot, { recursive: true, force: true });
+    }
   });
 });
 

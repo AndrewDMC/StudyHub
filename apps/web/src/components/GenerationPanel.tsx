@@ -32,15 +32,26 @@ async function fetchArtifacts(slug: string): Promise<ArtifactDto[]> {
   return body.artifacts as ArtifactDto[];
 }
 
+/** Mirrors `GenerationScope` (packages/contracts/src/generation.ts): exactly one of the two. */
+export type ScopeInput = { docIds: string[] } | { topicIds: string[] };
+
+function scopeKey(scope: ScopeInput): string {
+  return 'docIds' in scope ? `d:${scope.docIds.join(',')}` : `t:${scope.topicIds.join(',')}`;
+}
+
+function scopeIsEmpty(scope: ScopeInput): boolean {
+  return 'docIds' in scope ? scope.docIds.length === 0 : scope.topicIds.length === 0;
+}
+
 async function fetchEstimate(
   slug: string,
-  docIds: string[],
+  scope: ScopeInput,
   model: string,
 ): Promise<EstimateGenerationCostResponse> {
   const res = await fetch(`/api/subjects/${slug}/artifacts/estimate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ scope: { docIds }, model }),
+    body: JSON.stringify({ scope, model }),
   });
   const body = await res.json();
   if (!res.ok) throw new Error(body.error?.message ?? 'Stima costo fallita');
@@ -50,15 +61,15 @@ async function fetchEstimate(
 async function enqueue(
   slug: string,
   kind: 'flashcards' | 'schema' | 'summary',
-  docIds: string[],
+  scope: ScopeInput,
   model: string,
 ) {
   const requestBody =
     kind === 'flashcards'
-      ? { scope: { docIds }, count: 'auto', types: ['basic', 'cloze'], difficulty: 2, lang: 'it', model }
+      ? { scope, count: 'auto', types: ['basic', 'cloze'], difficulty: 2, lang: 'it', model }
       : kind === 'schema'
-        ? { scope: { docIds }, depth: 2, style: 'gerarchico', model }
-        : { scope: { docIds }, length: 'standard', model };
+        ? { scope, depth: 2, style: 'gerarchico', model }
+        : { scope, length: 'standard', model };
   const res = await fetch(`/api/subjects/${slug}/artifacts/${kind}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -73,11 +84,15 @@ export function GenerationPanel({
   subjectSlug,
   documents,
   selectedDocIds,
+  selectedTopicIds,
 }: {
   subjectSlug: string;
   documents: DocumentDto[];
   /** Non-empty = scope to this subset (docs/fasi/F2-materie.md "Stato"); empty/omitted = every ready document. */
   selectedDocIds?: Set<string>;
+  /** Non-empty *and* no document explicitly selected = scope to these topics instead (`generate_*`
+   * already resolves a `topicIds`-only scope via `document_topics`, docs/fasi/F3-ai-core.md "Stato"). */
+  selectedTopicIds?: Set<string>;
 }) {
   const [model, setModel] = useState<string>(MODEL_OPTIONS[1].id); // sonnet: default routing for flashcards/schema/summary (docs/03 §4)
   const queryClient = useQueryClient();
@@ -86,20 +101,27 @@ export function GenerationPanel({
     queryFn: () => fetchArtifacts(subjectSlug),
   });
   const parsedDocIds = documents.filter((d) => d.status === 'parsed').map((d) => d.id);
-  const readyDocIds =
+  const explicitDocIds =
     selectedDocIds && selectedDocIds.size > 0
       ? parsedDocIds.filter((id) => selectedDocIds.has(id))
-      : parsedDocIds;
+      : [];
+  const useTopicScope = explicitDocIds.length === 0 && (selectedTopicIds?.size ?? 0) > 0;
+  const readyDocIds =
+    explicitDocIds.length > 0 ? explicitDocIds : useTopicScope ? [] : parsedDocIds;
+  const scope: ScopeInput = useTopicScope
+    ? { topicIds: [...(selectedTopicIds ?? [])] }
+    : { docIds: readyDocIds };
+  const scopeEmpty = scopeIsEmpty(scope);
 
   const estimateQuery = useQuery({
-    queryKey: ['generation-estimate', subjectSlug, model, readyDocIds.join(',')],
-    queryFn: () => fetchEstimate(subjectSlug, readyDocIds, model),
-    enabled: readyDocIds.length > 0,
+    queryKey: ['generation-estimate', subjectSlug, model, scopeKey(scope)],
+    queryFn: () => fetchEstimate(subjectSlug, scope, model),
+    enabled: !scopeEmpty,
   });
 
   const generateMutation = useMutation({
     mutationFn: (kind: 'flashcards' | 'schema' | 'summary') =>
-      enqueue(subjectSlug, kind, readyDocIds, model),
+      enqueue(subjectSlug, kind, scope, model),
     onSuccess: () => {
       // The job runs asynchronously in the worker; give it a moment then refresh.
       setTimeout(
@@ -128,17 +150,19 @@ export function GenerationPanel({
 
         <button
           type="button"
-          disabled={readyDocIds.length === 0 || generateMutation.isPending}
+          disabled={scopeEmpty || generateMutation.isPending}
           onClick={() => generateMutation.mutate('flashcards')}
           className="rounded-[var(--radius-control)] bg-accent px-3 py-1.5 text-xs font-medium text-white transition-colors duration-120 hover:bg-accent-hover disabled:opacity-50"
         >
-          Genera flashcard ({readyDocIds.length}{' '}
-          {selectedDocIds && selectedDocIds.size > 0 ? 'selezionati' : 'doc. pronti'})
-          {costLabel('flashcards') && ` · ${costLabel('flashcards')}`}
+          Genera flashcard (
+          {useTopicScope
+            ? `${selectedTopicIds?.size ?? 0} argoment${(selectedTopicIds?.size ?? 0) === 1 ? 'o' : 'i'}`
+            : `${readyDocIds.length} ${explicitDocIds.length > 0 ? 'selezionati' : 'doc. pronti'}`}
+          ){costLabel('flashcards') && ` · ${costLabel('flashcards')}`}
         </button>
         <button
           type="button"
-          disabled={readyDocIds.length === 0 || generateMutation.isPending}
+          disabled={scopeEmpty || generateMutation.isPending}
           onClick={() => generateMutation.mutate('summary')}
           className="rounded-[var(--radius-control)] border border-border px-3 py-1.5 text-xs text-fg-secondary hover:text-fg-primary disabled:opacity-50"
         >
@@ -146,13 +170,13 @@ export function GenerationPanel({
         </button>
         <button
           type="button"
-          disabled={readyDocIds.length === 0 || generateMutation.isPending}
+          disabled={scopeEmpty || generateMutation.isPending}
           onClick={() => generateMutation.mutate('schema')}
           className="rounded-[var(--radius-control)] border border-border px-3 py-1.5 text-xs text-fg-secondary hover:text-fg-primary disabled:opacity-50"
         >
           Genera schema{costLabel('schema') && ` · ${costLabel('schema')}`}
         </button>
-        {readyDocIds.length === 0 && (
+        {scopeEmpty && (
           <p className="text-[11px] text-fg-muted">
             Nessun documento con testo estratto. Carica un PDF e attendi lo stato
             &quot;Pronto&quot;.

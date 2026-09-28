@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createTestDb } from '@studyhub/db/testDb';
 import { calendarEvents, exams, studyPlans, tasks } from '@studyhub/db';
-import { createSubject } from '../src/lib/subjects';
+import { createSubject, setSubjectArchived } from '../src/lib/subjects';
 import { getCalendarRange, getIcsFeed, importIcsCalendar } from '../src/lib/calendar';
 
 const AVAILABILITY = { perWeekday: [0, 120, 120, 120, 120, 120, 0], blackoutDates: [] };
@@ -95,6 +95,56 @@ describe('getCalendarRange', () => {
     expect(fisicaTask.subjectColor).toBe('blue');
     const chimicaTask = range.tasks.find((t) => t.title === 'Studia stechiometria')!;
     expect(chimicaTask.subjectSlug).toBe(chimica.slug);
+  });
+
+  it('excludes tasks and exams of an archived subject (docs/fasi/F2-materie.md "sparisce dalla dashboard")', async () => {
+    const active = await createSubject(db, dataRoot, { name: 'Chimica 1', color: 'green' });
+    const archived = await createSubject(db, dataRoot, { name: 'Fisica 1', color: 'blue' });
+    const activePlanId = await activePlan(active.id);
+    const archivedPlanId = await activePlan(archived.id);
+
+    await db.insert(tasks).values([
+      {
+        id: randomUUID(),
+        subjectId: active.id,
+        planId: activePlanId,
+        taskKey: 'read:a:001',
+        date: '2026-01-10',
+        kind: 'read',
+        minutes: 40,
+        title: 'Studia stechiometria',
+        description: '',
+        payload: { action: 'read' },
+        status: 'todo',
+      },
+      {
+        id: randomUUID(),
+        subjectId: archived.id,
+        planId: archivedPlanId,
+        taskKey: 'read:b:001',
+        date: '2026-01-10',
+        kind: 'read',
+        minutes: 50,
+        title: 'Task materia archiviata',
+        description: '',
+        payload: { action: 'read' },
+        status: 'todo',
+      },
+    ]);
+    await db.insert(exams).values({
+      id: randomUUID(),
+      subjectId: archived.id,
+      title: 'Esame materia archiviata',
+      kind: 'scritto',
+      date: new Date('2026-01-15T09:00:00.000Z'),
+    });
+
+    await setSubjectArchived(db, archived.slug, true);
+
+    const range = await getCalendarRange(db, '2026-01-01', '2026-02-01');
+    expect(range.tasks).toHaveLength(1);
+    expect(range.tasks[0]!.title).toBe('Studia stechiometria');
+    expect(range.exams).toEqual([]);
   });
 
   it('excludes tasks from a draft plan (not yet committed)', async () => {
@@ -207,8 +257,20 @@ describe('getCalendarRange', () => {
 
   it('includes imported ICS events within the date range', async () => {
     await db.insert(calendarEvents).values([
-      { id: randomUUID(), source: 'ics_import', uid: 'a@ext', date: '2026-01-20', title: 'Lezione' },
-      { id: randomUUID(), source: 'ics_import', uid: 'b@ext', date: '2026-03-01', title: 'Fuori range' },
+      {
+        id: randomUUID(),
+        source: 'ics_import',
+        uid: 'a@ext',
+        date: '2026-01-20',
+        title: 'Lezione',
+      },
+      {
+        id: randomUUID(),
+        source: 'ics_import',
+        uid: 'b@ext',
+        date: '2026-03-01',
+        title: 'Fuori range',
+      },
     ]);
 
     const range = await getCalendarRange(db, '2026-01-01', '2026-02-01');
@@ -364,6 +426,8 @@ describe('getIcsFeed', () => {
 
   it('produces an empty-but-valid calendar when there is nothing to show', async () => {
     const ics = await getIcsFeed(db);
-    expect(ics).toBe('BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//StudyHub//Planner//IT\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nEND:VCALENDAR\r\n');
+    expect(ics).toBe(
+      'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//StudyHub//Planner//IT\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nEND:VCALENDAR\r\n',
+    );
   });
 });
