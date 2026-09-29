@@ -8,6 +8,7 @@ import {
   simulationItems,
   simulations,
   subjects,
+  topics,
   type ExamProfileRow,
   type SimulationAttempt,
   type SimulationItemRow,
@@ -19,6 +20,7 @@ import type {
   ExamProfileDto,
   GenerateSimulationJobInput,
   SimulationSummaryDto,
+  TopicTrendDto,
   UpdateExamProfileRequest,
 } from '@studyhub/contracts';
 import type { Queue } from 'bullmq';
@@ -93,13 +95,17 @@ export async function enqueueExamProfileExtraction(
   db: AnyDb,
   queue: JobQueue,
   subjectSlug: string,
-  options: { overwriteEdited?: boolean } = {},
+  options: { overwriteEdited?: boolean; useImages?: boolean } = {},
 ): Promise<{ jobId: string }> {
   const subject = await requireSubject(db, subjectSlug);
   const jobId = randomUUID();
   await queue.add(
     'extract_exam_profile',
-    { subjectId: subject.id, overwriteEdited: options.overwriteEdited ?? false },
+    {
+      subjectId: subject.id,
+      overwriteEdited: options.overwriteEdited ?? false,
+      useImages: options.useImages ?? false,
+    },
     { jobId },
   );
   return { jobId };
@@ -162,6 +168,80 @@ export async function listSimulations(
       attemptCount: mine.length,
     };
   });
+}
+
+/**
+ * Per-topic trend across every graded attempt of the subject (docs/fasi/F5 "Storico simulazioni
+ * con trend e confronto per argomento"): one point per (attempt, topic) — the sum of that
+ * attempt's item scores tagged with the topic. Items without a topic are not attributable and
+ * are left out. Topics with no graded item don't appear.
+ */
+export async function getTopicTrends(db: AnyDb, subjectSlug: string): Promise<TopicTrendDto[]> {
+  const subject = await requireSubject(db, subjectSlug);
+  const rows: {
+    attemptId: string;
+    simulationId: string;
+    simulationTitle: string;
+    gradedAt: Date | null;
+    topicId: string | null;
+    awarded: number;
+    max: number;
+  }[] = await db
+    .select({
+      attemptId: simulationAttempts.id,
+      simulationId: simulationAttempts.simulationId,
+      simulationTitle: artifacts.title,
+      gradedAt: simulationAttempts.gradedAt,
+      topicId: simulationItems.topicId,
+      awarded: attemptItemResults.awarded,
+      max: attemptItemResults.max,
+    })
+    .from(attemptItemResults)
+    .innerJoin(simulationAttempts, eq(simulationAttempts.id, attemptItemResults.attemptId))
+    .innerJoin(simulationItems, eq(simulationItems.id, attemptItemResults.itemId))
+    .innerJoin(artifacts, eq(artifacts.id, simulationAttempts.simulationId))
+    .where(and(eq(artifacts.subjectId, subject.id), eq(simulationAttempts.status, 'graded')));
+
+  const byTopic = new Map<string, Map<string, TopicTrendDto['points'][number]>>();
+  for (const r of rows) {
+    if (!r.topicId || !r.gradedAt) continue;
+    const perAttempt = byTopic.get(r.topicId) ?? new Map();
+    const prev = perAttempt.get(r.attemptId);
+    const awarded = (prev?.awarded ?? 0) + r.awarded;
+    const max = (prev?.max ?? 0) + r.max;
+    perAttempt.set(r.attemptId, {
+      attemptId: r.attemptId,
+      simulationId: r.simulationId,
+      simulationTitle: r.simulationTitle,
+      gradedAt: r.gradedAt.toISOString(),
+      awarded,
+      max,
+      ratio: max > 0 ? awarded / max : 0,
+    });
+    byTopic.set(r.topicId, perAttempt);
+  }
+  if (byTopic.size === 0) return [];
+
+  const topicRows: { id: string; name: string }[] = await db
+    .select({ id: topics.id, name: topics.name })
+    .from(topics)
+    .where(inArray(topics.id, [...byTopic.keys()]));
+
+  return topicRows
+    .map((t) => {
+      const points = [...(byTopic.get(t.id)?.values() ?? [])].sort((a, b) =>
+        a.gradedAt.localeCompare(b.gradedAt),
+      );
+      const first = points[0];
+      const last = points[points.length - 1];
+      return {
+        topicId: t.id,
+        name: t.name,
+        points,
+        delta: points.length >= 2 && first && last ? last.ratio - first.ratio : null,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 // ---------------------------------------------------------------- attempts
@@ -422,12 +502,16 @@ export async function enqueueSecondOpinion(
 ): Promise<{ jobId: string }> {
   const attempt = await requireAttempt(db, subjectSlug, attemptId);
   if (attempt.status !== 'graded') {
-    throw new ConflictError('Il tentativo non è ancora corretto: nessun voto di base da confrontare.');
+    throw new ConflictError(
+      'Il tentativo non è ancora corretto: nessun voto di base da confrontare.',
+    );
   }
   const [item] = await db
     .select({ id: simulationItems.id })
     .from(simulationItems)
-    .where(and(eq(simulationItems.id, itemId), eq(simulationItems.simulationId, attempt.simulationId)));
+    .where(
+      and(eq(simulationItems.id, itemId), eq(simulationItems.simulationId, attempt.simulationId)),
+    );
   if (!item) throw new NotFoundError('Esercizio');
 
   const jobId = randomUUID();

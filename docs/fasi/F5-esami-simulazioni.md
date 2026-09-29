@@ -81,8 +81,7 @@ BullMQ vera (`apps/worker/test/queue.test.ts`), verificato fallire col vecchio n
 
 **Non implementato**:
 
-- Input multimodale (pagine degli esami come immagini) — il profilo si basa solo sul testo estratto.
-- Confronto di trend per argomento in grafico: c'è lo storico per simulazione, non la vista per argomento.
+- ~~Input multimodale~~ e ~~trend per argomento~~: chiusi, vedi "Completamento F5" in fondo.
 
 ## Aggiornamento — tag dell'argomento anche sugli esercizi di una simulazione completa (2026-09-26)
 
@@ -118,3 +117,43 @@ entrambi sono utili da vedere. `POST /api/subjects/:slug/attempts/:attemptId/ite
 opinion` accoda il job (rifiuta se il tentativo non è ancora corretto, o se l'item non appartiene a
 quella simulazione); `AttemptResultsClient` mostra un bottone "Chiedi una seconda opinione" per
 item, con polling sui risultati finché non atterra.
+
+## Completamento F5 (2026-09-29): multimodale, trend per argomento, e2e
+
+Chiusi i due gap dichiarati in "Non implementato":
+
+- **Profilo d'esame multimodale** (opt-in). `extract_exam_profile` accetta `useImages` (default
+  `false`: costa token di input per pagina). Se attivo, `collectExamPageImages`
+  (`apps/worker/src/processors/exam/examPageImages.ts`) rasterizza i PDF degli esami in
+  `derived/<docId>/exam_pages/pN.png` (riusate alle esecuzioni successive; un esame fotografato è già
+  la sua immagine) con tetto di **8 pagine per esame e 24 in totale**, e le passa al provider in
+  `ExamProfilePromptInput.pageImages`. `AnthropicProvider` le manda come blocchi `image` prima del
+  testo (`callWithTool` ora accetta più immagini); `ClaudeCliProvider` le fa leggere col tool `Read`
+  ristretto alla cartella; il prompt nomina ogni pagina ("esame.pdf · p. 3"), il testo resta la fonte
+  per il resto. Il `job_key` include `useImages` **solo quando attivo**, così i profili solo-testo
+  già salvati restano idempotenti e un profilo con immagini non viene scambiato per uno testuale.
+  UI: checkbox "Usa anche le pagine degli esami come immagini" nel pannello Simulazioni.
+  Il `FakeProvider` ignora le immagini ma le conta (~1500 token/pagina) nel costo.
+- **Andamento per argomento**. `getTopicTrends` (`apps/web/src/lib/examPrep.ts`,
+  `GET /api/subjects/:slug/topic-trends`): un punto per (tentativo corretto, argomento) sommando i
+  punteggi degli item con quel `topicId`, ordinati per data di correzione, più `delta` (ultimo −
+  primo). Gli item senza argomento non sono attribuibili e restano fuori; i tentativi non ancora
+  corretti non contano. UI: sezione "Andamento per argomento" con sparkline, ultima percentuale e
+  variazione; il tooltip elenca le simulazioni.
+
+Verifica: `apps/web/test/examPrep.test.ts` (trend: vuoto, ordinamento per data, somma per
+tentativo, tentativo non corretto escluso), `apps/worker/test/exam.test.ts` (PDF vero renderizzato e
+limitato a 8 pagine, nessuna immagine di default, foto come immagine propria, job key distinta),
+`packages/ai/test/anthropicProvider.test.ts` (blocchi `image` prima del testo, base64 corretto).
+Suite: ai 71, contracts 25, core 160, web 271, worker 98 — verdi.
+
+**e2e**: `apps/web/e2e/esami-f5.spec.ts` (trend visibile dopo due tentativi corretti; checkbox immagini
+spenta di default e inviata come `useImages: true`). **Scritto ma non eseguito in questa sessione**:
+Docker Desktop non era avviato, e gli e2e girano contro lo stack `docker compose`.
+
+**Criteri di accettazione** — coperti da test: correzione che cita sempre il materiale; timer/risposte
+dopo chiusura tab; profilo modificabile e non sovrascritto; risultato scarso → mastery/`weak_topics`
+(heatmap e Planner). **Ancora da fare a mano** (richiedono materiale e API key reali, non
+automatizzabili): "da 3 esami passati emerge un profilo riconoscibile" e "una simulazione somiglia
+all'esame reale (verifica manuale documentata)". `AnthropicProvider` resta mai eseguito contro
+l'API vera, quindi anche il ramo immagini è provato solo contro un client mockato.

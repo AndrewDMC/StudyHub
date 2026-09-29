@@ -22,7 +22,13 @@ export async function GET(_request: Request, { params }: RouteParams) {
 /** Starts (re-)extraction from the subject's past exams. */
 export async function POST(request: Request, { params }: RouteParams) {
   const { slug } = await params;
-  const body = await parseBody(request, z.object({ overwriteEdited: z.boolean().default(false) }));
+  const body = await parseBody(
+    request,
+    z.object({
+      overwriteEdited: z.boolean().default(false),
+      useImages: z.boolean().default(false),
+    }),
+  );
   if (body.error) return body.error;
   try {
     const result = await enqueueExamProfileExtraction(getDb(), getJobQueue(), slug, body.data);

@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { AnthropicProvider } from '../src/anthropicProvider.js';
 
 const docId = randomUUID();
@@ -184,6 +187,52 @@ describe('AnthropicProvider — F5 capabilities against a mocked client', () => 
 
     const prompt: string = create.mock.calls[0][0].messages[0].content;
     expect(prompt.match(/<\/document>/g)).toHaveLength(1);
+  });
+
+  it('extractExamProfile sends the page images as image blocks before the text, and names them in the prompt', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'studyhub-ai-img-'));
+    try {
+      const img1 = join(dir, 'p1.png');
+      const img2 = join(dir, 'p2.png');
+      await writeFile(img1, Buffer.from('one'));
+      await writeFile(img2, Buffer.from('two'));
+      const create = vi.fn().mockResolvedValue(
+        toolUseResponse({
+          itemCount: 3,
+          durationMin: 120,
+          totalPoints: 30,
+          kindDistribution: { open: 1 },
+          avgMinutesPerItem: 40,
+          verbosity: 'media',
+          recurringTopics: [],
+          notes: '',
+        }),
+      );
+      const provider = new AnthropicProvider({ client: { messages: { create } } as any });
+
+      await provider.extractExamProfile(
+        {
+          subjectName: 'Fisica 1',
+          chunks: [{ docId, page: 1, text: 'Esercizio 1.' }],
+          pageImages: [
+            { path: img1, mime: 'image/png', label: 'esame.pdf · p. 1' },
+            { path: img2, mime: 'image/png', label: 'esame.pdf · p. 2' },
+          ],
+        },
+        'claude-haiku-4-5-20251001',
+      );
+
+      const content = create.mock.calls[0][0].messages[0].content;
+      expect(content.map((b: { type: string }) => b.type)).toEqual(['image', 'image', 'text']);
+      expect(content[0].source).toEqual({
+        type: 'base64',
+        media_type: 'image/png',
+        data: Buffer.from('one').toString('base64'),
+      });
+      expect(content[2].text).toContain('2. esame.pdf · p. 2');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it('estimateTopics validates the tool output and escapes a </document> inside a unit excerpt', async () => {

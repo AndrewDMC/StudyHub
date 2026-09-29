@@ -1,9 +1,10 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
+import { PDFDocument } from 'pdf-lib';
 import { createTestDb } from '@studyhub/db/testDb';
 import {
   artifacts,
@@ -54,17 +55,15 @@ describe('F5 worker pipeline', () => {
       sha256: randomUUID().replace(/-/g, '').padEnd(64, '0'),
       status: 'parsed',
     });
-    await db
-      .insert(chunks)
-      .values({
-        id: randomUUID(),
-        documentId: id,
-        pageFrom: 1,
-        pageTo: 1,
-        ord: 0,
-        text,
-        tokens: 50,
-      });
+    await db.insert(chunks).values({
+      id: randomUUID(),
+      documentId: id,
+      pageFrom: 1,
+      pageTo: 1,
+      ord: 0,
+      text,
+      tokens: 50,
+    });
     return id;
   }
 
@@ -74,15 +73,13 @@ describe('F5 worker pipeline', () => {
     const manifest = createManifest({ name: 'Fisica 1', slug: 'fisica-1', color: 'blue' });
     const folderPath = await scaffoldSubject(dataRoot, manifest);
     subjectId = manifest.id;
-    await db
-      .insert(subjects)
-      .values({
-        id: subjectId,
-        slug: manifest.slug,
-        name: manifest.name,
-        color: 'blue',
-        folderPath,
-      });
+    await db.insert(subjects).values({
+      id: subjectId,
+      slug: manifest.slug,
+      name: manifest.name,
+      color: 'blue',
+      folderPath,
+    });
     examDocId = await addDoc('esami', PAST_EXAM_TEXT);
     notesDocId = await addDoc('appunti', STUDY_TEXT);
     topicId = randomUUID();
@@ -193,6 +190,79 @@ describe('F5 worker pipeline', () => {
     it('fails with a clear message when there are no past exams', async () => {
       await db.delete(documents).where(eq(documents.id, examDocId));
       await expect(extractProfile()).rejects.toThrow(/Nessun esame passato/);
+    });
+
+    describe('multimodal (useImages)', () => {
+      async function makeExamPdf(pages: number): Promise<void> {
+        const pdf = await PDFDocument.create();
+        for (let i = 0; i < pages; i += 1) pdf.addPage([300, 400]);
+        const storedPath = join(dataRoot, 'esame.pdf');
+        await writeFile(storedPath, await pdf.save());
+        await db.update(documents).set({ storedPath }).where(eq(documents.id, examDocId));
+      }
+
+      function capturing() {
+        const seen: { label: string; path: string; mime: string }[][] = [];
+        const provider = providerWith({
+          async extractExamProfile(input, model) {
+            seen.push(input.pageImages ?? []);
+            return new FakeProvider().extractExamProfile(input, model);
+          },
+        });
+        return { seen, provider };
+      }
+
+      it('renders the exam PDF pages (capped) and hands them to the provider', async () => {
+        await makeExamPdf(12);
+        const { seen, provider } = capturing();
+        await processExtractExamProfile(
+          db,
+          dataRoot,
+          { subjectId, overwriteEdited: false, force: false, useImages: true },
+          provider,
+        );
+        expect(seen[0]).toHaveLength(8); // MAX_PAGES_PER_EXAM
+        expect(seen[0]![0]).toMatchObject({ mime: 'image/png', label: 'esami.pdf · p. 1' });
+        expect((await stat(seen[0]![0]!.path)).size).toBeGreaterThan(0);
+      });
+
+      it('sends no images by default, and a text-only profile is not idempotent with an image one', async () => {
+        await makeExamPdf(2);
+        const { seen, provider } = capturing();
+        await processExtractExamProfile(
+          db,
+          dataRoot,
+          { subjectId, overwriteEdited: false, force: false, useImages: false },
+          provider,
+        );
+        expect(seen[0]).toEqual([]);
+
+        const withImages = await processExtractExamProfile(
+          db,
+          dataRoot,
+          { subjectId, overwriteEdited: false, force: false, useImages: true },
+          provider,
+        );
+        expect(withImages.idempotent).toBe(false);
+        expect(seen[1]).toHaveLength(2);
+      });
+
+      it('uses a photo/scan exam document as its own image', async () => {
+        await db
+          .update(documents)
+          .set({ mime: 'image/jpeg', storedPath: '/photos/esame.jpg', originalName: 'esame.jpg' })
+          .where(eq(documents.id, examDocId));
+        const { seen, provider } = capturing();
+        await processExtractExamProfile(
+          db,
+          dataRoot,
+          { subjectId, overwriteEdited: false, force: false, useImages: true },
+          provider,
+        );
+        expect(seen[0]).toEqual([
+          { path: '/photos/esame.jpg', mime: 'image/jpeg', label: 'esame.jpg' },
+        ]);
+      });
     });
   });
 

@@ -93,6 +93,11 @@ export interface SchemaTranscriptionPromptInput {
 export interface ExamProfilePromptInput {
   subjectName: string;
   chunks: ChunkRef[];
+  /**
+   * Pages of the past exams as images (figures, graphs, layout that the extracted text loses).
+   * Optional and opt-in — each image costs input tokens. `label` names the source ("doc · p. N").
+   */
+  pageImages?: { path: string; mime: string; label: string }[];
 }
 
 export interface SimulationPromptInput {

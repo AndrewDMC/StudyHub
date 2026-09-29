@@ -144,5 +144,13 @@ export function renderExamProfileUserPrompt(input: ExamProfilePromptInput): stri
     'Testi degli esami passati:',
     '',
     documentsBlock(input.chunks),
+    ...(input.pageImages && input.pageImages.length > 0
+      ? [
+          '',
+          `In allegato ${input.pageImages.length} pagine degli stessi esami come immagini, in quest'ordine:`,
+          ...input.pageImages.map((img, i) => `${i + 1}. ${img.label}`),
+          'Usale per figure, grafici e impaginazione che il testo non rende; il testo resta la fonte per il resto.',
+        ]
+      : []),
   ].join('\n');
 }

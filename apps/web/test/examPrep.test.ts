@@ -12,6 +12,7 @@ import {
   simulationAttempts,
   simulationItems,
   simulations,
+  topics,
 } from '@studyhub/db';
 import { createSubject } from '../src/lib/subjects';
 import {
@@ -21,6 +22,7 @@ import {
   getAttempt,
   getAttemptResults,
   getExamProfile,
+  getTopicTrends,
   listSimulations,
   saveAnswers,
   startOrResumeAttempt,
@@ -68,14 +70,12 @@ describe('exam prep (web)', () => {
       model: 'fake-v1',
       promptVersion: 'simulation/v1',
     });
-    await db
-      .insert(simulations)
-      .values({
-        artifactId: simulationId,
-        mode: 'esame_completo',
-        timeBudgetMin: 60,
-        totalPoints: 20,
-      });
+    await db.insert(simulations).values({
+      artifactId: simulationId,
+      mode: 'esame_completo',
+      timeBudgetMin: 60,
+      totalPoints: 20,
+    });
     itemIds = [randomUUID(), randomUUID()];
     for (const [ord, id] of itemIds.entries()) {
       await db.insert(simulationItems).values({
@@ -208,9 +208,13 @@ describe('exam prep (web)', () => {
       await expect(
         saveAnswers(db, queue, slug, attempt.id, { [itemIds[0]!]: 'fuori tempo' }, late),
       ).rejects.toBeInstanceOf(ConflictError);
-      expect(queue.add).toHaveBeenCalledWith('grade_attempt', { attemptId: attempt.id }, {
-        jobId: expect.any(String),
-      });
+      expect(queue.add).toHaveBeenCalledWith(
+        'grade_attempt',
+        { attemptId: attempt.id },
+        {
+          jobId: expect.any(String),
+        },
+      );
 
       const [row] = await db
         .select()
@@ -264,6 +268,91 @@ describe('exam prep (web)', () => {
       expect(results[0]?.solution).toBe('SOLUZIONE SEGRETA');
       expect(results[0]?.sourceRef.page).toBe(73);
       expect(results[0]?.missing).toEqual(['bilancio energetico']);
+    });
+  });
+
+  describe('topic trends', () => {
+    async function gradedAttempt(gradedAt: string, scores: [number, number]) {
+      const id = randomUUID();
+      await db.insert(simulationAttempts).values({
+        id,
+        simulationId,
+        status: 'graded',
+        durationMin: 60,
+        gradedAt: new Date(gradedAt),
+        totalAwarded: scores[0] + scores[1],
+        totalMax: 20,
+      });
+      for (const [i, awarded] of scores.entries()) {
+        await db.insert(attemptItemResults).values({
+          id: randomUUID(),
+          attemptId: id,
+          itemId: itemIds[i]!,
+          awarded,
+          max: 10,
+          criteria: [],
+          missing: [],
+          sourceRef: { docId: randomUUID(), page: 1, quote: 'q' },
+        });
+      }
+      return id;
+    }
+
+    it('is empty when nothing is graded or no item carries a topic', async () => {
+      expect(await getTopicTrends(db, slug)).toEqual([]);
+      await gradedAttempt('2026-09-01T10:00:00Z', [5, 5]); // items still untagged
+      expect(await getTopicTrends(db, slug)).toEqual([]);
+    });
+
+    it('builds one point per graded attempt per topic, oldest first, with the delta', async () => {
+      const carnot = randomUUID();
+      const entropia = randomUUID();
+      await db.insert(topics).values([
+        { id: carnot, subjectId, name: 'Carnot', slug: 'carnot' },
+        { id: entropia, subjectId, name: 'Entropia', slug: 'entropia' },
+      ]);
+      await db
+        .update(simulationItems)
+        .set({ topicId: carnot })
+        .where(eq(simulationItems.id, itemIds[0]!));
+      await db
+        .update(simulationItems)
+        .set({ topicId: entropia })
+        .where(eq(simulationItems.id, itemIds[1]!));
+
+      // Inserted out of order on purpose: the trend is by grading date, not insertion.
+      await gradedAttempt('2026-09-10T10:00:00Z', [9, 4]);
+      await gradedAttempt('2026-09-01T10:00:00Z', [3, 4]);
+      // A not-yet-graded attempt must not count.
+      await db.insert(simulationAttempts).values({
+        id: randomUUID(),
+        simulationId,
+        status: 'submitted',
+        durationMin: 60,
+      });
+
+      const trends = await getTopicTrends(db, slug);
+      expect(trends.map((t) => t.name)).toEqual(['Carnot', 'Entropia']);
+      const [c, e] = trends;
+      expect(c!.points.map((p) => p.ratio)).toEqual([0.3, 0.9]);
+      expect(c!.delta).toBeCloseTo(0.6);
+      expect(e!.points.map((p) => p.ratio)).toEqual([0.4, 0.4]);
+      expect(e!.delta).toBeCloseTo(0);
+      expect(c!.points[0]).toMatchObject({ simulationId, awarded: 3, max: 10 });
+    });
+
+    it('sums the items of one topic within an attempt into a single point', async () => {
+      const t = randomUUID();
+      await db.insert(topics).values({ id: t, subjectId, name: 'Termodinamica', slug: 'termo' });
+      await db
+        .update(simulationItems)
+        .set({ topicId: t })
+        .where(eq(simulationItems.simulationId, simulationId));
+      await gradedAttempt('2026-09-01T10:00:00Z', [10, 5]);
+      const [trend] = await getTopicTrends(db, slug);
+      expect(trend!.points).toHaveLength(1);
+      expect(trend!.points[0]).toMatchObject({ awarded: 15, max: 20, ratio: 0.75 });
+      expect(trend!.delta).toBeNull();
     });
   });
 });

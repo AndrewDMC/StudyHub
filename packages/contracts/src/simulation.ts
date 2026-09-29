@@ -9,6 +9,11 @@ export const ExtractExamProfileJobInputSchema = z.object({
   /** Re-extract even over a user-edited profile. Default: an edited profile is never overwritten. */
   overwriteEdited: z.boolean().default(false),
   force: z.boolean().default(false),
+  /**
+   * Also send the past exams' pages as images (figures, graphs and layout the extracted text
+   * loses — docs/fasi/F5 "Rischi"). Costs more, so it is opt-in.
+   */
+  useImages: z.boolean().default(false),
 });
 export type ExtractExamProfileJobInput = z.infer<typeof ExtractExamProfileJobInputSchema>;
 
@@ -145,3 +150,26 @@ export const AttemptItemResultDtoSchema = z.object({
   secondOpinion: SecondOpinionDtoSchema.nullable(),
 });
 export type AttemptItemResultDto = z.infer<typeof AttemptItemResultDtoSchema>;
+
+/** One graded attempt's score on one topic — a point on the per-topic trend line. */
+export const TopicTrendPointSchema = z.object({
+  attemptId: z.string().uuid(),
+  simulationId: z.string().uuid(),
+  simulationTitle: z.string(),
+  gradedAt: z.string().datetime(),
+  awarded: z.number(),
+  max: z.number(),
+  /** awarded / max, 0..1. */
+  ratio: z.number(),
+});
+export type TopicTrendPoint = z.infer<typeof TopicTrendPointSchema>;
+
+export const TopicTrendDtoSchema = z.object({
+  topicId: z.string().uuid(),
+  name: z.string(),
+  /** Oldest first. */
+  points: z.array(TopicTrendPointSchema),
+  /** Last point's ratio minus the first's; null with fewer than two points. */
+  delta: z.number().nullable(),
+});
+export type TopicTrendDto = z.infer<typeof TopicTrendDtoSchema>;

@@ -13,6 +13,7 @@ import {
 } from '@studyhub/ai';
 import type { ExtractExamProfileJobInput } from '@studyhub/contracts';
 import { checkBudget, computeJobKey, resolveScopeChunks } from '../generation/shared.js';
+import { collectExamPageImages } from './examPageImages.js';
 
 const MODEL_ROUTING_EXAM_PROFILE = 'claude-haiku-4-5-20251001'; // docs/03 §4: "haiku per estrarre"
 
@@ -80,6 +81,8 @@ export async function processExtractExamProfile(
     docIds: sortedDocIds,
     promptVersion: EXAM_PROFILE_PROMPT_VERSION,
     model,
+    // Only when on, so text-only profiles keep the job key they already have.
+    ...(input.useImages ? { useImages: true } : {}),
   });
 
   // Same inputs as the profile already stored and not edited since: nothing to re-spend.
@@ -88,7 +91,13 @@ export async function processExtractExamProfile(
   }
 
   const chunks = await resolveScopeChunks(db, input.subjectId, { docIds: sortedDocIds });
-  const result = await provider.extractExamProfile({ subjectName: subject.name, chunks }, model);
+  const pageImages = input.useImages
+    ? await collectExamPageImages(db, dataRoot, subject.slug, sortedDocIds)
+    : [];
+  const result = await provider.extractExamProfile(
+    { subjectName: subject.name, chunks, ...(pageImages.length > 0 ? { pageImages } : {}) },
+    model,
+  );
   const profile = ExamProfileSchema.parse(result.data); // defense in depth: never trust the provider's shape
 
   const costEur = estimateCostEur(

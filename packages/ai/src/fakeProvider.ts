@@ -273,7 +273,9 @@ export class FakeProvider implements AiProvider {
     return {
       data,
       usage: {
-        inputTokens: input.chunks.reduce((sum, c) => sum + estimateTokens(c.text), 0),
+        inputTokens:
+          input.chunks.reduce((sum, c) => sum + estimateTokens(c.text), 0) +
+          (input.pageImages?.length ?? 0) * 1500, // rough per-page image cost
         outputTokens: estimateTokens(JSON.stringify(data)),
       },
       model: FAKE_MODEL,

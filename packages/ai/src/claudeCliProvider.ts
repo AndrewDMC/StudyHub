@@ -256,11 +256,24 @@ export class ClaudeCliProvider implements AiProvider {
     model: string,
   ): Promise<GeneratedWithMeta<ExamProfile>> {
     const { text: system, promptVersion } = loadPrompt('exam_profile', 1);
+    const pageImages = input.pageImages ?? [];
+    const userPrompt =
+      pageImages.length > 0
+        ? [
+            `Leggi le immagini ai percorsi esatti:`,
+            ...pageImages.map((img) => `- ${img.path}`),
+            '',
+            renderExamProfileUserPrompt(input),
+          ].join('\n')
+        : renderExamProfileUserPrompt(input);
     const { data, usage } = await this.callWithSchema(
       system,
-      renderExamProfileUserPrompt(input),
+      userPrompt,
       ExamProfileSchema,
       model,
+      pageImages.length > 0
+        ? { allowedTools: 'Read', addDir: dirname(pageImages[0]!.path) }
+        : undefined,
     );
     return { data, usage, model, promptVersion };
   }

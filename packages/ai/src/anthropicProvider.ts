@@ -218,6 +218,12 @@ export class AnthropicProvider implements AiProvider {
     model: string,
   ): Promise<GeneratedWithMeta<ExamProfile>> {
     const { text: system, promptVersion } = loadPrompt('exam_profile', 1);
+    const images = await Promise.all(
+      (input.pageImages ?? []).map(async (img) => ({
+        mediaType: img.mime as Anthropic.ImageBlockParam.Source['media_type'],
+        data: (await readFile(img.path)).toString('base64'),
+      })),
+    );
     const { data, usage } = await this.callWithTool(
       'emit_exam_profile',
       system,
@@ -225,6 +231,7 @@ export class AnthropicProvider implements AiProvider {
       ExamProfileSchema,
       model,
       2048,
+      images,
     );
     return { data, usage, model, promptVersion };
   }
@@ -300,11 +307,14 @@ export class AnthropicProvider implements AiProvider {
     schema: z.ZodType<T>,
     model: string,
     maxTokens: number,
-    image?: { mediaType: Anthropic.ImageBlockParam.Source['media_type']; data: string },
+    image?:
+      | { mediaType: Anthropic.ImageBlockParam.Source['media_type']; data: string }
+      | { mediaType: Anthropic.ImageBlockParam.Source['media_type']; data: string }[],
   ): Promise<{ data: T; usage: AiUsage }> {
     const inputSchema =
       zodToJsonSchema(schema, toolName).definitions?.[toolName] ?? zodToJsonSchema(schema);
 
+    const images = image === undefined ? [] : Array.isArray(image) ? image : [image];
     let feedback: string | null = null;
     const usage: AiUsage = { inputTokens: 0, outputTokens: 0 };
 
@@ -328,15 +338,16 @@ export class AnthropicProvider implements AiProvider {
         messages: [
           {
             role: 'user',
-            content: image
-              ? [
-                  {
-                    type: 'image',
-                    source: { type: 'base64', media_type: image.mediaType, data: image.data },
-                  },
-                  { type: 'text', text: prompt },
-                ]
-              : prompt,
+            content:
+              images.length > 0
+                ? [
+                    ...images.map((img) => ({
+                      type: 'image',
+                      source: { type: 'base64', media_type: img.mediaType, data: img.data },
+                    })),
+                    { type: 'text', text: prompt },
+                  ]
+                : prompt,
           },
         ],
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

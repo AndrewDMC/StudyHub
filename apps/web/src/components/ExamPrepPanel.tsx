@@ -9,6 +9,7 @@ import type {
   ExamProfileDto,
   SimulationSummaryDto,
   TopicDto,
+  TopicTrendDto,
 } from '@studyhub/contracts';
 import { ModelPicker, MODEL_OPTIONS } from './ModelPicker';
 
@@ -50,6 +51,51 @@ async function fetchEstimate(
   const body = await res.json();
   if (!res.ok) throw new Error(body.error?.message ?? 'Stima costo fallita');
   return body as EstimateGenerationCostResponse;
+}
+
+/** A topic's score over successive graded attempts: a sparkline plus the last value and the change. */
+function TopicTrendRow({ trend }: { trend: TopicTrendDto }) {
+  const W = 72;
+  const H = 18;
+  const n = trend.points.length;
+  const coords = trend.points.map((p, i) => ({
+    x: n === 1 ? W / 2 : (i / (n - 1)) * W,
+    y: H - 1 - p.ratio * (H - 2),
+  }));
+  const last = trend.points[n - 1]!;
+  const delta = trend.delta;
+  const detail = trend.points
+    .map((p) => `${p.simulationTitle}: ${Math.round(p.ratio * 100)}%`)
+    .join(' → ');
+  return (
+    <li className="flex items-center gap-2" title={detail}>
+      <span className="min-w-0 flex-1 truncate text-fg-secondary">{trend.name}</span>
+      <svg width={W} height={H} role="img" aria-label={`Andamento ${trend.name}`}>
+        {n > 1 && (
+          <polyline
+            points={coords.map((c) => `${c.x},${c.y}`).join(' ')}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.5}
+            className="text-accent"
+          />
+        )}
+        {coords.map((c, i) => (
+          <circle key={i} cx={c.x} cy={c.y} r={2} className="fill-accent" />
+        ))}
+      </svg>
+      <span className="w-20 shrink-0 text-right font-mono text-[11px] tabular-nums text-fg-muted">
+        {Math.round(last.ratio * 100)}%
+        {delta !== null && (
+          <span className={delta >= 0 ? 'text-ok' : 'text-danger'}>
+            {' '}
+            {delta >= 0 ? '+' : '−'}
+            {Math.round(Math.abs(delta) * 100)}
+          </span>
+        )}
+      </span>
+    </li>
+  );
 }
 
 const KIND_LABELS = {
@@ -144,6 +190,7 @@ export function ExamPrepPanel({
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [drillTopic, setDrillTopic] = useState('');
+  const [useImages, setUseImages] = useState(false);
   const [model, setModel] = useState<string>(MODEL_OPTIONS[2].id); // opus: default routing per generate_simulation (docs/03 §4)
 
   const profileQuery = useQuery({
@@ -161,13 +208,18 @@ export function ExamPrepPanel({
     queryFn: () => getJson<TopicDto[]>(`/api/subjects/${subjectSlug}/topics`, 'topics'),
   });
 
+  const trendsQuery = useQuery({
+    queryKey: ['topic-trends', subjectSlug],
+    queryFn: () => getJson<TopicTrendDto[]>(`/api/subjects/${subjectSlug}/topic-trends`, 'trends'),
+  });
+
   const refreshSoon = (key: string) =>
     setTimeout(() => queryClient.invalidateQueries({ queryKey: [key, subjectSlug] }), 3000);
 
   const extract = useMutation({
     // extract_exam_profile has no pre-flight estimate/model choice in this slice — the picker
     // below applies to Simula esame/Drill (generate_simulation) only.
-    mutationFn: () => postJson(`/api/subjects/${subjectSlug}/exam-profile`, {}),
+    mutationFn: () => postJson(`/api/subjects/${subjectSlug}/exam-profile`, { useImages }),
     onSuccess: () => refreshSoon('exam-profile'),
   });
   const generate = useMutation({
@@ -258,6 +310,15 @@ export function ExamPrepPanel({
 
         <ModelPicker value={model} onChange={setModel} disabled={generate.isPending} />
 
+        <label className="flex items-center gap-1.5 text-[11px] text-fg-muted">
+          <input
+            type="checkbox"
+            checked={useImages}
+            onChange={(e) => setUseImages(e.target.checked)}
+          />
+          Usa anche le pagine degli esami come immagini (figure e grafici; costa di più)
+        </label>
+
         <div className="flex flex-wrap gap-2 pt-1">
           <button
             type="button"
@@ -310,6 +371,19 @@ export function ExamPrepPanel({
           </p>
         )}
       </div>
+
+      {trendsQuery.isSuccess && trendsQuery.data.length > 0 && (
+        <div className="mt-3 border-t border-border px-1 pt-2">
+          <h3 className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-fg-muted">
+            Andamento per argomento
+          </h3>
+          <ul className="space-y-1 text-xs">
+            {trendsQuery.data.map((t) => (
+              <TopicTrendRow key={t.topicId} trend={t} />
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="mt-3 border-t border-border pt-2">
         {simsQuery.isSuccess && simsQuery.data.length === 0 && (
