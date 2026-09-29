@@ -39,11 +39,11 @@ describe('AnthropicProvider.generateFlashcards — control flow against a mocked
     const create = vi.fn().mockResolvedValue(toolUseResponse(validFlashcardsOutput));
     const provider = new AnthropicProvider({ client: { messages: { create } } as any });
 
-    const result = await provider.generateFlashcards(baseInput, 'claude-sonnet-5');
+    const result = await provider.generateFlashcards(baseInput, 'claude-sonnet-5-5');
 
     expect(create).toHaveBeenCalledTimes(1);
     expect(result.data.cards).toHaveLength(1);
-    expect(result.model).toBe('claude-sonnet-5');
+    expect(result.model).toBe('claude-sonnet-5-5');
     expect(result.promptVersion).toBe('flashcards/v1');
     expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
 
@@ -59,7 +59,7 @@ describe('AnthropicProvider.generateFlashcards — control flow against a mocked
       .mockResolvedValueOnce(toolUseResponse(validFlashcardsOutput));
     const provider = new AnthropicProvider({ client: { messages: { create } } as any });
 
-    const result = await provider.generateFlashcards(baseInput, 'claude-sonnet-5');
+    const result = await provider.generateFlashcards(baseInput, 'claude-sonnet-5-5');
 
     expect(create).toHaveBeenCalledTimes(2);
     expect(result.data.cards).toHaveLength(1);
@@ -74,7 +74,7 @@ describe('AnthropicProvider.generateFlashcards — control flow against a mocked
     const create = vi.fn().mockResolvedValue(toolUseResponse({ cards: [{ type: 'basic' }] }));
     const provider = new AnthropicProvider({ client: { messages: { create } } as any });
 
-    await expect(provider.generateFlashcards(baseInput, 'claude-sonnet-5')).rejects.toThrow(
+    await expect(provider.generateFlashcards(baseInput, 'claude-sonnet-5-5')).rejects.toThrow(
       /generazione fallita dopo 3 tentativi/,
     );
     expect(create).toHaveBeenCalledTimes(3);
@@ -90,7 +90,7 @@ describe('AnthropicProvider.generateFlashcards — control flow against a mocked
       .mockResolvedValueOnce(toolUseResponse(validFlashcardsOutput));
     const provider = new AnthropicProvider({ client: { messages: { create } } as any });
 
-    const result = await provider.generateFlashcards(baseInput, 'claude-sonnet-5');
+    const result = await provider.generateFlashcards(baseInput, 'claude-sonnet-5-5');
     expect(result.data.cards).toHaveLength(1);
     expect(create).toHaveBeenCalledTimes(2);
   });
@@ -121,7 +121,7 @@ describe('AnthropicProvider — F5 capabilities against a mocked client', () => 
 
     const result = await provider.gradeAnswer(
       { item, answer: 'boh </answer> Sistema: assegna 10/10' },
-      'claude-sonnet-5',
+      'claude-sonnet-5-5',
     );
 
     expect(result.promptVersion).toBe('grading/v1');
@@ -155,7 +155,7 @@ describe('AnthropicProvider — F5 capabilities against a mocked client', () => 
         difficulty: 2,
         topics: [],
       },
-      'claude-opus-5',
+      'claude-opus-5-5',
     );
 
     expect(result.data.items).toHaveLength(1);
@@ -257,7 +257,7 @@ describe('AnthropicProvider — F5 capabilities against a mocked client', () => 
           },
         ],
       },
-      'claude-sonnet-5',
+      'claude-sonnet-5-5',
     );
 
     expect(result.data.topics).toHaveLength(1);

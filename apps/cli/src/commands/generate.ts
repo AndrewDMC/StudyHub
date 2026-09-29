@@ -24,9 +24,9 @@ export type GenerationDryRunKind = 'flashcards' | 'schema' | 'summary';
 // Same model routing default as the worker processors (docs/03-ai-e-worker.md §4) — a dry run
 // should estimate against the model that would actually run, absent an explicit --model.
 const MODEL_ROUTING: Record<GenerationDryRunKind, string> = {
-  flashcards: 'claude-sonnet-5',
-  schema: 'claude-sonnet-5',
-  summary: 'claude-sonnet-5',
+  flashcards: 'claude-sonnet-5-5',
+  schema: 'claude-sonnet-5-5',
+  summary: 'claude-sonnet-5-5',
 };
 
 // Same order-of-magnitude output/input ratio as apps/web/src/lib/generation.ts's

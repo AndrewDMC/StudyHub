@@ -27,7 +27,7 @@ function fakeVisionProvider(data: SchemaGraphOutput): AiProvider {
     transcribeSchema: vi.fn().mockResolvedValue({
       data,
       usage: { inputTokens: 100, outputTokens: 50 },
-      model: 'claude-sonnet-5',
+      model: 'claude-sonnet-5-5',
       promptVersion: 'schema_transcription/v2',
     } satisfies GeneratedWithMeta<SchemaGraphOutput>),
   };

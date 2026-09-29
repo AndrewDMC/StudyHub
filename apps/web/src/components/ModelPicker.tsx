@@ -6,8 +6,8 @@
  */
 export const MODEL_OPTIONS = [
   { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 — veloce ed economico' },
-  { id: 'claude-sonnet-5', label: 'Sonnet 5 — bilanciato (default)' },
-  { id: 'claude-opus-5', label: 'Opus 5 — qualità massima' },
+  { id: 'claude-sonnet-5-5', label: 'Sonnet 5.5 — bilanciato (default)' },
+  { id: 'claude-opus-5-5', label: 'Opus 5.5 — qualità massima' },
 ] as const;
 
 export function ModelPicker({

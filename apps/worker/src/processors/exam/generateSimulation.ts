@@ -24,7 +24,7 @@ import {
 import type { GenerateSimulationJobInput } from '@studyhub/contracts';
 import { checkBudget, resolveScopeChunks } from '../generation/shared.js';
 
-const MODEL_ROUTING_SIMULATION = 'claude-opus-5'; // docs/03 §4: "opus per ragionare"
+const MODEL_ROUTING_SIMULATION = 'claude-opus-5-5'; // docs/03 §4: "opus per ragionare"
 const DEFAULT_DRILL_ITEMS = 5;
 
 /** Used for drills when no profile exists yet — a drill doesn't need to imitate the exam format. */
@@ -219,7 +219,9 @@ export async function processGenerateSimulation(
       id: randomUUID(),
       simulationId: artifactId,
       ord,
-      topicId: input.topicId ?? (item.topicName ? (topicIdByName.get(item.topicName.toLowerCase()) ?? null) : null),
+      topicId:
+        input.topicId ??
+        (item.topicName ? (topicIdByName.get(item.topicName.toLowerCase()) ?? null) : null),
       prompt: item.prompt,
       kind: item.kind,
       points: item.points,

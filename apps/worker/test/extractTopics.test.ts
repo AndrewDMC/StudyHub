@@ -432,7 +432,7 @@ describe('processExtractTopics', () => {
         return {
           data: { topics: [{ name: 'Entropia', docIds: [docId], confidence: 0.7 }] },
           usage: { inputTokens: 1_000_000, outputTokens: 500_000 },
-          model: 'claude-sonnet-5',
+          model: 'claude-sonnet-5-5',
           promptVersion: 'extract_topics/v1',
         };
       },

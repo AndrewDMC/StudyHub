@@ -558,7 +558,7 @@ describe('processGenerateFlashcards', () => {
             ],
           },
           usage: { inputTokens: 1_000_000, outputTokens: 500_000 },
-          model: 'claude-sonnet-5',
+          model: 'claude-sonnet-5-5',
           promptVersion: 'flashcards/v1',
         };
       },

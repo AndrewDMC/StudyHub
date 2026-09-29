@@ -33,7 +33,7 @@ import {
 import type { GeneratePlanJobInput } from '@studyhub/contracts';
 import { checkBudget } from '../generation/shared.js';
 
-const MODEL_ROUTING_PLAN = 'claude-opus-5'; // docs/04-planner.md §3: "Fase A — Analisi AI (1 chiamata, opus)"
+const MODEL_ROUTING_PLAN = 'claude-opus-5-5'; // docs/04-planner.md §3: "Fase A — Analisi AI (1 chiamata, opus)"
 const EXCERPT_MAX_CHARS = 2000;
 const EXCERPT_CHUNK_SAMPLE = 3; // first N chunks per document, not the whole text — keeps the call cheap
 

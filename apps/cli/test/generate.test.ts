@@ -57,7 +57,7 @@ describe('CLI generate <kind> --dry-run', () => {
     });
 
     expect(result.promptVersion).toBe('flashcards/v1');
-    expect(result.model).toBe('claude-sonnet-5');
+    expect(result.model).toBe('claude-sonnet-5-5');
     expect(result.docCount).toBe(1);
     expect(result.chunkCount).toBe(1);
     expect(result.system.length).toBeGreaterThan(0);
@@ -100,7 +100,7 @@ describe('CLI generate <kind> --dry-run', () => {
       subjectSlug,
       kind: 'flashcards',
       scope: { docIds: [docId] },
-      model: 'claude-opus-5',
+      model: 'claude-opus-5-5',
     });
     expect(cheap.model).toBe('claude-haiku-4-5-20251001');
     expect(pricier.costEur).toBeGreaterThan(cheap.costEur);

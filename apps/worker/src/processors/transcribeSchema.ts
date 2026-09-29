@@ -9,7 +9,7 @@ import { readHandwritingProfile } from './handwritingProfile.js';
 import { renderSchemaMarkdown } from './schemaGraphRender.js';
 import { writeCanonicalMarkdown } from './writeCanonicalMarkdown.js';
 
-const MODEL_ROUTING_SCHEMA_TRANSCRIPTION = 'claude-sonnet-5'; // vision needs a capable model
+const MODEL_ROUTING_SCHEMA_TRANSCRIPTION = 'claude-sonnet-5-5'; // vision needs a capable model
 
 export interface TranscribeSchemaResult {
   documentId: string;

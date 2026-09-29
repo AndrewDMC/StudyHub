@@ -5,7 +5,7 @@ import type { GradeItemSecondOpinionJobInput } from '@studyhub/contracts';
 import { checkBudget } from '../generation/shared.js';
 import { reconcileWithRubric } from './gradeAttempt.js';
 
-const MODEL_ROUTING_SECOND_OPINION = 'claude-opus-5'; // docs/fasi/F5 "Rischi": "modello superiore"
+const MODEL_ROUTING_SECOND_OPINION = 'claude-opus-5-5'; // docs/fasi/F5 "Rischi": "modello superiore"
 
 export interface GradeItemSecondOpinionResult {
   attemptId: string;
@@ -41,7 +41,12 @@ export async function processGradeItemSecondOpinion(
   const [item] = await db
     .select()
     .from(simulationItems)
-    .where(and(eq(simulationItems.id, input.itemId), eq(simulationItems.simulationId, attempt.simulationId)));
+    .where(
+      and(
+        eq(simulationItems.id, input.itemId),
+        eq(simulationItems.simulationId, attempt.simulationId),
+      ),
+    );
   if (!item) throw new Error(`Esercizio non trovato in questo tentativo: ${input.itemId}`);
 
   const [existing] = await db
@@ -70,7 +75,11 @@ export async function processGradeItemSecondOpinion(
     },
     model,
   );
-  const costEur = estimateCostEur(result.model, result.usage.inputTokens, result.usage.outputTokens);
+  const costEur = estimateCostEur(
+    result.model,
+    result.usage.inputTokens,
+    result.usage.outputTokens,
+  );
   await checkBudget(db, costEur, input.force);
 
   const criteria = reconcileWithRubric(item, result.data.criteria);
@@ -88,5 +97,12 @@ export async function processGradeItemSecondOpinion(
     })
     .where(eq(attemptItemResults.id, existing.id));
 
-  return { attemptId: attempt.id, itemId: item.id, awarded, max: item.points, costEur, usage: result.usage };
+  return {
+    attemptId: attempt.id,
+    itemId: item.id,
+    awarded,
+    max: item.points,
+    costEur,
+    usage: result.usage,
+  };
 }

@@ -7,8 +7,8 @@ describe('estimateCostEur', () => {
   });
 
   it('scales with token counts for a real model', () => {
-    const small = estimateCostEur('claude-sonnet-5', 1000, 500);
-    const large = estimateCostEur('claude-sonnet-5', 10_000, 5000);
+    const small = estimateCostEur('claude-sonnet-5-5', 1000, 500);
+    const large = estimateCostEur('claude-sonnet-5-5', 10_000, 5000);
     expect(large).toBeGreaterThan(small);
     expect(large).toBeCloseTo(small * 10, 5);
   });

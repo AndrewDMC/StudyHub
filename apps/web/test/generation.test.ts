@@ -162,7 +162,7 @@ describe('estimateGenerationCost', () => {
   it('estimates a positive cost per kind, proportional to input size', async () => {
     const estimate = await estimateGenerationCost(db, subjectSlug, {
       scope: { docIds: [docId] },
-      model: 'claude-sonnet-5',
+      model: 'claude-sonnet-5-5',
     });
 
     expect(estimate.inputTokens).toBeGreaterThan(0);
@@ -174,7 +174,7 @@ describe('estimateGenerationCost', () => {
   it('estimates a positive cost for simulation and extract_topics too (docs/fasi/F3-ai-core.md "Stato")', async () => {
     const estimate = await estimateGenerationCost(db, subjectSlug, {
       scope: { docIds: [docId] },
-      model: 'claude-sonnet-5',
+      model: 'claude-sonnet-5-5',
     });
 
     expect(estimate.perKind.simulation!.costEur).toBeGreaterThan(0);
@@ -184,11 +184,11 @@ describe('estimateGenerationCost', () => {
   it('resolves a topicIds-only scope to the tagged document, same as generation itself', async () => {
     const byDoc = await estimateGenerationCost(db, subjectSlug, {
       scope: { docIds: [docId] },
-      model: 'claude-sonnet-5',
+      model: 'claude-sonnet-5-5',
     });
     const byTopic = await estimateGenerationCost(db, subjectSlug, {
       scope: { topicIds: [topicId] },
-      model: 'claude-sonnet-5',
+      model: 'claude-sonnet-5-5',
     });
     expect(byTopic.inputTokens).toBe(byDoc.inputTokens);
   });
@@ -196,7 +196,7 @@ describe('estimateGenerationCost', () => {
   it('is zero for a scope resolving to no chunks (e.g. an unrelated document id)', async () => {
     const estimate = await estimateGenerationCost(db, subjectSlug, {
       scope: { docIds: [randomUUID()] },
-      model: 'claude-sonnet-5',
+      model: 'claude-sonnet-5-5',
     });
     expect(estimate.inputTokens).toBe(0);
     expect(estimate.perKind.flashcards!.costEur).toBe(0);
@@ -204,7 +204,10 @@ describe('estimateGenerationCost', () => {
 
   it('throws SubjectNotFoundError for an unknown slug', async () => {
     await expect(
-      estimateGenerationCost(db, 'nope', { scope: { docIds: [docId] }, model: 'claude-sonnet-5' }),
+      estimateGenerationCost(db, 'nope', {
+        scope: { docIds: [docId] },
+        model: 'claude-sonnet-5-5',
+      }),
     ).rejects.toBeInstanceOf(SubjectNotFoundError);
   });
 });

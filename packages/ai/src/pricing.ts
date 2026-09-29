@@ -15,6 +15,9 @@ export interface ModelPricing {
 
 export const MODEL_PRICING: Record<string, ModelPricing> = {
   'claude-haiku-4-5-20251001': { inputPerMillion: 1, outputPerMillion: 5 },
+  'claude-sonnet-5-5': { inputPerMillion: 3, outputPerMillion: 15 },
+  'claude-opus-5-5': { inputPerMillion: 15, outputPerMillion: 75 },
+  // Legacy ids: data generated before the 5.5 upgrade still carries these model names.
   'claude-sonnet-5': { inputPerMillion: 3, outputPerMillion: 15 },
   'claude-opus-5': { inputPerMillion: 15, outputPerMillion: 75 },
   // The fake provider does no real inference; kept at 0 so dry runs/tests

@@ -41,15 +41,17 @@ Le tue correzioni non si perdono per una rigenerazione accidentale.
 ## 3. Specifica del Canonical Markdown
 
 ### 3.1 Front-matter (obbligatorio)
+
 ```yaml
 ---
 docId: 01HX...
 subject: fisica-1
 kind: appunti | schema | esame | slide | altro
-title: "Termodinamica - Primo principio"
+title: 'Termodinamica - Primo principio'
 lang: it
-source: { file: "sources/appunti/2026-01-12.pdf", pages: 24, sha256: "..." }
-pipeline: { extractor: "vision", model: "claude-sonnet-5", promptVersion: 3, at: "2026-01-12T10:04Z" }
+source: { file: 'sources/appunti/2026-01-12.pdf', pages: 24, sha256: '...' }
+pipeline:
+  { extractor: 'vision', model: 'claude-sonnet-5-5', promptVersion: 3, at: '2026-01-12T10:04Z' }
 confidence: { overall: 0.94, uncertainBlocks: 3, unreadableBlocks: 0 }
 edited: false
 topics: [termodinamica, primo-principio, trasformazioni]
@@ -57,6 +59,7 @@ topics: [termodinamica, primo-principio, trasformazioni]
 ```
 
 ### 3.2 Corpo — sintassi ammessa e vincoli
+
 - **Heading** `#`..`####` che riflettono la gerarchia reale del documento, non la dimensione del font.
 - **Ancore di pagina**: `<!--p:12-->` prima di ogni blocco che cambia pagina. Non negoziabile: senza,
   le citazioni delle flashcard non sono verificabili (principio P3).
@@ -77,6 +80,7 @@ topics: [termodinamica, primo-principio, trasformazioni]
 - **Ancore di nodo**: `^n7` a fine riga, per collegare il blocco al grafo (schemi) e ai ritagli.
 
 ### 3.3 Cosa NON deve fare la normalizzazione
+
 - Non riassume, non riformula, non "migliora" il testo. È **trascrizione strutturata**, non riscrittura.
   Il riassunto è una funzione separata, esplicita e approvata dall'utente.
 - Non inventa heading dove non ci sono. Se il documento è piatto, il markdown è piatto.
@@ -106,8 +110,8 @@ fallback a vision se la confidenza è bassa.
 viene divisa in tile con overlap del 15%, letta a tile, e i risultati vengono riuniti deduplicando la zona
 di sovrapposizione. Un modello che legge un A3 intero a bassa risoluzione perde le annotazioni piccole.
 
-**Costo**: la trascrizione vision è la voce più cara del sistema. Routing: `claude-sonnet-5` di default,
-retry su `claude-opus-5` solo per le pagine con confidenza sotto soglia. Prompt caching sul profilo di grafia
+**Costo**: la trascrizione vision è la voce più cara del sistema. Routing: `claude-sonnet-5-5` di default,
+retry su `claude-opus-5-5` solo per le pagine con confidenza sotto soglia. Prompt caching sul profilo di grafia
 e sul vocabolario di contesto.
 
 ---
@@ -117,7 +121,9 @@ e sul vocabolario di contesto.
 È il caso più difficile e il più prezioso: gli schemi sono il tuo materiale già digerito.
 
 ### 5.1 Il problema
+
 Uno schema disegnato a mano porta informazione su **due canali**:
+
 - **testuale** — le parole nei riquadri;
 - **strutturale/spaziale** — frecce, raggruppamenti, gerarchia, adiacenza, colori, riquadri.
 
@@ -136,20 +142,22 @@ docId: 01HY...
 kind: schema
 schema:
   nodes:
-    n1: { label: "Primo principio", kind: principio, crop: "p1@[120,340,480,410]", conf: ok }
-    n2: { label: "Q calore scambiato", kind: grandezza, crop: "p1@[140,430,420,480]", conf: ok }
-    n7: { label: "Trasf. adiabatica", kind: caso,      crop: "p1@[500,620,760,690]", conf: uncertain }
+    n1: { label: 'Primo principio', kind: principio, crop: 'p1@[120,340,480,410]', conf: ok }
+    n2: { label: 'Q calore scambiato', kind: grandezza, crop: 'p1@[140,430,420,480]', conf: ok }
+    n7: { label: 'Trasf. adiabatica', kind: caso, crop: 'p1@[500,620,760,690]', conf: uncertain }
   edges:
     - { from: n1, to: n2, type: composto-da }
-    - { from: n1, to: n7, type: implica, label: "Q = 0" }
+    - { from: n1, to: n7, type: implica, label: 'Q = 0' }
     - { from: n7, to: n9, type: esempio-di }
   groups:
-    g1: { label: "Trasformazioni", nodes: [n7, n8, n9] }
+    g1: { label: 'Trasformazioni', nodes: [n7, n8, n9] }
 confidence: { overall: 0.88, uncertainBlocks: 1, unreadableBlocks: 0 }
 ---
 
-## Primo principio  ^n1
+## Primo principio ^n1
+
 <!--p:1-->
+
 $\Delta U = Q - L$
 
 - **Q** calore scambiato ^n2
@@ -157,11 +165,13 @@ $\Delta U = Q - L$
 
 ### Trasformazioni ^g1
 
-#### Trasformazione adiabatica ^n7   <!--conf:uncertain-->
+#### Trasformazione adiabatica ^n7 <!--conf:uncertain-->
+
 Implica $Q = 0$, quindi $\Delta U = -L$.
 ```
 
 **Tassonomia minima dei tipi** (chiusa, non libera — altrimenti il modello inventa):
+
 - `node.kind`: `concetto | definizione | formula | principio | grandezza | caso | esempio | condizione | conseguenza | domanda`
 - `edge.type`: `implica | causa | composto-da | esempio-di | opposto-a | precede | dipende-da | annota`
 
@@ -169,12 +179,14 @@ Un vocabolario chiuso rende il grafo interrogabile e confrontabile fra schemi di
 produce 40 sinonimi di "porta a" e rende il grafo inutile.
 
 ### 5.3 Formati di rendering (derivati, mai sorgente)
+
 Dal grafo si generano su richiesta:
+
 - **Mermaid** per la visualizzazione in app;
 - **JSON Canvas** (`.canvas`) esportato nella cartella della materia, apribile in Obsidian;
 - **SVG** per l'export e la stampa.
 
-*Perché Mermaid non è il formato di archiviazione*: sintassi fragile che i modelli generano spesso rotta,
+_Perché Mermaid non è il formato di archiviazione_: sintassi fragile che i modelli generano spesso rotta,
 impossibile attaccare metadati per nodo (confidenza, ritaglio sorgente), diff illeggibili, nessuna validazione.
 Una sorgente, più render.
 
@@ -198,11 +210,12 @@ modello haiku, costo trascurabile). Il profilo entra nei prompt successivi come 
 Dopo 4-5 schemi corretti la qualità sale in modo evidente, senza alcun fine-tuning.
 
 **(c) Doppia passata.**
-1. *Lettura*: descrizione fedele della pagina — cosa c'è scritto e dove, quali frecce collegano cosa.
+
+1. _Lettura_: descrizione fedele della pagina — cosa c'è scritto e dove, quali frecce collegano cosa.
    Nessuna strutturazione, nessuna interpretazione.
-2. *Strutturazione*: dalla descrizione al grafo tipizzato e al markdown.
-Separare le due fasi riduce nettamente gli errori rispetto a chiedere tutto in una volta: nella singola
-passata il modello "completa" la struttura inventando testo.
+2. _Strutturazione_: dalla descrizione al grafo tipizzato e al markdown.
+   Separare le due fasi riduce nettamente gli errori rispetto a chiedere tutto in una volta: nella singola
+   passata il modello "completa" la struttura inventando testo.
 
 ### 5.5 Confidenza e regola dura di qualità
 
@@ -217,6 +230,7 @@ Costa un passaggio di verifica. L'alternativa è ripassare per tre settimane una
 letta male: è il tipo di errore che distrugge la fiducia nello strumento e non si scopre mai da soli.
 
 ### 5.6 Schermata di verifica (UI)
+
 Split verticale: a sinistra l'immagine originale con i **bounding box dei nodi evidenziati**, a destra il
 markdown/grafo editabile. Navigazione `Tab` **solo fra i nodi dubbi** — non si rilegge tutto, si conferma
 il 5% incerto. Click su un nodo a destra = evidenzia il ritaglio a sinistra e viceversa.
@@ -224,10 +238,11 @@ Azioni: conferma, correggi, unisci nodi, cambia tipo di arco, elimina, "illeggib
 In alto: barra di avanzamento "3 nodi da verificare su 42" e pulsante `Approva schema`.
 
 ### 5.7 Cosa sblocca il grafo (valore a valle)
+
 - **Flashcard relazionali**: dagli archi si generano card che le funzioni testuali non potrebbero produrre —
-  *"Cosa implica Q = 0 in una trasformazione?"*, *"Di cosa è caso particolare l'adiabatica?"*.
+  _"Cosa implica Q = 0 in una trasformazione?"_, _"Di cosa è caso particolare l'adiabatica?"_.
 - **Gap analysis strutturale**: confronto fra il grafo dello schema e i topic estratti dagli appunti →
-  *"lo schema non copre le trasformazioni isocore, presenti negli appunti a p. 61"* (già previsto in F1 per gli schemi).
+  _"lo schema non copre le trasformazioni isocore, presenti negli appunti a p. 61"_ (già previsto in F1 per gli schemi).
 - **Ordine di studio**: gli archi `precede` e `dipende-da` sono prerequisiti reali, dichiarati da te,
   e diventano input di qualità per la Fase A del Planner — molto meglio dei prerequisiti inferiti dall'AI.
 - **Mappa unificata della materia**: merge dei grafi di più schemi in un'unica mappa navigabile, con la
@@ -235,15 +250,16 @@ In alto: barra di avanzamento "3 nodi da verificare su 42" e pulsante `Approva s
 
 ## 6. Nuovi job introdotti
 
-| Job | Input | Output | Modello |
-|---|---|---|---|
-| `normalize_markdown` | docId | `derived/<docId>/content.md` | sonnet (vision) / nessuno (PDF testuale) |
-| `transcribe_schema` | docId (kind=schema) | markdown + grafo + crops | sonnet, retry opus |
-| `build_vocab_context` | subjectId, topicIds | vocabolario di contesto | nessuno (retrieval) |
-| `distill_handwriting_profile` | correzioni utente | righe del profilo | haiku |
-| `merge_schema_graphs` | schemaIds[] | mappa unificata | nessuno (deterministico) |
+| Job                           | Input               | Output                       | Modello                                  |
+| ----------------------------- | ------------------- | ---------------------------- | ---------------------------------------- |
+| `normalize_markdown`          | docId               | `derived/<docId>/content.md` | sonnet (vision) / nessuno (PDF testuale) |
+| `transcribe_schema`           | docId (kind=schema) | markdown + grafo + crops     | sonnet, retry opus                       |
+| `build_vocab_context`         | subjectId, topicIds | vocabolario di contesto      | nessuno (retrieval)                      |
+| `distill_handwriting_profile` | correzioni utente   | righe del profilo            | haiku                                    |
+| `merge_schema_graphs`         | schemaIds[]         | mappa unificata              | nessuno (deterministico)                 |
 
 ## 7. Criteri di accettazione del layer
+
 - [ ] Un PDF a stampa, una foto di appunti e una foto di schema producono tutti un `content.md` valido
       con ancore di pagina.
 - [ ] Correggo `content.md` a mano, rilancio l'ingest: la mia versione sopravvive e il conflitto è mostrato.

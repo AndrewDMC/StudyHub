@@ -18,7 +18,7 @@ import {
   resolveScopeChunks,
 } from './shared.js';
 
-const MODEL_ROUTING_SUMMARY = 'claude-sonnet-5'; // docs/03-ai-e-worker.md §4
+const MODEL_ROUTING_SUMMARY = 'claude-sonnet-5-5'; // docs/03-ai-e-worker.md §4
 
 export interface GenerateSummaryResult {
   artifactId: string;

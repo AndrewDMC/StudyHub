@@ -12,7 +12,7 @@ import { estimateCostEur, resolveProvider, type AiProvider } from '@studyhub/ai'
 import type { GradeAttemptJobInput } from '@studyhub/contracts';
 import { checkBudget } from '../generation/shared.js';
 
-const MODEL_ROUTING_GRADE = 'claude-sonnet-5'; // docs/03 §4: simulation_grade
+const MODEL_ROUTING_GRADE = 'claude-sonnet-5-5'; // docs/03 §4: simulation_grade
 /** An item scored below this ratio is "weak" and feeds `weak_topics[]` for the Planner. */
 export const WEAK_ITEM_THRESHOLD = 0.6;
 
