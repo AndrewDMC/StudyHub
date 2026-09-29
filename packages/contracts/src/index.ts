@@ -16,3 +16,4 @@ export * from './dashboard.js';
 export * from './admin.js';
 export * from './overview.js';
 export * from './coverage.js';
+export * from './session.js';
