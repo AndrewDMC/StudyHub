@@ -2,13 +2,34 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { DocumentDto, TopicDto } from '@studyhub/contracts';
+import type { DocumentDto, EstimateGenerationCostResponse, TopicDto } from '@studyhub/contracts';
+import { ModelPicker, MODEL_OPTIONS } from './ModelPicker';
 
 async function fetchTopics(slug: string): Promise<TopicDto[]> {
   const res = await fetch(`/api/subjects/${slug}/topics`);
   const body = await res.json();
   if (!res.ok) throw new Error(body.error?.message ?? 'Impossibile caricare gli argomenti');
   return body.topics as TopicDto[];
+}
+
+/** €0.0001 → "€0.0001"; €0 → "gratis" (FakeProvider, nessuna chiave configurata). */
+function formatCost(costEur: number): string {
+  return costEur === 0 ? 'gratis' : `~€${costEur.toFixed(4)}`;
+}
+
+async function fetchEstimate(
+  slug: string,
+  docIds: string[],
+  model: string,
+): Promise<EstimateGenerationCostResponse> {
+  const res = await fetch(`/api/subjects/${slug}/artifacts/estimate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scope: { docIds }, model }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error?.message ?? 'Stima costo fallita');
+  return body as EstimateGenerationCostResponse;
 }
 
 function buildTree(topics: TopicDto[]): Map<string | null, TopicDto[]> {
@@ -195,6 +216,7 @@ export function TopicsPanel({
 }) {
   const [name, setName] = useState('');
   const [mergingId, setMergingId] = useState<string | null>(null);
+  const [model, setModel] = useState<string>(MODEL_OPTIONS[0].id); // haiku: default routing per extract_topics (docs/03 §4)
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ['topics', subjectSlug],
@@ -208,12 +230,21 @@ export function TopicsPanel({
       ? parsedDocIds.filter((id) => selectedDocIds.has(id))
       : parsedDocIds;
 
+  const estimateQuery = useQuery({
+    queryKey: ['generation-estimate', subjectSlug, model, readyDocIds.join(',')],
+    queryFn: () => fetchEstimate(subjectSlug, readyDocIds, model),
+    enabled: readyDocIds.length > 0,
+  });
+  const costLabel = estimateQuery.data
+    ? formatCost(estimateQuery.data.perKind.extract_topics!.costEur)
+    : null;
+
   const extractMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch(`/api/subjects/${subjectSlug}/topics/extract`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ docIds: readyDocIds }),
+        body: JSON.stringify({ docIds: readyDocIds, model }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error?.message ?? 'Suggerimento argomenti fallito');
@@ -345,13 +376,18 @@ export function TopicsPanel({
         </button>
       </form>
 
+      {readyDocIds.length > 0 && (
+        <div className="mt-2">
+          <ModelPicker value={model} onChange={setModel} disabled={extractMutation.isPending} />
+        </div>
+      )}
       <button
         type="button"
         disabled={readyDocIds.length === 0 || extractMutation.isPending}
         onClick={() => extractMutation.mutate()}
         className="mt-2 w-full rounded-[var(--radius-control)] border border-dashed border-border px-2 py-1 text-xs text-fg-secondary hover:text-fg-primary disabled:opacity-50"
       >
-        Suggerisci argomenti (AI)
+        Suggerisci argomenti (AI){costLabel && ` · ${costLabel}`}
       </button>
       {extractMutation.isError && (
         <p role="alert" className="mt-1 px-1 text-xs text-danger">

@@ -16,11 +16,27 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
  * pipeline itself regressing, and documents the quality bar every provider
  * (including a future real one) is expected to clear.
  *
- * Reduced scope vs. the "5-10 real documents" the doc asks for: 2 fixtures
- * across different subject domains (STEM + humanities), not a full corpus —
- * see docs/fasi/F3-ai-core.md "Stato" addendum.
+ * 9 fixtures across 9 distinct subject domains (docs/03 §6 asks for "5-10
+ * documenti reali") — still declared as **synthetic**, not real uploaded
+ * documents: this session has no real study material to source from, so
+ * each fixture is a short, fact-dense paragraph written to look like real
+ * study notes (dates, names, formulas, verifiable claims) rather than a
+ * genuine excerpt. Domain spread matters more than fixture count here — a
+ * prompt regression that only shows up on, say, a numeric/formula-heavy
+ * fixture (algoritmi-complessita, analisi-derivate, chimica-legami) would
+ * hide behind 2 humanities-leaning fixtures alone.
  */
-const FIXTURES = ['termodinamica.txt', 'diritto-costituzionale.txt'];
+const FIXTURES = [
+  'termodinamica.txt',
+  'diritto-costituzionale.txt',
+  'biologia-cellulare.txt',
+  'algoritmi-complessita.txt',
+  'rivoluzione-francese.txt',
+  'microeconomia-domanda-offerta.txt',
+  'chimica-legami.txt',
+  'analisi-derivate.txt',
+  'psicologia-memoria.txt',
+];
 
 function assertQualityBar(output: FlashcardsOutput, sourceText: string) {
   expect(output.cards.length).toBeGreaterThan(0);

@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import 'katex/dist/katex.min.css';
 
 /*
  * Design tokens — "Calm Futurism" (docs/05-design-system.md §2).
@@ -88,4 +89,22 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Flashcard faces (src/lib/cardText.ts): cloze blanks/answers and embedded images. */
+.cloze-blank {
+  color: var(--accent);
+  font-weight: 600;
+}
+.cloze-answer {
+  color: var(--accent);
+  font-weight: 600;
+  border-bottom: 1px solid var(--accent);
+}
+.card-image {
+  display: block;
+  max-width: 100%;
+  max-height: 40vh;
+  margin: 0.5rem auto;
+  border-radius: var(--radius-control, 6px);
 }

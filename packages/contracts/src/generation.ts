@@ -45,13 +45,20 @@ export const GenerateSummaryJobInputSchema = z.object({
 export type GenerateSummaryJobInput = z.infer<typeof GenerateSummaryJobInputSchema>;
 
 /**
- * Pre-flight cost estimate for `GenerationPanel` (docs/03-ai-e-worker.md §4: "La UI mostra
- * sempre modello + costo stimato prima di lanciare il job"). Covers the three scope-based
- * functions (`generate_flashcards`/`generate_schema`/`generate_summary`) since they share one
- * scope and one model choice in the UI — not `generate_simulation` or `extract_topics`, which
- * have their own panels.
+ * Pre-flight cost estimate for `GenerationPanel`, `ExamPrepPanel` and `TopicsPanel`
+ * (docs/03-ai-e-worker.md §4: "La UI mostra sempre modello + costo stimato prima di lanciare il
+ * job"). Covers every scope-based generation function — `generate_flashcards`/`generate_schema`/
+ * `generate_summary` share one scope and model choice in `GenerationPanel`; `simulation`
+ * (`generate_simulation`) and `extract_topics` have their own panels but the same
+ * `docId`/`topicId`-scoped estimate applies.
  */
-export const GenerationKindSchema = z.enum(['flashcards', 'schema', 'summary']);
+export const GenerationKindSchema = z.enum([
+  'flashcards',
+  'schema',
+  'summary',
+  'simulation',
+  'extract_topics',
+]);
 export type GenerationKind = z.infer<typeof GenerationKindSchema>;
 
 export const EstimateGenerationCostRequestSchema = z.object({
@@ -104,9 +111,14 @@ export const FlashcardDtoSchema = z.object({
   front: z.string(),
   back: z.string(),
   hint: z.string().nullable(),
-  sourceRef: z.object({ docId: z.string().uuid(), page: z.number().int(), quote: z.string() }),
+  /** null = card created by hand in the deck editor: nothing to cite. */
+  sourceRef: z
+    .object({ docId: z.string().uuid(), page: z.number().int(), quote: z.string() })
+    .nullable(),
   state: z.enum(['new', 'learning', 'review', 'relearning']),
   suspended: z.boolean(),
+  tags: z.array(z.string()),
+  flaggedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
 });
 export type FlashcardDto = z.infer<typeof FlashcardDtoSchema>;

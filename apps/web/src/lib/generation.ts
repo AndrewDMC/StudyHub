@@ -29,15 +29,20 @@ import { SubjectNotFoundError } from './errors';
 
 /**
  * Output/input token ratio per function, used only for the UI's pre-flight cost estimate
- * (docs/03-ai-e-worker.md §4). Rough and declared as such — flashcards/schema/summary all
- * *compress* the input, never expand it, so a fraction of the input token count is a reasonable
- * order-of-magnitude guess before the job actually runs. Real cost (from the model's own usage
- * reporting) is what `artifacts.costEur` shows after generation.
+ * (docs/03-ai-e-worker.md §4). Rough and declared as such — every one of these functions
+ * *compresses* the input (a taxonomy, a deck, a graded exam skeleton — never a rewrite that
+ * expands it), so a fraction of the input token count is a reasonable order-of-magnitude guess
+ * before the job actually runs. Real cost (from the model's own usage reporting) is what
+ * `artifacts.costEur` shows after generation. `extract_topics` doesn't produce an `artifacts` row
+ * at all (docs/fasi/F3-ai-core.md "Stato": applies its taxonomy directly) — its ratio is lower
+ * because the output is just a handful of short names, not full content.
  */
 const OUTPUT_TOKEN_RATIO: Record<GenerationKind, number> = {
   flashcards: 0.3,
   schema: 0.25,
   summary: 0.3,
+  simulation: 0.35,
+  extract_topics: 0.05,
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -57,7 +62,7 @@ export class FlashcardNotFoundError extends Error {
   }
 }
 
-function toArtifactDto(row: Artifact): ArtifactDto {
+export function toArtifactDto(row: Artifact): ArtifactDto {
   return {
     id: row.id,
     subjectId: row.subjectId,
@@ -85,6 +90,8 @@ function toFlashcardDto(row: Flashcard): FlashcardDto {
     sourceRef: row.sourceRef,
     state: row.state,
     suspended: row.suspended,
+    tags: row.tags,
+    flaggedAt: row.flaggedAt ? row.flaggedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -182,8 +189,8 @@ export async function exportDeckCsv(
   const rows: Flashcard[] = await db.select().from(flashcards).where(eq(flashcards.deckId, deckId));
 
   const csv = buildCsv(
-    ['front', 'back', 'type', 'hint'],
-    rows.map((r) => [r.front, r.back, r.type, r.hint ?? '']),
+    ['front', 'back', 'type', 'hint', 'tags'],
+    rows.map((r) => [r.front, r.back, r.type, r.hint ?? '', r.tags.join(', ')]),
   );
   const filename = `${artifact.title.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.csv`;
   return { filename, csv };
@@ -278,7 +285,12 @@ export async function estimateGenerationCost(
       .select({ documentId: documentTopics.documentId })
       .from(documentTopics)
       .innerJoin(topics, eq(documentTopics.topicId, topics.id))
-      .where(and(eq(topics.subjectId, subject.id), inArray(documentTopics.topicId, input.scope.topicIds)));
+      .where(
+        and(
+          eq(topics.subjectId, subject.id),
+          inArray(documentTopics.topicId, input.scope.topicIds),
+        ),
+      );
     docIds = [...new Set(linkRows.map((r) => r.documentId))];
   }
 
@@ -304,7 +316,10 @@ export async function estimateGenerationCost(
   const perKind = Object.fromEntries(
     (Object.keys(OUTPUT_TOKEN_RATIO) as GenerationKind[]).map((kind) => {
       const outputTokens = Math.round(inputTokens * OUTPUT_TOKEN_RATIO[kind]);
-      return [kind, { outputTokens, costEur: estimateCostEur(input.model, inputTokens, outputTokens) }];
+      return [
+        kind,
+        { outputTokens, costEur: estimateCostEur(input.model, inputTokens, outputTokens) },
+      ];
     }),
   ) as EstimateGenerationCostResponse['perKind'];
 

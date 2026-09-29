@@ -1,50 +1,34 @@
 import { NextResponse } from 'next/server';
-import { SuspendFlashcardRequestSchema } from '@studyhub/contracts';
+import { UpdateFlashcardRequestSchema } from '@studyhub/contracts';
 import { getDb } from '@/lib/db';
-import { FlashcardNotFoundError, setFlashcardSuspended } from '@/lib/review';
-import { formatError, SubjectNotFoundError } from '@/lib/errors';
+import { deleteFlashcard, updateFlashcard } from '@/lib/deckEditor';
+import { errorResponse, parseBody } from '@/lib/http';
 
 export const dynamic = 'force-dynamic';
 
-/** Suspend/unsuspend (docs/fasi/F4-flashcard.md: "sospendo una card: sparisce dalla coda ma resta nel deck"). */
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ slug: string; cardId: string }> },
-) {
-  const { slug, cardId } = await params;
-  const body = await request.json().catch(() => null);
-  const parsed = SuspendFlashcardRequestSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'invalid_request',
-          message: parsed.error.issues[0]?.message ?? 'Richiesta non valida',
-        },
-      },
-      { status: 400 },
-    );
-  }
+type RouteParams = { params: Promise<{ slug: string; cardId: string }> };
 
+/**
+ * Edits one card: front/back/type/hint, topic, deck, tags, suspend ("sospendo una card: sparisce
+ * dalla coda ma resta nel deck") and flag ("segnala card scadente") — docs/fasi/F4-flashcard.md.
+ */
+export async function PATCH(request: Request, { params }: RouteParams) {
+  const { slug, cardId } = await params;
+  const { data, error } = await parseBody(request, UpdateFlashcardRequestSchema);
+  if (error) return error;
   try {
-    const flashcard = await setFlashcardSuspended(getDb(), slug, cardId, parsed.data.suspended);
-    return NextResponse.json({ flashcard });
+    return NextResponse.json({ flashcard: await updateFlashcard(getDb(), slug, cardId, data) });
   } catch (err) {
-    if (err instanceof SubjectNotFoundError) {
-      return NextResponse.json(
-        { error: { code: 'subject_not_found', message: err.message } },
-        { status: 404 },
-      );
-    }
-    if (err instanceof FlashcardNotFoundError) {
-      return NextResponse.json(
-        { error: { code: 'flashcard_not_found', message: err.message } },
-        { status: 404 },
-      );
-    }
-    return NextResponse.json(
-      { error: { code: 'internal_error', message: formatError(err) } },
-      { status: 500 },
-    );
+    return errorResponse(err);
+  }
+}
+
+export async function DELETE(_request: Request, { params }: RouteParams) {
+  const { slug, cardId } = await params;
+  try {
+    await deleteFlashcard(getDb(), slug, cardId);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    return errorResponse(err);
   }
 }

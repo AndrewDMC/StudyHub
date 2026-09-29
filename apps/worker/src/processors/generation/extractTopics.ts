@@ -105,10 +105,19 @@ export async function processExtractTopics(
     excerptByDoc.set(docId, truncate(parts.join(' '), EXCERPT_MAX_CHARS));
   }
 
+  const existingTopics: { id: string; name: string; slug: string }[] = await db
+    .select({ id: topics.id, name: topics.name, slug: topics.slug })
+    .from(topics)
+    .where(eq(topics.subjectId, input.subjectId));
+
   const result = await provider.extractTopics(
     {
       subjectName: subject.name,
-      documents: requestedDocIds.map((docId) => ({ docId, excerpt: excerptByDoc.get(docId) ?? '' })),
+      documents: requestedDocIds.map((docId) => ({
+        docId,
+        excerpt: excerptByDoc.get(docId) ?? '',
+      })),
+      existingTopics: existingTopics.map((t) => ({ name: t.name })),
     },
     model,
   );
@@ -116,10 +125,30 @@ export async function processExtractTopics(
   // Anti-hallucination gate, same spirit as a flashcard's citation: a proposed docId the caller
   // never sent is dropped rather than trusted, and a topic left with none is dropped entirely.
   const requestedSet = new Set(requestedDocIds);
-  const proposals = result.data.topics
+  const proposalsWithDocs = result.data.topics
     .map((t) => ({ ...t, docIds: t.docIds.filter((id) => requestedSet.has(id)) }))
     .filter((t) => t.docIds.length > 0);
-  const discardedCount = result.data.topics.length - proposals.length;
+  const discardedCount = result.data.topics.length - proposalsWithDocs.length;
+
+  // Same gate for `parentName`: valid only if it names an existing topic in the subject, or
+  // another proposal in this batch that is itself top-level (no `parentName`) — a hallucinated
+  // name, a self-reference, or a chain more than one level deep collapses to top-level (`null`)
+  // rather than being trusted or rejecting the whole topic. Root proposals are processed before
+  // their children below so a sibling parent's id already exists in `byLowerName` by then.
+  const rootProposalNames = new Set(
+    proposalsWithDocs.filter((p) => !p.parentName).map((p) => p.name.toLowerCase()),
+  );
+  const existingNamesLower = new Set(existingTopics.map((t) => t.name.toLowerCase()));
+  const proposals = proposalsWithDocs
+    .map((p) => {
+      const parentLower = p.parentName?.toLowerCase();
+      const validParent =
+        parentLower &&
+        parentLower !== p.name.toLowerCase() &&
+        (existingNamesLower.has(parentLower) || rootProposalNames.has(parentLower));
+      return { ...p, parentName: validParent ? p.parentName! : null };
+    })
+    .sort((a, b) => (a.parentName ? 1 : 0) - (b.parentName ? 1 : 0));
 
   const costEur = estimateCostEur(
     result.model,
@@ -128,10 +157,6 @@ export async function processExtractTopics(
   );
   await checkBudget(db, costEur, input.force);
 
-  const existingTopics: { id: string; name: string; slug: string }[] = await db
-    .select({ id: topics.id, name: topics.name, slug: topics.slug })
-    .from(topics)
-    .where(eq(topics.subjectId, input.subjectId));
   const byLowerName = new Map(existingTopics.map((t) => [t.name.toLowerCase(), t.id]));
   const takenSlugs = new Set(existingTopics.map((t) => t.slug));
 
@@ -150,9 +175,13 @@ export async function processExtractTopics(
       const slug = disambiguateSlug(slugify(proposal.name), takenSlugs);
       takenSlugs.add(slug);
       byLowerName.set(proposal.name.toLowerCase(), topicId);
+      const parentId = proposal.parentName
+        ? (byLowerName.get(proposal.parentName.toLowerCase()) ?? null)
+        : null;
       await db.insert(topics).values({
         id: topicId,
         subjectId: input.subjectId,
+        parentId,
         name: proposal.name,
         slug,
         source: 'ai',

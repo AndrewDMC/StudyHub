@@ -7,7 +7,12 @@ import { eq } from 'drizzle-orm';
 import { createTestDb } from '@studyhub/db/testDb';
 import { chunks, documentTopics, documents, settings, subjects, topics } from '@studyhub/db';
 import { createManifest, scaffoldSubject } from '@studyhub/core';
-import { FakeProvider, type AiProvider, type ExtractTopicsOutput, type GeneratedWithMeta } from '@studyhub/ai';
+import {
+  FakeProvider,
+  type AiProvider,
+  type ExtractTopicsOutput,
+  type GeneratedWithMeta,
+} from '@studyhub/ai';
 import { processExtractTopics } from '../src/processors/generation/extractTopics.js';
 import { BudgetExceededError } from '../src/processors/generation/shared.js';
 import { runJob } from '../src/jobRunner.js';
@@ -222,6 +227,183 @@ describe('processExtractTopics', () => {
     expect(topicRows.map((t) => t.name)).toEqual(['Valido']);
   });
 
+  it('sets parentId when a proposed topic names an existing topic as parent', async () => {
+    const parentId = randomUUID();
+    await db.insert(topics).values({
+      id: parentId,
+      subjectId,
+      name: 'Termodinamica',
+      slug: 'termodinamica',
+      source: 'user',
+    });
+
+    const fakeProvider: AiProvider = {
+      name: 'test-fixed',
+      async extractTopics(): Promise<GeneratedWithMeta<ExtractTopicsOutput>> {
+        return {
+          data: {
+            topics: [
+              { name: 'Entropia', docIds: [docId], confidence: 0.9, parentName: 'Termodinamica' },
+            ],
+          },
+          usage: { inputTokens: 5, outputTokens: 5 },
+          model: 'test-model',
+          promptVersion: 'extract_topics/v2',
+        };
+      },
+      async generateFlashcards(): Promise<never> {
+        throw new Error('not used');
+      },
+      async generateSummary(): Promise<never> {
+        throw new Error('not used');
+      },
+      async generateSchema(): Promise<never> {
+        throw new Error('not used');
+      },
+      async extractExamProfile(): Promise<never> {
+        throw new Error('not used');
+      },
+      async generateSimulation(): Promise<never> {
+        throw new Error('not used');
+      },
+      async gradeAnswer(): Promise<never> {
+        throw new Error('not used');
+      },
+      async estimateTopics(): Promise<never> {
+        throw new Error('not used');
+      },
+    };
+
+    const result = await processExtractTopics(
+      db,
+      dataRoot,
+      { subjectId, docIds: [docId], force: false },
+      fakeProvider,
+    );
+
+    expect(result.topicsCreated).toBe(1);
+    const topicRows = await db.select().from(topics).where(eq(topics.subjectId, subjectId));
+    const child = topicRows.find((t) => t.name === 'Entropia');
+    expect(child?.parentId).toBe(parentId);
+  });
+
+  it('sets parentId when a proposed topic names a top-level sibling proposed in the same batch', async () => {
+    const fakeProvider: AiProvider = {
+      name: 'test-fixed',
+      async extractTopics(): Promise<GeneratedWithMeta<ExtractTopicsOutput>> {
+        return {
+          data: {
+            topics: [
+              { name: 'Termodinamica', docIds: [secondDocId], confidence: 0.9, parentName: null },
+              { name: 'Entropia', docIds: [docId], confidence: 0.9, parentName: 'Termodinamica' },
+            ],
+          },
+          usage: { inputTokens: 5, outputTokens: 5 },
+          model: 'test-model',
+          promptVersion: 'extract_topics/v2',
+        };
+      },
+      async generateFlashcards(): Promise<never> {
+        throw new Error('not used');
+      },
+      async generateSummary(): Promise<never> {
+        throw new Error('not used');
+      },
+      async generateSchema(): Promise<never> {
+        throw new Error('not used');
+      },
+      async extractExamProfile(): Promise<never> {
+        throw new Error('not used');
+      },
+      async generateSimulation(): Promise<never> {
+        throw new Error('not used');
+      },
+      async gradeAnswer(): Promise<never> {
+        throw new Error('not used');
+      },
+      async estimateTopics(): Promise<never> {
+        throw new Error('not used');
+      },
+    };
+
+    const result = await processExtractTopics(
+      db,
+      dataRoot,
+      { subjectId, docIds: [docId, secondDocId], force: false },
+      fakeProvider,
+    );
+
+    expect(result.topicsCreated).toBe(2);
+    const topicRows = await db.select().from(topics).where(eq(topics.subjectId, subjectId));
+    const parent = topicRows.find((t) => t.name === 'Termodinamica');
+    const child = topicRows.find((t) => t.name === 'Entropia');
+    expect(parent?.parentId).toBeNull();
+    expect(child?.parentId).toBe(parent?.id);
+  });
+
+  it('collapses a hallucinated or self-referencing parentName to top-level instead of trusting or rejecting it', async () => {
+    const fakeProvider: AiProvider = {
+      name: 'test-fixed',
+      async extractTopics(): Promise<GeneratedWithMeta<ExtractTopicsOutput>> {
+        return {
+          data: {
+            topics: [
+              {
+                name: 'Entropia',
+                docIds: [docId],
+                confidence: 0.9,
+                parentName: 'Se stessa non esiste',
+              },
+              {
+                name: 'Termodinamica',
+                docIds: [secondDocId],
+                confidence: 0.9,
+                parentName: 'Termodinamica',
+              },
+            ],
+          },
+          usage: { inputTokens: 5, outputTokens: 5 },
+          model: 'test-model',
+          promptVersion: 'extract_topics/v2',
+        };
+      },
+      async generateFlashcards(): Promise<never> {
+        throw new Error('not used');
+      },
+      async generateSummary(): Promise<never> {
+        throw new Error('not used');
+      },
+      async generateSchema(): Promise<never> {
+        throw new Error('not used');
+      },
+      async extractExamProfile(): Promise<never> {
+        throw new Error('not used');
+      },
+      async generateSimulation(): Promise<never> {
+        throw new Error('not used');
+      },
+      async gradeAnswer(): Promise<never> {
+        throw new Error('not used');
+      },
+      async estimateTopics(): Promise<never> {
+        throw new Error('not used');
+      },
+    };
+
+    const result = await processExtractTopics(
+      db,
+      dataRoot,
+      { subjectId, docIds: [docId, secondDocId], force: false },
+      fakeProvider,
+    );
+
+    expect(result.topicsCreated).toBe(2);
+    const topicRows = await db.select().from(topics).where(eq(topics.subjectId, subjectId));
+    for (const t of topicRows) {
+      expect(t.parentId).toBeNull();
+    }
+  });
+
   it('is idempotent end-to-end via runJob: second run does not re-tag or re-spend', async () => {
     const input = { subjectId, docIds: [docId, secondDocId], force: false };
     const first = (await runJob(db, dataRoot, {
@@ -280,7 +462,12 @@ describe('processExtractTopics', () => {
     await db.insert(settings).values({ key: 'budget.dailyCapEur', value: 0 });
 
     await expect(
-      processExtractTopics(db, dataRoot, { subjectId, docIds: [docId], force: false }, pricedProvider),
+      processExtractTopics(
+        db,
+        dataRoot,
+        { subjectId, docIds: [docId], force: false },
+        pricedProvider,
+      ),
     ).rejects.toBeInstanceOf(BudgetExceededError);
 
     const result = await processExtractTopics(

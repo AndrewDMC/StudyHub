@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { artifactSources, artifacts, flashcards, subjects } from '@studyhub/db';
 import { resolveSubjectSubpath } from '@studyhub/core';
+import { embedTexts } from '@studyhub/ai/embeddings';
 import {
   resolveProvider,
   estimateCostEur,
@@ -15,6 +16,7 @@ import type { GenerateFlashcardsJobInput } from '@studyhub/contracts';
 import {
   checkBudget,
   computeJobKey,
+  dedupeSemanticFlashcards,
   findIdempotentArtifactId,
   resolveScopeChunks,
 } from './shared.js';
@@ -25,6 +27,7 @@ export interface GenerateFlashcardsResult {
   artifactId: string;
   cardCount: number;
   discardedCount: number;
+  semanticDuplicateCount: number;
   idempotent: boolean;
   jobKey: string;
   costEur: number;
@@ -44,6 +47,8 @@ export async function processGenerateFlashcards(
   input: GenerateFlashcardsJobInput,
   /** Injectable for tests (e.g. to exercise citation rejection/dedup deterministically). */
   provider: AiProvider = resolveProvider(),
+  /** Injectable for tests — the real one loads an ONNX model, far too slow/heavy for unit tests. */
+  embed: (texts: string[]) => Promise<number[][]> = embedTexts,
 ): Promise<GenerateFlashcardsResult> {
   const [subject] = await db.select().from(subjects).where(eq(subjects.id, input.subjectId));
   if (!subject) throw new Error(`subject not found: ${input.subjectId}`);
@@ -73,6 +78,7 @@ export async function processGenerateFlashcards(
       artifactId: existingArtifactId,
       cardCount: existingCards.length,
       discardedCount: 0,
+      semanticDuplicateCount: 0,
       idempotent: true,
       jobKey,
       costEur: 0,
@@ -104,9 +110,7 @@ export async function processGenerateFlashcards(
     cited.push(card);
   }
 
-  // Exact-text dedup (docs/03 §3.1 wants semantic/cosine dedup against
-  // embeddings, which aren't wired in yet — reduced to exact-match here,
-  // see docs/fasi/F3-ai-core.md "Stato" addendum).
+  // Exact-text dedup first — cheap, catches literal repeats within this batch.
   const seenFronts = new Set<string>();
   const deduped = cited.filter((c) => {
     const key = c.front.trim().toLowerCase();
@@ -114,6 +118,11 @@ export async function processGenerateFlashcards(
     seenFronts.add(key);
     return true;
   });
+
+  // Semantic dedup second (docs/fasi/F3-ai-core.md "Stato"): catches a paraphrase of a fact
+  // already covered, either earlier in this same batch or by an existing card in the subject.
+  const { accepted: deduplicated, duplicateCount: semanticDuplicateCount } =
+    await dedupeSemanticFlashcards(db, input.subjectId, deduped, embed);
 
   const costEur = estimateCostEur(
     result.model,
@@ -138,7 +147,14 @@ export async function processGenerateFlashcards(
         sourceDocIds: uniqueDocIds,
         approvedAt: null,
         createdAt: new Date().toISOString(),
-        cards: deduped,
+        // `embedding` is internal (semantic dedup only) — never leaks into the artifact file.
+        cards: deduplicated.map((c) => ({
+          type: c.type,
+          front: c.front,
+          back: c.back,
+          hint: c.hint,
+          sourceRef: c.sourceRef,
+        })),
       },
       null,
       2,
@@ -150,16 +166,16 @@ export async function processGenerateFlashcards(
     id: deckId,
     subjectId: input.subjectId,
     kind: 'flashcard_deck',
-    title: `Flashcard — ${deduped.length} carte`,
+    title: `Flashcard — ${deduplicated.length} carte`,
     path: artifactPath,
     model: result.model,
     promptVersion: result.promptVersion,
     costEur,
   });
 
-  if (deduped.length > 0) {
+  if (deduplicated.length > 0) {
     await db.insert(flashcards).values(
-      deduped.map((c) => ({
+      deduplicated.map((c) => ({
         id: randomUUID(),
         deckId,
         type: c.type,
@@ -167,6 +183,7 @@ export async function processGenerateFlashcards(
         back: c.back,
         hint: c.hint ?? null,
         sourceRef: c.sourceRef,
+        embedding: c.embedding,
       })),
     );
   }
@@ -178,8 +195,9 @@ export async function processGenerateFlashcards(
 
   return {
     artifactId: deckId,
-    cardCount: deduped.length,
+    cardCount: deduplicated.length,
     discardedCount: discarded,
+    semanticDuplicateCount,
     idempotent: false,
     jobKey,
     costEur,

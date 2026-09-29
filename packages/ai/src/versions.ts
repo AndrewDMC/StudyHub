@@ -23,4 +23,4 @@ export const EXAM_PROFILE_PROMPT_VERSION = loadPrompt('exam_profile', 1).promptV
 export const SIMULATION_PROMPT_VERSION = loadPrompt('simulation', 2).promptVersion;
 export const GRADING_PROMPT_VERSION = loadPrompt('grading', 1).promptVersion;
 export const ESTIMATE_TOPICS_PROMPT_VERSION = loadPrompt('estimate_topics', 1).promptVersion;
-export const EXTRACT_TOPICS_PROMPT_VERSION = loadPrompt('extract_topics', 1).promptVersion;
+export const EXTRACT_TOPICS_PROMPT_VERSION = loadPrompt('extract_topics', 2).promptVersion;

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { FlashcardTypeSchema } from '@studyhub/ai';
 import { FlashcardDtoSchema } from './generation.js';
 
 export const FsrsRatingSchema = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]);
@@ -18,6 +19,8 @@ export const FsrsCardStateSchema = z.enum(['new', 'learning', 'review', 'relearn
 export const FlashcardStatsDtoSchema = z.object({
   countsByState: z.record(FsrsCardStateSchema, z.number().int().nonnegative()),
   suspendedCount: z.number().int().nonnegative(),
+  /** Cards reported as low quality during review: out of the queue and of every count above. */
+  flaggedCount: z.number().int().nonnegative(),
   forecast: z.array(z.object({ date: z.string(), count: z.number().int().nonnegative() })),
   atRiskForNextExam: z
     .object({
@@ -27,6 +30,28 @@ export const FlashcardStatsDtoSchema = z.object({
       totalCount: z.number().int().nonnegative(),
     })
     .nullable(),
+  /** Mastery heatmap: one cell per topic (docs/fasi/F4-flashcard.md "heatmap mastery per argomento"). */
+  topicMastery: z.array(
+    z.object({
+      topicId: z.string().uuid(),
+      name: z.string(),
+      mastery: z.number().min(0).max(1).nullable(),
+      cardCount: z.number().int().nonnegative(),
+    }),
+  ),
+  /** Real vs predicted retention, from the reviews log ("curva di ritenzione reale vs prevista"). */
+  retention: z.object({
+    sampleCount: z.number().int().nonnegative(),
+    buckets: z.array(
+      z.object({
+        from: z.number(),
+        to: z.number(),
+        predicted: z.number(),
+        actual: z.number(),
+        count: z.number().int().positive(),
+      }),
+    ),
+  }),
 });
 export type FlashcardStatsDto = z.infer<typeof FlashcardStatsDtoSchema>;
 
@@ -40,6 +65,10 @@ export const ListFlashcardsQuerySchema = z.object({
   topicId: z.string().uuid().optional(),
   state: FsrsCardStateSchema.optional(),
   suspended: z.boolean().optional(),
+  flagged: z.boolean().optional(),
+  deckId: z.string().uuid().optional(),
+  tag: z.string().optional(),
+  q: z.string().optional(),
   cursor: z.string().optional(),
   limit: z.number().int().positive().max(200).default(50),
 });
@@ -50,3 +79,57 @@ export const FlashcardPageDtoSchema = z.object({
   nextCursor: z.string().nullable(),
 });
 export type FlashcardPageDto = z.infer<typeof FlashcardPageDtoSchema>;
+
+/**
+ * Deck editor (docs/fasi/F4-flashcard.md "Editor deck": crea/modifica/sposta/elimina card, merge
+ * di deck, tag).
+ */
+const TagSchema = z.string().trim().min(1).max(40);
+
+export const CreateFlashcardRequestSchema = z.object({
+  deckId: z.string().uuid(),
+  type: FlashcardTypeSchema.default('basic'),
+  front: z.string().trim().min(1, 'Il fronte non può essere vuoto'),
+  back: z.string().trim().min(1, 'Il retro non può essere vuoto'),
+  hint: z.string().nullable().optional(),
+  topicId: z.string().uuid().nullable().optional(),
+  tags: z.array(TagSchema).max(20).optional(),
+});
+export type CreateFlashcardRequest = z.infer<typeof CreateFlashcardRequestSchema>;
+
+export const UpdateFlashcardRequestSchema = z
+  .object({
+    type: FlashcardTypeSchema,
+    front: z.string().trim().min(1, 'Il fronte non può essere vuoto'),
+    back: z.string().trim().min(1, 'Il retro non può essere vuoto'),
+    hint: z.string().nullable(),
+    topicId: z.string().uuid().nullable(),
+    deckId: z.string().uuid(),
+    tags: z.array(TagSchema).max(20),
+    suspended: z.boolean(),
+    /** true = "segnala card scadente" (excluded from the queue, collected); false = clear the flag. */
+    flagged: z.boolean(),
+  })
+  .partial()
+  .refine((v) => Object.keys(v).length > 0, { message: 'Nessun campo da aggiornare' });
+export type UpdateFlashcardRequest = z.infer<typeof UpdateFlashcardRequestSchema>;
+
+export const BulkFlashcardsRequestSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(500),
+  action: z.discriminatedUnion('type', [
+    z.object({ type: z.literal('delete') }),
+    z.object({ type: z.literal('suspend'), suspended: z.boolean() }),
+    z.object({ type: z.literal('move'), deckId: z.string().uuid() }),
+    z.object({ type: z.literal('topic'), topicId: z.string().uuid().nullable() }),
+    z.object({ type: z.literal('addTag'), tag: TagSchema }),
+    z.object({ type: z.literal('removeTag'), tag: TagSchema }),
+  ]),
+});
+export type BulkFlashcardsRequest = z.infer<typeof BulkFlashcardsRequestSchema>;
+
+export const MergeDecksRequestSchema = z
+  .object({ sourceDeckId: z.string().uuid(), targetDeckId: z.string().uuid() })
+  .refine((v) => v.sourceDeckId !== v.targetDeckId, {
+    message: 'Scegli due mazzi diversi',
+  });
+export type MergeDecksRequest = z.infer<typeof MergeDecksRequestSchema>;

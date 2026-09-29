@@ -119,6 +119,11 @@ export function retrievability(schedule: FlashcardSchedule, at: Date = new Date(
   return forgetting_curve(elapsedDays, schedule.stability);
 }
 
+/** FSRS forgetting curve directly: recall probability `elapsedDays` after a review that left `stability`. */
+export function retrievabilityAfter(elapsedDays: number, stability: number): number {
+  return forgetting_curve(Math.max(0, elapsedDays), stability);
+}
+
 export function isDue(schedule: FlashcardSchedule, at: Date = new Date()): boolean {
   if (schedule.state === 'new') return true;
   return (schedule.dueAt?.getTime() ?? 0) <= at.getTime();

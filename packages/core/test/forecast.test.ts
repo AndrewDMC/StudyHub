@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cardsAtRiskForExam, forecastDueCounts } from '../src/forecast.js';
-import { newCardSchedule, scheduleReview, type FlashcardSchedule } from '../src/fsrs.js';
+import { isDue, newCardSchedule, scheduleReview, type FlashcardSchedule } from '../src/fsrs.js';
 
 const FIXED_NOW = new Date('2026-01-01T00:00:00.000Z');
 
@@ -82,5 +82,31 @@ describe('cardsAtRiskForExam', () => {
     const strict = cardsAtRiskForExam([{ id: 'x', schedule }], examDate, 0.99);
     const lenient = cardsAtRiskForExam([{ id: 'x', schedule }], examDate, 0.01);
     expect(strict.length).toBeGreaterThanOrEqual(lenient.length);
+  });
+
+  it('agrees with real scheduling over 30 days for a varied deck (F4 acceptance criterion)', () => {
+    // 60 cards first reviewed at different hours of day 0, rated Again/Hard/Good/Easy in turn, so
+    // real due dates range from minutes to weeks. The forecast must put each card on exactly the
+    // day `isDue` (a different code path than the bucketing) first says it is due.
+    const start = new Date('2026-01-01T00:00:00.000Z');
+    const schedules: FlashcardSchedule[] = Array.from({ length: 60 }, (_, i) => {
+      const reviewedAt = new Date(start.getTime() + (i % 24) * 3_600_000);
+      const rating = ((i % 4) + 1) as 1 | 2 | 3 | 4;
+      return scheduleReview(newCardSchedule(), rating, reviewedAt).schedule;
+    });
+
+    const forecast = forecastDueCounts(schedules, 30, start);
+
+    const endOfDay = (d: number) => new Date(start.getTime() + (d + 1) * 86_400_000 - 1);
+    const expected = Array.from(
+      { length: 30 },
+      (_, d) =>
+        schedules.filter((s) => isDue(s, endOfDay(d)) && (d === 0 || !isDue(s, endOfDay(d - 1))))
+          .length,
+    );
+    expect(forecast.map((f) => f.count)).toEqual(expected);
+    // Nothing is lost inside the horizon: cards due later are the only ones missing.
+    const beyond = schedules.filter((s) => !isDue(s, endOfDay(29))).length;
+    expect(expected.reduce((a, b) => a + b, 0) + beyond).toBe(60);
   });
 });

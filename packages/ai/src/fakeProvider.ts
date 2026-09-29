@@ -349,18 +349,33 @@ export class FakeProvider implements AiProvider {
     // below: it proves the pipeline (dedup-by-name, document_topics
     // tagging) moves genuine per-document data, not a canned answer.
     const docIdsByKeyword = new Map<string, string[]>();
+    const keywordsByDoc = new Map<string, string[]>();
     for (const doc of input.documents) {
-      const topKeyword = keywords(doc.excerpt)[0] ?? `documento-${doc.docId.slice(0, 8)}`;
+      const docKeywords = keywords(doc.excerpt);
+      keywordsByDoc.set(doc.docId, docKeywords);
+      const topKeyword = docKeywords[0] ?? `documento-${doc.docId.slice(0, 8)}`;
       const docIds = docIdsByKeyword.get(topKeyword) ?? [];
       docIds.push(doc.docId);
       docIdsByKeyword.set(topKeyword, docIds);
     }
 
-    const topics: ExtractedTopic[] = [...docIdsByKeyword.entries()].map(([keyword, docIds]) => ({
-      name: keyword.charAt(0).toUpperCase() + keyword.slice(1),
-      docIds,
-      confidence: 0.5,
-    }));
+    // A topic's parent is its member documents' second-ranked keyword, but only when that
+    // keyword actually names another known topic (existing in the subject, or proposed in this
+    // same batch) — otherwise it stays top-level, same "real signal, never invented" discipline
+    // as the docId citations above.
+    const knownNames = new Set([
+      ...(input.existingTopics ?? []).map((t) => t.name.toLowerCase()),
+      ...docIdsByKeyword.keys(),
+    ]);
+    const topics: ExtractedTopic[] = [...docIdsByKeyword.entries()].map(([keyword, docIds]) => {
+      const name = keyword.charAt(0).toUpperCase() + keyword.slice(1);
+      const secondKeyword = keywordsByDoc.get(docIds[0]!)?.[1];
+      const parentName =
+        secondKeyword && secondKeyword !== keyword && knownNames.has(secondKeyword)
+          ? secondKeyword.charAt(0).toUpperCase() + secondKeyword.slice(1)
+          : null;
+      return { name, docIds, confidence: 0.5, parentName };
+    });
 
     const inputTokens = input.documents.reduce((sum, d) => sum + estimateTokens(d.excerpt), 0);
     const outputTokens = estimateTokens(JSON.stringify(topics));

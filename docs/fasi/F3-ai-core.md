@@ -151,16 +151,131 @@ route esistenti), sostituendo il default fisso per quella generazione. **Non imp
 stima non copre `generate_simulation`/`extract_topics`; nessun costo storico per confrontare stima
 vs reale.
 
+**Aggiornamento (2026-09-28)**: dedup semantica delle flashcard — ora reale, non più solo testo
+esatto. F1 ha collegato gli embeddings (pgvector, `Xenova/all-MiniLM-L6-v2`, 384 dim) per i chunk;
+questo aggiornamento aggiunge la stessa colonna a `flashcards` (`embedding`, migrazione
+`0013_add_flashcards_embedding.sql`) e la usa per un secondo livello di dedup, dopo quello per
+testo esatto già esistente:
+
+- `apps/worker/src/processors/generation/shared.ts::dedupeSemanticFlashcards` — embed del `front`
+  di ogni card sopravvissuta al gate anti-allucinazione e al dedup testuale, confronto coseno
+  (`>0.92`) contro **due insiemi**: le flashcard già esistenti della materia con un `embedding`
+  salvato (attraverso ogni deck, non solo quello appena generato — query su `flashcards` join
+  `artifacts.subjectId`) e le altre card dello stesso batch già accettate (così una parafrasi
+  interna al batch non sopravvive solo perché il testo esatto differisce). L'embedding accettato
+  viene salvato sulla riga, così diventa parte del confronto per la prossima generazione.
+- **Scelta deliberata**: le flashcard create prima di questo aggiornamento hanno `embedding: null`
+  e non vengono mai confrontate — nessun backfill in blocco alla prima generazione successiva,
+  che sarebbe un effetto collaterale sorprendente di una chiamata altrimenti innocua. L'embedding
+  si accumula solo in avanti, da qui in poi.
+- `apps/worker/src/processors/generation/generateFlashcards.ts::processGenerateFlashcards` prende
+  ora un sesto parametro iniettabile `embed` (default: `embedTexts` reale) — lo stesso pattern già
+  usato per `provider`, per permettere ai test di sostituire il modello ONNX reale (lento, scarica
+  pesi al primo uso) con un embedder deterministico. Il nuovo campo `semanticDuplicateCount` nel
+  risultato del job è distinto da `discardedCount` (che resta solo per le citazioni non verbatim).
+- 2 test nuovi in `apps/worker/test/generateFlashcards.test.ts` (`describe('semantic dedup')`):
+  una parafrasi scartata all'interno dello stesso batch con una card diversa che sopravvive
+  nell'ordine giusto; una card nuova scartata perché coincide con una flashcard già esistente
+  (embedding pre-inserito) — quest'ultimo è il caso esplicitamente citato dalla spec ("contro le
+  card esistenti"), non solo il dedup all'interno di un'unica generazione. Ogni chiamata diretta
+  del file di test ora passa un embedder finto deterministico (vettori 384-dim quasi-ortogonali
+  per stringhe diverse, via hash+PRNG) invece del modello reale; la sola chiamata che passa da
+  `runJob` (nessun parametro iniettabile a disposizione) è protetta con `vi.mock('@studyhub/ai/
+embeddings')`. Test aggiuntivo in `packages/db/test/schema.test.ts` per il round-trip della
+  colonna. **Non verificato dal vivo in un worker reale** (nessuna chiamata a un vero Docker/Redis
+  in questa sessione): la logica di dedup è testata a livello di libreria con Postgres vero
+  (pglite) e matematica del coseno reale, coerente con come questo file documenta già le altre
+  parti di F3, ma non c'è una feature di UI dedicata da ispezionare in un browser (nessun contatore
+  "N scartate per somiglianza" mostrato oggi — `semanticDuplicateCount` resta nell'output del job,
+  non renderizzato).
+
+**Aggiornamento (2026-09-28)**: raggruppamento gerarchico in `extract_topics` — colmato il gap
+dichiarato nell'aggiornamento del 2026-09-25 ("ogni argomento proposto è sempre alla radice,
+`parentId: null`"). Nuovo prompt `packages/ai/prompts/extract_topics/v2.md` (sostituisce v1 per le
+nuove estrazioni; v1 resta come storico dei job già eseguiti con quello), che aggiunge un campo
+`parentName` a ogni argomento proposto — il genitore dev'essere il nome esatto di un argomento già
+esistente nella materia (elencati nel prompt utente) oppure il nome di un altro argomento proposto
+nello stesso batch, mai inventato, `null` di default. Stesso stile di validazione anti-allucinazione
+già usato per i `docId` delle citazioni, applicato in
+`apps/worker/src/processors/generation/extractTopics.ts::processExtractTopics`: un `parentName` che
+non risolve a un nome noto (esistente in materia o proposto nello stesso batch), che punta a sé
+stesso, o che punta a un altro argomento proposto **non** di primo livello (niente catene di più di
+un livello per batch — si raffina su estrazioni successive) collassa a `null` invece di essere
+scartato o fidato ciecamente; i proposti "radice" vengono processati prima dei "figli" così l'id del
+genitore fratello esiste già in mappa quando serve. La colonna `parentId` (`packages/db/src/schema.ts`)
+esisteva già da F2 (usata da `mergeTopics`/riordino manuale) — questo aggiornamento è il primo a
+popolarla lato AI. `FakeProvider.extractTopics` (`packages/ai/src/fakeProvider.ts`) esercita la
+stessa logica in modo deterministico: la seconda parola chiave dei documenti di un argomento
+diventa il suo genitore solo se nomina un argomento realmente noto (esistente o proposto), altrimenti
+resta di primo livello — stesso principio "segnale vero, mai inventato" del resto del provider finto.
+Nuovi test in `apps/worker/test/extractTopics.test.ts` (genitore fra gli esistenti, genitore fra i
+proposti dello stesso batch, `parentName` allucinato/auto-referenziale scartato a `null`) e in
+`packages/ai/test/fakeProvider.test.ts`.
+
+**Aggiornamento (2026-09-28)**: la stima costo pre-flight copre ora anche `generate_simulation` ed
+`extract_topics` — colmato il gap dichiarato nell'aggiornamento del 2026-09-26 ("la stima non
+copre `generate_simulation`/`extract_topics`"). `GenerationKindSchema`
+(`packages/contracts/src/generation.ts`) ha ora cinque varianti invece di tre
+(`flashcards`/`schema`/`summary`/`simulation`/`extract_topics`); `estimateGenerationCost`
+(`apps/web/src/lib/generation.ts`) resta lo stesso codice — un `Record<GenerationKind, number>`
+tipato dal compilatore obbliga ad aggiungere un rapporto di compressione anche per i due nuovi
+kind (`simulation: 0.35`, `extract_topics: 0.05` — quest'ultimo più basso perché l'output è solo
+una manciata di nomi brevi, non contenuto pieno). Lato UI: `TopicsPanel` (bottone "Suggerisci
+argomenti (AI)") ed `ExamPrepPanel` (bottoni "Simula esame"/"Drill") ora hanno un `ModelPicker` e
+mostrano il costo stimato prima del click, stesso pattern già in `GenerationPanel`; il modello
+scelto viaggia nel job (`model` nel body), sostituendo il default fisso per quella generazione.
+`ExamPrepPanel` riceve ora anche `documents` (prima non gli serviva) per calcolare lo scope della
+stima — solo i documenti di studio già pronti, mai i documenti di tipo `esami` da cui il profilo
+stesso proviene, stesso principio già codificato in `processGenerateSimulation`. **Deliberatamente
+fuori scope**: `extract_exam_profile` ("Estrai profilo"/"Ri-estrai profilo") resta senza stima né
+scelta modello — la spec citava solo `generate_simulation`/`extract_topics`, e il suo job input non
+espone `model` lato route (`apps/web/src/app/api/subjects/[slug]/exam-profile/route.ts`) ancora.
+
+**Aggiornamento (2026-09-28)**: CLI `studyhub generate <flashcards|schema|summary> <subjectSlug>
+--dry-run --json` — colma il gap dichiarato poco sopra ("non implementato in questa sessione").
+Nuovo `apps/cli/src/commands/generate.ts::buildGenerationDryRun`, riusa esattamente le funzioni già
+esistenti citate dal piano originale: `resolveScopeChunks` (`@studyhub/worker/lib`, stessa
+risoluzione scope `docIds`/`topicIds` del worker), `render*UserPrompt`/`loadPrompt`
+(`@studyhub/ai`, le stesse funzioni che `AnthropicProvider`/`ClaudeCliProvider` chiamano davvero —
+il prompt stampato è esattamente quello che partirebbe, non una ricostruzione approssimata), ed
+`estimateCostEur`. **Deliberatamente solo dry-run, senza modalità "wet"**: eseguire per davvero
+`generate_flashcards`/`generate_schema`/`generate_summary` richiede un worker BullMQ in ascolto, che
+è già interamente coperto da worker+web UI — aggiungere un secondo percorso di esecuzione via CLI
+sarebbe stata duplicazione, non copertura di un gap. Il flag `--dry-run` (default `true`) esiste per
+coerenza col nome richiesto dalla spec; `--no-dry-run` stampa un messaggio chiaro e esce con
+`exitCode: 1` invece di fingere di generare. Differenza rispetto alla stima pre-flight della web UI
+(`apps/web/src/lib/generation.ts`): quella conta solo il testo dei chunk **prima** di costruire il
+prompt (approssimazione, serve a essere veloce in UI); il dry-run CLI ha già il prompt finale
+renderizzato in mano, quindi conta i token direttamente su quello — più preciso, non un duplicato
+dello stesso calcolo. Il rapporto di compressione output/input (`OUTPUT_TOKEN_RATIO`) è duplicato
+deliberatamente fra i due file invece di condiviso: `apps/cli` non dipende da `apps/web`
+(`docs/01-architettura.md` "cli è lo stesso codice del worker, non della web app"). 6 test nuovi in
+`apps/cli/test/generate.test.ts` (prompt reale/costo positivo per i tre kind, `--model` esplicito
+cambia la stima, scope via `topicIds`, errore chiaro senza scope, `SubjectNotFoundCliError`).
+Verificato anche dal vivo (non solo pglite): Postgres reale in Docker, materia+documento seedati,
+`studyhub generate flashcards/schema fisica-1 --docs ... [--json]` e `--no-dry-run` eseguiti dalla
+build `tsx` della CLI, output ispezionato a mano.
+
+**Aggiornamento (2026-09-28)**: eval harness ampliato da 2 a 9 fixture in
+`packages/ai/evals/flashcards/golden.test.ts` — dentro il range "5-10 documenti" della spec
+(docs/03-ai-e-worker.md §6), anche se restano **sintetiche**, non documenti reali caricati (nessun
+materiale reale disponibile in questa sessione, dichiarato esplicitamente nel commento del file
+stesso, non nascosto). Le 7 fixture nuove coprono domini di materia distinti dai 2 originali
+(termodinamica STEM, diritto costituzionale umanistico): biologia cellulare, algoritmi/complessità,
+rivoluzione francese, microeconomia, chimica dei legami, analisi/derivate, psicologia della
+memoria — la varietà di dominio conta più del numero puro, perché una regressione del prompt che
+si manifesta solo su testo denso di formule/numeri (es. "algoritmi-complessita",
+"analisi-derivate") sarebbe rimasta invisibile con solo le 2 fixture originali, entrambe a
+prevalenza discorsiva. Ogni fixture resta uno-o-più paragrafi fitti di fatti verificabili (date,
+nomi, formule) nello stesso stile delle 2 originali, non prosa generica, così `assertQualityBar`
+(stessa funzione, invariata) continua a esercitare per davvero il gate anti-allucinazione: citazioni
+verbatim, niente duplicati esatti nel deck, niente domande sì/no. `pnpm --filter @studyhub/ai eval`
+gira in <1s (9 test, tutti verdi) — resta uno smoke test della pipeline di estrazione/validazione
+contro `FakeProvider`, non una valutazione della qualità di giudizio di un modello reale (che
+richiederebbe `AnthropicProvider` con una chiave vera, non disponibile qui).
+
 **Non implementato** in questa slice (limiti dichiarati, non nascosti):
 
-- **Dedup semantica** (cosine > 0.92 contro le card esistenti del deck): ridotta a dedup per testo
-  esatto del `front` — la dedup semantica serve embeddings, non ancora collegati (vedi F1).
-- **Eval harness**: 2 fixture (`packages/ai/evals/flashcards/`, STEM + umanistica), non le "5-10
-  documenti reali" della spec — sufficienti a far girare `pnpm eval` prima di un bump di versione
-  del prompt, non a validare la qualità di un modello reale.
-- **CLI**: `studyhub generate flashcards/summary --dry-run --json` (docs/03 §5) non implementato in
-  questa sessione — il worker e la UI coprono il ciclo completo (genera → revisiona → approva), il
-  parallelo CLI segue lo stesso pattern di `apps/cli/src/commands/subject.ts` quando serve.
 - **Test di regressione prompt injection** ("un documento con _ignora le istruzioni precedenti_..."):
   il prompt incapsula sempre il materiale in `<document>` con l'istruzione esplicita di ignorare
   comandi al suo interno (`packages/ai/prompts/*/v1.md`), ma non esiste un test automatico che lo

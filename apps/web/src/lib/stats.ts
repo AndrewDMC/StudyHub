@@ -1,11 +1,14 @@
-import { and, eq, gt } from 'drizzle-orm';
-import { artifacts, exams, flashcards, subjects, type Flashcard } from '@studyhub/db';
+import { and, eq, gt, sql } from 'drizzle-orm';
+import { artifacts, exams, flashcards, subjects, topics, type Flashcard } from '@studyhub/db';
 import {
   cardsAtRiskForExam,
   forecastDueCounts,
+  retentionCalibration,
   type FlashcardSchedule,
   type FsrsCardState,
+  type ReviewSample,
 } from '@studyhub/core';
+import type { FlashcardStatsDto } from '@studyhub/contracts';
 import { SubjectNotFoundError } from './errors';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -29,17 +32,7 @@ async function requireSubject(db: AnyDb, subjectSlug: string) {
   return subject;
 }
 
-export interface FlashcardStats {
-  countsByState: Record<FsrsCardState, number>;
-  suspendedCount: number;
-  forecast: { date: string; count: number }[];
-  atRiskForNextExam: {
-    examTitle: string;
-    examDate: string;
-    atRiskCount: number;
-    totalCount: number;
-  } | null;
-}
+export type FlashcardStats = FlashcardStatsDto;
 
 /** docs/fasi/F4-flashcard.md "Statistiche": counts by state, 30-day forecast, exam risk. */
 export async function getFlashcardStats(db: AnyDb, subjectSlug: string): Promise<FlashcardStats> {
@@ -50,7 +43,11 @@ export async function getFlashcardStats(db: AnyDb, subjectSlug: string): Promise
     .from(flashcards)
     .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
     .where(eq(artifacts.subjectId, subject.id));
-  const cards = joined.map((r) => r.f);
+  const all = joined.map((r) => r.f);
+  // A flagged ("scadente") card is out of the queue, so it must be out of every number that
+  // describes the queue too — counts, forecast, exam risk.
+  const cards = all.filter((c) => !c.flaggedAt);
+  const flaggedCount = all.length - cards.length;
 
   const countsByState: Record<FsrsCardState, number> = {
     new: 0,
@@ -94,5 +91,80 @@ export async function getFlashcardStats(db: AnyDb, subjectSlug: string): Promise
     };
   }
 
-  return { countsByState, suspendedCount, forecast, atRiskForNextExam };
+  const [topicMastery, retention] = await Promise.all([
+    getTopicMastery(db, subject.id, cards),
+    getRetention(db, subject.id),
+  ]);
+
+  return {
+    countsByState,
+    suspendedCount,
+    flaggedCount,
+    forecast,
+    atRiskForNextExam,
+    topicMastery,
+    retention,
+  };
+}
+
+/** One heatmap cell per topic: stored mastery (docs/02 §5) plus how many live cards it holds. */
+async function getTopicMastery(
+  db: AnyDb,
+  subjectId: string,
+  cards: Flashcard[],
+): Promise<FlashcardStats['topicMastery']> {
+  const rows: { id: string; name: string; mastery: number | null }[] = await db
+    .select({ id: topics.id, name: topics.name, mastery: topics.mastery })
+    .from(topics)
+    .where(eq(topics.subjectId, subjectId))
+    .orderBy(topics.orderIndex, topics.name);
+
+  const perTopic = new Map<string, number>();
+  for (const card of cards) {
+    if (card.topicId && !card.suspended) {
+      perTopic.set(card.topicId, (perTopic.get(card.topicId) ?? 0) + 1);
+    }
+  }
+  return rows.map((t) => ({
+    topicId: t.id,
+    name: t.name,
+    mastery: t.mastery,
+    cardCount: perTopic.get(t.id) ?? 0,
+  }));
+}
+
+/**
+ * Real vs predicted retention from the `reviews` log. Each review after a card's first is a
+ * sample: the gap since that card's previous review, the stability it had then, and whether it
+ * was recalled. The gap comes from the log itself (LAG over the card's own history), not from
+ * the card's current state, so it stays correct however many reviews came since.
+ */
+async function getRetention(db: AnyDb, subjectId: string): Promise<FlashcardStats['retention']> {
+  const result = await db.execute(sql`
+    SELECT elapsed_days, prev_stability, rating
+    FROM (
+      SELECT r.rating,
+             r.prev_stability,
+             EXTRACT(EPOCH FROM (r.reviewed_at - LAG(r.reviewed_at) OVER (
+               PARTITION BY r.flashcard_id ORDER BY r.reviewed_at, r.id
+             ))) / 86400.0 AS elapsed_days,
+             a.subject_id
+      FROM reviews r
+      JOIN flashcards f ON f.id = r.flashcard_id
+      JOIN artifacts a ON a.id = f.deck_id
+    ) t
+    WHERE t.subject_id = ${subjectId} AND t.elapsed_days IS NOT NULL AND t.prev_stability IS NOT NULL
+  `);
+  const rows = (Array.isArray(result) ? result : ((result as { rows?: unknown }).rows ?? [])) as {
+    elapsed_days: number | string;
+    prev_stability: number | string;
+    rating: number | string;
+  }[];
+
+  const samples: ReviewSample[] = rows.map((r) => ({
+    elapsedDays: Number(r.elapsed_days),
+    prevStability: Number(r.prev_stability),
+    success: Number(r.rating) > 1,
+  }));
+  return { sampleCount: samples.length, buckets: retentionCalibration(samples) };
 }

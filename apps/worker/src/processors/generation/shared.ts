@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto';
-import { and, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
 import {
+  artifacts,
   chunks,
   documentTopics,
   documents,
+  flashcards,
   jobs,
   settings,
   topics,
@@ -183,4 +185,68 @@ export async function checkBudget(
   if (spent + estimatedCostEur > cap) {
     throw new BudgetExceededError(cap, spent, estimatedCostEur);
   }
+}
+
+// docs/03-ai-e-worker.md §3.1 / docs/fasi/F3-ai-core.md "Non implementato": above this cosine
+// similarity, two flashcard fronts are treated as the same fact restated, not two different cards.
+const SEMANTIC_DUPLICATE_THRESHOLD = 0.92;
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i]! * b[i]!;
+    normA += a[i]! * a[i]!;
+    normB += b[i]! * b[i]!;
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+/**
+ * Semantic dedup against the subject's already-embedded flashcards, plus the rest of the current
+ * batch (docs/fasi/F3-ai-core.md "Non implementato": exact-text dedup only, "serve embeddings, non
+ * ancora collegati" — F1 wired them in since). Runs *after* the exact-text dedup already in
+ * `processGenerateFlashcards`, so it only ever has to catch paraphrases, not literal repeats.
+ *
+ * A card whose citation reuses a chunk close to an existing card's is exactly the case this is
+ * for — two generation runs over overlapping scope shouldn't keep restating the same fact as a
+ * "new" card. Cards without a stored `embedding` yet (created before this feature shipped) are
+ * simply never compared against — no bulk backfill runs here, that would be a surprising side
+ * effect of an ordinary generation call.
+ */
+export async function dedupeSemanticFlashcards<T extends { front: string }>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  subjectId: string,
+  cards: T[],
+  embed: (texts: string[]) => Promise<number[][]>,
+): Promise<{ accepted: (T & { embedding: number[] })[]; duplicateCount: number }> {
+  if (cards.length === 0) return { accepted: [], duplicateCount: 0 };
+
+  const existingRows: { embedding: number[] | null }[] = await db
+    .select({ embedding: flashcards.embedding })
+    .from(flashcards)
+    .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
+    .where(and(eq(artifacts.subjectId, subjectId), isNotNull(flashcards.embedding)));
+
+  const pool: number[][] = existingRows.map((r) => r.embedding!);
+  const newEmbeddings = await embed(cards.map((c) => c.front));
+
+  const accepted: (T & { embedding: number[] })[] = [];
+  let duplicateCount = 0;
+  for (let i = 0; i < cards.length; i++) {
+    const vector = newEmbeddings[i]!;
+    const isDuplicate = pool.some(
+      (existing) => cosineSimilarity(existing, vector) > SEMANTIC_DUPLICATE_THRESHOLD,
+    );
+    if (isDuplicate) {
+      duplicateCount += 1;
+      continue;
+    }
+    accepted.push({ ...cards[i]!, embedding: vector });
+    pool.push(vector);
+  }
+  return { accepted, duplicateCount };
 }

@@ -311,7 +311,7 @@ export class ClaudeCliProvider implements AiProvider {
     input: ExtractTopicsPromptInput,
     model: string,
   ): Promise<GeneratedWithMeta<ExtractTopicsOutput>> {
-    const { text: system, promptVersion } = loadPrompt('extract_topics', 1);
+    const { text: system, promptVersion } = loadPrompt('extract_topics', 2);
     const { data, usage } = await this.callWithSchema(
       system,
       renderExtractTopicsUserPrompt(input),

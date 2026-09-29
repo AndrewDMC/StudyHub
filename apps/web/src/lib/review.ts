@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, lt, or } from 'drizzle-orm';
+import { and, desc, eq, ilike, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import {
   artifacts,
   flashcards,
@@ -29,7 +29,7 @@ export class FlashcardNotFoundError extends Error {
   }
 }
 
-function toDto(row: Flashcard): FlashcardDto {
+export function toDto(row: Flashcard): FlashcardDto {
   return {
     id: row.id,
     deckId: row.deckId,
@@ -41,6 +41,8 @@ function toDto(row: Flashcard): FlashcardDto {
     sourceRef: row.sourceRef,
     state: row.state,
     suspended: row.suspended,
+    tags: row.tags,
+    flaggedAt: row.flaggedAt ? row.flaggedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -84,7 +86,12 @@ export async function getReviewQueue(
   const cap = options.cap ?? 50;
   const newLimit = options.newLimit ?? 20;
 
-  const conditions = [eq(artifacts.subjectId, subject.id), eq(flashcards.suspended, false)];
+  // Flagged ("scadente") cards stay in the deck but never reach the queue (F4 "Rischi").
+  const conditions = [
+    eq(artifacts.subjectId, subject.id),
+    eq(flashcards.suspended, false),
+    isNull(flashcards.flaggedAt),
+  ];
   if (options.topicId) conditions.push(eq(flashcards.topicId, options.topicId));
 
   const joined: { f: Flashcard }[] = await db
@@ -168,6 +175,10 @@ export interface ListFlashcardsOptions {
   topicId?: string | undefined;
   state?: FsrsCardState | undefined;
   suspended?: boolean | undefined;
+  flagged?: boolean | undefined;
+  deckId?: string | undefined;
+  tag?: string | undefined;
+  q?: string | undefined;
   cursor?: string | undefined;
   limit?: number | undefined;
 }
@@ -198,6 +209,18 @@ export async function listFlashcards(
   if (options.topicId) conditions.push(eq(flashcards.topicId, options.topicId));
   if (options.state) conditions.push(eq(flashcards.state, options.state));
   if (options.suspended !== undefined) conditions.push(eq(flashcards.suspended, options.suspended));
+  if (options.flagged !== undefined) {
+    conditions.push(
+      options.flagged ? isNotNull(flashcards.flaggedAt) : isNull(flashcards.flaggedAt),
+    );
+  }
+  if (options.deckId) conditions.push(eq(flashcards.deckId, options.deckId));
+  if (options.tag) conditions.push(sql`${options.tag} = ANY(${flashcards.tags})`);
+  if (options.q) {
+    // Escape LIKE wildcards so a search for "100%" doesn't match everything.
+    const needle = `%${options.q.replace(/[\\%_]/g, '\\$&')}%`;
+    conditions.push(or(ilike(flashcards.front, needle), ilike(flashcards.back, needle))!);
+  }
   if (options.cursor) {
     const { createdAt, id } = decodeCursor(options.cursor);
     conditions.push(

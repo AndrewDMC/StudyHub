@@ -131,9 +131,11 @@ export function ArtifactReviewClient({
               <p className="text-xs uppercase tracking-wide text-fg-muted">{card.type}</p>
               <p className="mt-1 text-sm font-medium text-fg-primary">{card.front}</p>
               <p className="mt-1 text-sm text-fg-secondary">{card.back}</p>
-              <p className="mt-2 rounded-[var(--radius-control)] bg-bg-inset px-2 py-1 font-mono text-[11px] text-fg-muted">
-                pag. {card.sourceRef.page} — &quot;{card.sourceRef.quote}&quot;
-              </p>
+              {card.sourceRef && (
+                <p className="mt-2 rounded-[var(--radius-control)] bg-bg-inset px-2 py-1 font-mono text-[11px] text-fg-muted">
+                  pag. {card.sourceRef.page} — &quot;{card.sourceRef.quote}&quot;
+                </p>
+              )}
               <div className="mt-3 flex gap-2">
                 <button
                   type="button"

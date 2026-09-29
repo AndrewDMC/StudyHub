@@ -172,6 +172,14 @@ export const ExtractedTopicSchema = z.object({
   name: z.string().min(1),
   docIds: z.array(z.string().uuid()).min(1),
   confidence: z.number().min(0).max(1),
+  /**
+   * Name of the parent topic, if this one is a sub-topic — either an existing
+   * topic in the subject or another topic proposed in the same batch. `null`
+   * (or omitted) means top-level. Validated against the caller's known names
+   * in the worker, same "never trust verbatim" gate as `docIds`: a name that
+   * doesn't resolve to a known topic is dropped, not trusted.
+   */
+  parentName: z.string().min(1).nullable().optional(),
 });
 export type ExtractedTopic = z.infer<typeof ExtractedTopicSchema>;
 

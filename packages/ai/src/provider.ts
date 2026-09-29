@@ -143,6 +143,8 @@ export interface TopicExtractionDocument {
 export interface ExtractTopicsPromptInput {
   subjectName: string;
   documents: TopicExtractionDocument[];
+  /** Topics already in the subject, given as candidate parents for a proposed sub-topic. */
+  existingTopics?: { name: string }[];
 }
 
 /**

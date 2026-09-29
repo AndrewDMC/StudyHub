@@ -105,10 +105,14 @@ export function renderEstimateTopicsUserPrompt(input: EstimateTopicsPromptInput)
 }
 
 export function renderExtractTopicsUserPrompt(input: ExtractTopicsPromptInput): string {
+  const existingTopics = input.existingTopics ?? [];
   return [
     `Materia: ${input.subjectName}`,
     `${input.documents.length} documenti da cui proporre una tassonomia di argomenti. Ogni argomento` +
       ' elenca i "docId" (fra quelli sotto) che copre.',
+    existingTopics.length > 0
+      ? `Argomenti già esistenti in questa materia (nomi esatti, possono fare da genitore): ${existingTopics.map((t) => t.name).join(', ')}.`
+      : 'Nessun argomento esistente in questa materia: eventuali genitori possono essere solo fra i nomi proposti in questo batch.',
     '',
     ...input.documents.map(
       (d) => `<document id="${d.docId}">\n${escapeClosingTag(d.excerpt, 'document')}\n</document>`,

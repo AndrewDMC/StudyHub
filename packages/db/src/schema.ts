@@ -428,7 +428,12 @@ export const flashcards = pgTable(
     front: text('front').notNull(),
     back: text('back').notNull(),
     hint: text('hint'),
-    sourceRef: jsonb('source_ref').$type<SourceRef>().notNull(),
+    // null = card created by hand in the deck editor (docs/fasi/F4-flashcard.md), no source to cite.
+    sourceRef: jsonb('source_ref').$type<SourceRef>(),
+    // Embedding of `front` (same model/dims as chunks.embedding), used only for semantic dedup
+    // against the subject's other cards at generation time (docs/fasi/F3-ai-core.md "Stato") —
+    // null until a generation run computes it, never backfilled in bulk.
+    embedding: vector('embedding'),
     // FSRS-5 state (docs/02-filesystem-e-dati.md §4, docs/fasi/F4-flashcard.md).
     stability: real('stability'),
     difficulty: real('difficulty'),
@@ -438,6 +443,13 @@ export const flashcards = pgTable(
     lapses: integer('lapses').notNull().default(0),
     state: text('state').$type<FlashcardState>().notNull().default('new'),
     suspended: boolean('suspended').notNull().default(false),
+    tags: text('tags')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    // "Segnala card scadente" during review (docs/fasi/F4-flashcard.md "Rischi"): excluded from
+    // the queue, kept in the deck so the reports can be collected to improve the prompt.
+    flaggedAt: timestamp('flagged_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

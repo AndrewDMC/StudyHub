@@ -92,6 +92,20 @@
       "when": 1790591542649,
       "tag": "0012_add_subjects_sort_order",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790604124808,
+      "tag": "0013_add_flashcards_embedding",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790627557658,
+      "tag": "0014_flashcard_editor_columns",
+      "breakpoints": true
     }
   ]
 }

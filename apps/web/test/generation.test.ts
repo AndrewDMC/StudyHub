@@ -149,7 +149,9 @@ describe('estimateGenerationCost', () => {
     });
 
     topicId = randomUUID();
-    await db.insert(topics).values({ id: topicId, subjectId, name: 'Termodinamica', slug: 'termodinamica' });
+    await db
+      .insert(topics)
+      .values({ id: topicId, subjectId, name: 'Termodinamica', slug: 'termodinamica' });
     await db.insert(documentTopics).values({ documentId: docId, topicId });
   });
 
@@ -167,6 +169,16 @@ describe('estimateGenerationCost', () => {
     expect(estimate.perKind.flashcards!.costEur).toBeGreaterThan(0);
     expect(estimate.perKind.schema!.costEur).toBeGreaterThan(0);
     expect(estimate.perKind.summary!.costEur).toBeGreaterThan(0);
+  });
+
+  it('estimates a positive cost for simulation and extract_topics too (docs/fasi/F3-ai-core.md "Stato")', async () => {
+    const estimate = await estimateGenerationCost(db, subjectSlug, {
+      scope: { docIds: [docId] },
+      model: 'claude-sonnet-5',
+    });
+
+    expect(estimate.perKind.simulation!.costEur).toBeGreaterThan(0);
+    expect(estimate.perKind.extract_topics!.costEur).toBeGreaterThan(0);
   });
 
   it('resolves a topicIds-only scope to the tagged document, same as generation itself', async () => {
@@ -276,7 +288,7 @@ describe('artifacts + review queue', () => {
   it('exportDeckCsv writes a header + one row per card, importable filename from the deck title', async () => {
     const { filename, csv } = await exportDeckCsv(db, subjectSlug, deckId);
     expect(filename).toBe('deck-di-prova.csv');
-    expect(csv).toBe('front,back,type,hint\r\nDomanda?,Risposta.,basic,\r\n');
+    expect(csv).toBe('front,back,type,hint,tags\r\nDomanda?,Risposta.,basic,,\r\n');
   });
 
   it('exportDeckCsv quotes a field containing a comma', async () => {

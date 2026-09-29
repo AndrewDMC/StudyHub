@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -30,6 +30,53 @@ import { runJob } from '../src/jobRunner.js';
 
 const SAMPLE_TEXT =
   "L'entropia di un sistema isolato non diminuisce mai. Il secondo principio della termodinamica lo formalizza. Boltzmann la collegò al disordine microscopico dei sistemi fisici.";
+
+// Deterministic stand-in for the real (ONNX, slow, network-on-first-use) embedding model —
+// distinct strings land on near-orthogonal random vectors, so unrelated cards never collide as
+// semantic duplicates by accident. The dedicated "semantic dedup" tests below override this
+// per-string, via the injectable `embed` parameter, where they need precise control.
+function mulberry32(seed: number): () => number {
+  let s = seed;
+  return () => {
+    s |= 0;
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function hashSeed(text: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+function fakeEmbedOne(text: string, dims = 384): number[] {
+  const rng = mulberry32(hashSeed(text));
+  return Array.from({ length: dims }, () => rng() * 2 - 1);
+}
+const distinctFakeEmbed = async (texts: string[]): Promise<number[][]> =>
+  texts.map((t) => fakeEmbedOne(t));
+
+// `runJob` (used by the idempotency test below) calls `processGenerateFlashcards` without the
+// injectable `embed` parameter — it always resolves to the real, ONNX-backed `embedTexts`. Mocking
+// the module is the only seam available there; every *direct* call in this file still passes
+// `distinctFakeEmbed` explicitly (redundant with this mock, but self-documenting).
+vi.mock('@studyhub/ai/embeddings', () => ({
+  embedTexts: (texts: string[]) => Promise.resolve(texts.map((t) => fakeEmbedOne(t))),
+}));
+
+// `flashcards.embedding` is a fixed `vector(384)` column (matching the real embedding model's
+// dimensionality) — pgvector rejects any other length, so semantic-dedup tests need real
+// 384-dim vectors, not toy 2-d ones. One-hot on a chosen axis: same `seed` → cosine 1 (duplicate),
+// different `seed` → cosine 0 (orthogonal, never a false-positive duplicate).
+function unitVector(seed: number, dims = 384): number[] {
+  const v = new Array(dims).fill(0);
+  v[seed % dims] = 1;
+  return v;
+}
 
 describe('processGenerateFlashcards', () => {
   let dataRoot: string;
@@ -94,6 +141,7 @@ describe('processGenerateFlashcards', () => {
         force: false,
       },
       new FakeProvider(),
+      distinctFakeEmbed,
     );
 
     expect(result.cardCount).toBeGreaterThan(0);
@@ -207,6 +255,7 @@ describe('processGenerateFlashcards', () => {
         force: false,
       },
       fakeCorruptingProvider,
+      distinctFakeEmbed,
     );
 
     expect(result.cardCount).toBe(1);
@@ -256,9 +305,145 @@ describe('processGenerateFlashcards', () => {
         force: false,
       },
       duplicatingProvider,
+      distinctFakeEmbed,
     );
 
     expect(result.cardCount).toBe(1);
+  });
+
+  describe('semantic dedup (docs/fasi/F3-ai-core.md "Stato")', () => {
+    it('drops a paraphrase within the same batch but keeps a genuinely different card, in order', async () => {
+      const sentences = SAMPLE_TEXT.split('. ').map((s) => (s.endsWith('.') ? s : `${s}.`));
+      const paraphrasingProvider: AiProvider = {
+        name: 'test-paraphrasing',
+        async generateFlashcards(): Promise<GeneratedWithMeta<FlashcardsOutput>> {
+          return {
+            data: {
+              cards: [
+                {
+                  type: 'basic',
+                  front: 'Domanda A',
+                  back: sentences[0]!,
+                  sourceRef: { docId, page: 1, quote: sentences[0]! },
+                },
+                {
+                  type: 'basic',
+                  front: 'Domanda A bis', // a paraphrase, not an exact-text repeat
+                  back: sentences[1]!,
+                  sourceRef: { docId, page: 1, quote: sentences[1]! },
+                },
+                {
+                  type: 'basic',
+                  front: 'Domanda B', // a genuinely different fact
+                  back: sentences[2]!,
+                  sourceRef: { docId, page: 1, quote: sentences[2]! },
+                },
+              ],
+            },
+            usage: { inputTokens: 10, outputTokens: 10 },
+            model: 'test-model',
+            promptVersion: 'flashcards/v1',
+          };
+        },
+        async generateSummary(): Promise<GeneratedWithMeta<SummaryOutput>> {
+          throw new Error('not used');
+        },
+      };
+      // "Domanda A"/"Domanda A bis" collide (same direction, cosine 1 > 0.92); "Domanda B" is orthogonal.
+      const embed = async (texts: string[]) =>
+        texts.map((t) => (t === 'Domanda B' ? unitVector(1) : unitVector(0)));
+
+      const result = await processGenerateFlashcards(
+        db,
+        dataRoot,
+        {
+          subjectId,
+          scope: { docIds: [docId] },
+          count: 3,
+          types: ['basic'],
+          difficulty: 2,
+          lang: 'it',
+          force: false,
+        },
+        paraphrasingProvider,
+        embed,
+      );
+
+      expect(result.cardCount).toBe(2);
+      expect(result.semanticDuplicateCount).toBe(1);
+      const cardRows = await db
+        .select()
+        .from(flashcards)
+        .where(eq(flashcards.deckId, result.artifactId));
+      expect(cardRows.map((c) => c.front).sort()).toEqual(['Domanda A', 'Domanda B']);
+    });
+
+    it('drops a new card that duplicates an existing flashcard already embedded in the subject', async () => {
+      const deckId = randomUUID();
+      await db.insert(artifacts).values({
+        id: deckId,
+        subjectId,
+        kind: 'flashcard_deck',
+        title: 'Deck precedente',
+        path: '/x.json',
+        model: 'fake-v1',
+        promptVersion: 'flashcards/v1',
+      });
+      await db.insert(flashcards).values({
+        id: randomUUID(),
+        deckId,
+        type: 'basic',
+        front: 'Vecchia domanda',
+        back: 'x',
+        sourceRef: { docId, page: 1, quote: 'x' },
+        embedding: unitVector(0),
+      });
+
+      const quote = SAMPLE_TEXT.split('. ')[0]! + '.';
+      const repeatingProvider: AiProvider = {
+        name: 'test-repeating',
+        async generateFlashcards(): Promise<GeneratedWithMeta<FlashcardsOutput>> {
+          return {
+            data: {
+              cards: [
+                {
+                  type: 'basic',
+                  front: 'Nuova ma uguale',
+                  back: quote,
+                  sourceRef: { docId, page: 1, quote },
+                },
+              ],
+            },
+            usage: { inputTokens: 10, outputTokens: 10 },
+            model: 'test-model',
+            promptVersion: 'flashcards/v1',
+          };
+        },
+        async generateSummary(): Promise<GeneratedWithMeta<SummaryOutput>> {
+          throw new Error('not used');
+        },
+      };
+      const embed = async () => [unitVector(0)]; // same direction as the pre-existing card's embedding
+
+      const result = await processGenerateFlashcards(
+        db,
+        dataRoot,
+        {
+          subjectId,
+          scope: { docIds: [docId] },
+          count: 1,
+          types: ['basic'],
+          difficulty: 2,
+          lang: 'it',
+          force: false,
+        },
+        repeatingProvider,
+        embed,
+      );
+
+      expect(result.cardCount).toBe(0);
+      expect(result.semanticDuplicateCount).toBe(1);
+    });
   });
 
   it('resolves a topicIds-only scope via document_topics to the tagged documents’ chunks', async () => {
@@ -281,6 +466,7 @@ describe('processGenerateFlashcards', () => {
         force: false,
       },
       new FakeProvider(),
+      distinctFakeEmbed,
     );
 
     expect(result.cardCount).toBeGreaterThan(0);
@@ -306,6 +492,7 @@ describe('processGenerateFlashcards', () => {
           force: false,
         },
         new FakeProvider(),
+        distinctFakeEmbed,
       ),
     ).rejects.toThrow(/Nessun documento collegato/);
   });
@@ -325,6 +512,7 @@ describe('processGenerateFlashcards', () => {
           force: false,
         },
         new FakeProvider(),
+        distinctFakeEmbed,
       ),
     ).rejects.toThrow(/Argomenti non trovati/);
   });
@@ -344,6 +532,7 @@ describe('processGenerateFlashcards', () => {
           force: false,
         },
         new FakeProvider(),
+        distinctFakeEmbed,
       ),
     ).rejects.toThrow(/subject not found/);
   });
@@ -394,6 +583,7 @@ describe('processGenerateFlashcards', () => {
           force: false,
         },
         pricedProvider,
+        distinctFakeEmbed,
       ),
     ).rejects.toBeInstanceOf(BudgetExceededError);
 
@@ -410,6 +600,7 @@ describe('processGenerateFlashcards', () => {
         force: true,
       },
       pricedProvider,
+      distinctFakeEmbed,
     );
     expect(forced.idempotent).toBe(false);
     expect(forced.costEur).toBeGreaterThan(0);

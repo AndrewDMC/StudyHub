@@ -3,7 +3,14 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ExamProfileDto, SimulationSummaryDto, TopicDto } from '@studyhub/contracts';
+import type {
+  DocumentDto,
+  EstimateGenerationCostResponse,
+  ExamProfileDto,
+  SimulationSummaryDto,
+  TopicDto,
+} from '@studyhub/contracts';
+import { ModelPicker, MODEL_OPTIONS } from './ModelPicker';
 
 async function getJson<T>(url: string, key: string): Promise<T> {
   const res = await fetch(url);
@@ -21,6 +28,28 @@ async function postJson(url: string, payload: unknown, method = 'POST') {
   const body = await res.json().catch(() => null);
   if (!res.ok) throw new Error(body?.error?.message ?? 'Operazione fallita');
   return body;
+}
+
+/** €0.0001 → "€0.0001"; €0 → "gratis" (FakeProvider, nessuna chiave configurata). */
+function formatCost(costEur: number): string {
+  return costEur === 0 ? 'gratis' : `~€${costEur.toFixed(4)}`;
+}
+
+type SimScope = { docIds: string[] } | { topicIds: string[] };
+
+async function fetchEstimate(
+  slug: string,
+  scope: SimScope,
+  model: string,
+): Promise<EstimateGenerationCostResponse> {
+  const res = await fetch(`/api/subjects/${slug}/artifacts/estimate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scope, model }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error?.message ?? 'Stima costo fallita');
+  return body as EstimateGenerationCostResponse;
 }
 
 const KIND_LABELS = {
@@ -105,10 +134,17 @@ function ProfileEditor({
 }
 
 /** Exams & simulations (docs/fasi/F5-esami-simulazioni.md) on the subject page. */
-export function ExamPrepPanel({ subjectSlug }: { subjectSlug: string }) {
+export function ExamPrepPanel({
+  subjectSlug,
+  documents,
+}: {
+  subjectSlug: string;
+  documents: DocumentDto[];
+}) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [drillTopic, setDrillTopic] = useState('');
+  const [model, setModel] = useState<string>(MODEL_OPTIONS[2].id); // opus: default routing per generate_simulation (docs/03 §4)
 
   const profileQuery = useQuery({
     queryKey: ['exam-profile', subjectSlug],
@@ -129,17 +165,43 @@ export function ExamPrepPanel({ subjectSlug }: { subjectSlug: string }) {
     setTimeout(() => queryClient.invalidateQueries({ queryKey: [key, subjectSlug] }), 3000);
 
   const extract = useMutation({
+    // extract_exam_profile has no pre-flight estimate/model choice in this slice — the picker
+    // below applies to Simula esame/Drill (generate_simulation) only.
     mutationFn: () => postJson(`/api/subjects/${subjectSlug}/exam-profile`, {}),
     onSuccess: () => refreshSoon('exam-profile'),
   });
   const generate = useMutation({
     mutationFn: (payload: { mode: 'esame_completo' | 'drill_argomento'; topicId?: string }) =>
-      postJson(`/api/subjects/${subjectSlug}/simulations`, payload),
+      postJson(`/api/subjects/${subjectSlug}/simulations`, { ...payload, model }),
     onSuccess: () => refreshSoon('simulations'),
   });
 
   const profile = profileQuery.data;
   const error = extract.error ?? generate.error;
+
+  // generate_simulation draws items only from study material, never the past exams the profile
+  // itself came from (docs/fasi/F5) — the estimate scope mirrors that.
+  const studyDocIds = documents
+    .filter((d) => d.status === 'parsed' && d.type !== 'esami')
+    .map((d) => d.id);
+  const examScope: SimScope | null = drillTopic
+    ? { topicIds: [drillTopic] }
+    : studyDocIds.length > 0
+      ? { docIds: studyDocIds }
+      : null;
+  const estimateQuery = useQuery({
+    queryKey: [
+      'generation-estimate',
+      subjectSlug,
+      model,
+      drillTopic ? `t:${drillTopic}` : `d:${studyDocIds.join(',')}`,
+    ],
+    queryFn: () => fetchEstimate(subjectSlug, examScope!, model),
+    enabled: examScope !== null,
+  });
+  const costLabel = estimateQuery.data
+    ? formatCost(estimateQuery.data.perKind.simulation!.costEur)
+    : null;
 
   return (
     <div className="rounded-[var(--radius-card)] border border-border bg-bg-surface p-3">
@@ -194,6 +256,8 @@ export function ExamPrepPanel({ subjectSlug }: { subjectSlug: string }) {
           <ProfileEditor slug={subjectSlug} profile={profile} onDone={() => setEditing(false)} />
         )}
 
+        <ModelPicker value={model} onChange={setModel} disabled={generate.isPending} />
+
         <div className="flex flex-wrap gap-2 pt-1">
           <button
             type="button"
@@ -209,7 +273,7 @@ export function ExamPrepPanel({ subjectSlug }: { subjectSlug: string }) {
             disabled={!profile || generate.isPending}
             className="rounded-[var(--radius-control)] bg-accent px-2.5 py-1 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
           >
-            Simula esame
+            Simula esame{!drillTopic && costLabel && ` · ${costLabel}`}
           </button>
         </div>
 
@@ -233,7 +297,7 @@ export function ExamPrepPanel({ subjectSlug }: { subjectSlug: string }) {
             disabled={!drillTopic || generate.isPending}
             className="rounded-[var(--radius-control)] border border-border px-2.5 py-1 text-xs text-fg-secondary hover:text-fg-primary disabled:opacity-50"
           >
-            Drill
+            Drill{drillTopic && costLabel && ` · ${costLabel}`}
           </button>
         </div>
 

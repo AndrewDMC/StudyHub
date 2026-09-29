@@ -280,6 +280,37 @@ describe('artifacts and flashcards tables', () => {
     expect(row?.state).toBe('new');
     expect(row?.suspended).toBe(false);
     expect(row?.sourceRef).toEqual({ docId, page: 3, quote: 'entropia come misura del disordine' });
+    expect(row?.embedding).toBeNull(); // never set at generation time until semantic dedup runs
+  });
+
+  it('flashcards.embedding is null by default and round-trips a 384-dim vector once set (docs/fasi/F3-ai-core.md "Stato")', async () => {
+    const deckId = randomUUID();
+    await db.insert(artifacts).values({
+      id: deckId,
+      subjectId,
+      kind: 'flashcard_deck',
+      title: 'Termodinamica',
+      path: '/x',
+      model: 'fake-v1',
+      promptVersion: 'flashcards/v1',
+    });
+    const cardId = randomUUID();
+    await db.insert(flashcards).values({
+      id: cardId,
+      deckId,
+      type: 'basic',
+      front: "Cos'è l'entropia?",
+      back: 'Una misura del disordine di un sistema.',
+      sourceRef: { docId: randomUUID(), page: 1, quote: 'x' },
+    });
+
+    const vector = Array.from({ length: 384 }, (_, i) => i / 384);
+    await db.update(flashcards).set({ embedding: vector }).where(eq(flashcards.id, cardId));
+
+    const [row] = await db.select().from(flashcards).where(eq(flashcards.id, cardId));
+    expect(row?.embedding).toHaveLength(384);
+    expect(row?.embedding?.[0]).toBeCloseTo(0, 5);
+    expect(row?.embedding?.[383]).toBeCloseTo(383 / 384, 5);
   });
 
   it('cascades delete from a deck (artifact) to its flashcards', async () => {

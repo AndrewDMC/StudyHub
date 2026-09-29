@@ -236,6 +236,38 @@ describe('FakeProvider.extractTopics', () => {
     const b = await provider.extractTopics(input, 'irrelevant');
     expect(a.data).toEqual(b.data);
   });
+
+  it("proposes a parentName when a topic's second keyword names another proposed topic", async () => {
+    const { data } = await provider.extractTopics(
+      {
+        subjectName: 'Fisica 1',
+        documents: [
+          { docId, excerpt: 'Entropia termodinamica sistema isolato.' },
+          { docId: randomUUID(), excerpt: 'Termodinamica principi fondamentali.' },
+        ],
+      },
+      'irrelevant',
+    );
+    const child = data.topics.find((t) => t.name === 'Entropia');
+    const parent = data.topics.find((t) => t.name === 'Termodinamica');
+    expect(child).toBeDefined();
+    expect(parent).toBeDefined();
+    expect(child?.parentName).toBe('Termodinamica');
+    expect(parent?.parentName).toBeFalsy();
+  });
+
+  it('leaves parentName null when the second keyword names no known topic', async () => {
+    const { data } = await provider.extractTopics(
+      {
+        subjectName: 'X',
+        documents: [{ docId, excerpt: 'Materiale di studio sufficientemente lungo.' }],
+      },
+      'irrelevant',
+    );
+    for (const topic of data.topics) {
+      expect(topic.parentName).toBeFalsy();
+    }
+  });
 });
 
 describe('FakeProvider.generateSchema', () => {
