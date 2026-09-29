@@ -721,6 +721,36 @@ export const tasks = pgTable(
 );
 
 /**
+ * Study session (docs/08-sessione-di-studio.md): what "Inizia" on a task opens.
+ * `topicIds`/`documentIds` are a snapshot of the scope resolved at start
+ * (`resolveSessionScope`, packages/core/src/session.ts) that the student can
+ * edit in the page. `activeMs` is the real time spent — the telemetry that will
+ * feed the Planner's estimate-vs-actual correction. `taskId` is null for a free
+ * session started from a topic.
+ */
+export type StudySessionStatus = 'active' | 'ended';
+
+export const studySessions = pgTable(
+  'study_sessions',
+  {
+    id: uuid('id').primaryKey(),
+    subjectId: uuid('subject_id')
+      .notNull()
+      .references(() => subjects.id, { onDelete: 'cascade' }),
+    taskId: uuid('task_id').references(() => tasks.id, { onDelete: 'set null' }),
+    topicIds: jsonb('topic_ids').$type<string[]>().notNull(),
+    documentIds: jsonb('document_ids').$type<string[]>().notNull(),
+    status: text('status').$type<StudySessionStatus>().notNull().default('active'),
+    activeMs: integer('active_ms').notNull().default(0),
+    // Completed Pomodoro focus phases (docs/08-sessione-di-studio.md); `activeMs` then counts focus time only.
+    pomodoros: integer('pomodoros').notNull().default(0),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+  },
+  (table) => [index('study_sessions_subject_idx').on(table.subjectId, table.status)],
+);
+
+/**
  * "Import ICS" (docs/fasi/F6-planner-calendario.md "Non implementato"; the concept is spec'd in
  * docs/04-planner.md §9.4: "esami, lezioni, impegni importati da ICS esterno... vincoli in
  * ingresso per lo scheduler, non suoi output" — distinct from `tasks`, which *are* the calendar
@@ -789,3 +819,6 @@ export type SchemaGroup = typeof schemaGroups.$inferSelect;
 export type NewSchemaGroup = typeof schemaGroups.$inferInsert;
 export type TranscriptionCorrection = typeof transcriptionCorrections.$inferSelect;
 export type NewTranscriptionCorrection = typeof transcriptionCorrections.$inferInsert;
+
+export type StudySession = typeof studySessions.$inferSelect;
+export type NewStudySession = typeof studySessions.$inferInsert;

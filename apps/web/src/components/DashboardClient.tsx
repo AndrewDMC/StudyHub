@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { DashboardSummaryDto, OnboardingDto } from '@studyhub/contracts';
+import { StartTaskButton } from '@/components/StartTaskButton';
 import { SUBJECT_COLOR_HEX } from '@/lib/subjectColors';
 
 async function fetchDashboard(): Promise<DashboardSummaryDto> {
@@ -147,12 +148,7 @@ function TodaySection({
             <p className="mt-1 text-sm text-fg-secondary">{first.description}</p>
           )}
           <div className="mt-3 flex gap-2">
-            <Link
-              href={`/materie/${first.subjectSlug}/piano`}
-              className="rounded-[var(--radius-control)] bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
-            >
-              Inizia
-            </Link>
+            <StartTaskButton subjectSlug={first.subjectSlug} taskId={first.id} kind={first.kind} />
             <button
               type="button"
               onClick={() => onStatus(first.subjectSlug, first.id, 'done')}

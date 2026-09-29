@@ -113,6 +113,20 @@
       "when": 1790627617658,
       "tag": "0015_review_confidence",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790700000000,
+      "tag": "0016_study_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790700100000,
+      "tag": "0017_session_pomodoros",
+      "breakpoints": true
     }
   ]
 }

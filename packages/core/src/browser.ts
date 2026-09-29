@@ -9,3 +9,4 @@ export * from './fsrs.js';
 export * from './forecast.js';
 export * from './mastery.js';
 export * from './examTimer.js';
+export * from './pomodoro.js';
