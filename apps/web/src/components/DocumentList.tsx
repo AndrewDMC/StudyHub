@@ -281,6 +281,12 @@ export function DocumentList({
                   >
                     {STATUS_LABEL[doc.status]}
                   </span>
+                  <Link
+                    href={`/materie/${subjectSlug}/documenti/${doc.id}/originale`}
+                    className="text-[11px] text-fg-muted underline-offset-2 hover:text-fg-primary hover:underline"
+                  >
+                    Apri
+                  </Link>
                   {doc.type === 'schemi' && doc.status === 'parsed' && (
                     <Link
                       href={`/materie/${subjectSlug}/documenti/${doc.id}/verifica`}

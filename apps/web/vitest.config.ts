@@ -8,6 +8,7 @@ export default defineConfig({
     testTimeout: 20000,
     hookTimeout: 20000,
   },
+  esbuild: { jsx: 'automatic' },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

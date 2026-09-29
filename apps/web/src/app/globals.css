@@ -147,3 +147,225 @@ body {
   margin: 0.5rem auto;
   border-radius: var(--radius-control, 6px);
 }
+
+/* Obsidian-like reading view (components/ObsidianMarkdown.tsx). */
+.md-obsidian {
+  color: var(--fg-primary);
+  font-size: 0.95rem;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.md-obsidian > * + * {
+  margin-top: 0.85em;
+}
+.md-obsidian h1,
+.md-obsidian h2,
+.md-obsidian h3,
+.md-obsidian h4,
+.md-obsidian h5,
+.md-obsidian h6 {
+  font-weight: 650;
+  line-height: 1.25;
+  margin-top: 1.6em;
+}
+.md-obsidian h1 {
+  font-size: 1.9em;
+}
+.md-obsidian h2 {
+  font-size: 1.5em;
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid var(--border);
+}
+.md-obsidian h3 {
+  font-size: 1.25em;
+}
+.md-obsidian h4,
+.md-obsidian h5,
+.md-obsidian h6 {
+  font-size: 1.05em;
+}
+.md-obsidian a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.md-obsidian a:hover {
+  text-decoration: underline;
+}
+.md-obsidian ul,
+.md-obsidian ol {
+  padding-left: 1.6em;
+}
+.md-obsidian ul {
+  list-style: disc;
+}
+.md-obsidian ol {
+  list-style: decimal;
+}
+.md-obsidian li + li {
+  margin-top: 0.2em;
+}
+.md-obsidian li:has(> input[type='checkbox']) {
+  list-style: none;
+  margin-left: -1.4em;
+}
+.md-obsidian input[type='checkbox'] {
+  margin-right: 0.5em;
+  accent-color: var(--accent);
+}
+.md-obsidian blockquote {
+  border-left: 3px solid var(--border-strong);
+  padding-left: 1em;
+  color: var(--fg-secondary);
+}
+.md-obsidian hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 1.6em 0;
+}
+.md-obsidian code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.85em;
+  background: var(--bg-inset);
+  border-radius: 4px;
+  padding: 0.15em 0.4em;
+}
+.md-obsidian pre {
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  padding: 0.9em 1em;
+  overflow-x: auto;
+}
+.md-obsidian pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.85em;
+}
+.md-obsidian table {
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+.md-obsidian th,
+.md-obsidian td {
+  border: 1px solid var(--border-strong);
+  padding: 0.4em 0.8em;
+}
+.md-obsidian th {
+  background: var(--bg-raised);
+  font-weight: 600;
+}
+.md-obsidian img {
+  max-width: 100%;
+  border-radius: var(--radius-control);
+}
+.md-obsidian mark {
+  background: color-mix(in srgb, var(--warn) 35%, transparent);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 0.15em;
+}
+.md-obsidian .md-wikilink {
+  color: var(--accent);
+  cursor: default;
+}
+.md-obsidian .md-embed {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+.md-obsidian .md-tag {
+  color: var(--accent);
+  background: var(--accent-subtle);
+  border-radius: 999px;
+  padding: 0.05em 0.55em;
+  font-size: 0.85em;
+}
+.md-obsidian .md-properties {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-raised);
+  padding: 0.6em 0.9em;
+  font-size: 0.85em;
+  line-height: 1.5;
+}
+.md-obsidian .md-properties > div {
+  display: flex;
+  gap: 1em;
+}
+.md-obsidian .md-properties dt {
+  min-width: 7em;
+  color: var(--fg-muted);
+}
+.md-obsidian .md-callout {
+  --callout: var(--info);
+  border: 0;
+  border-radius: var(--radius-control);
+  padding: 0.75em 1em;
+  background: color-mix(in srgb, var(--callout) 12%, transparent);
+  color: var(--fg-primary);
+}
+.md-obsidian .md-callout-title {
+  color: var(--callout);
+  font-weight: 600;
+  margin-bottom: 0.3em;
+}
+.md-obsidian .md-callout > :last-child {
+  margin-bottom: 0;
+}
+.md-obsidian .md-callout[data-callout='note'],
+.md-obsidian .md-callout[data-callout='info'],
+.md-obsidian .md-callout[data-callout='todo'] {
+  --callout: var(--accent);
+}
+.md-obsidian .md-callout[data-callout='tip'],
+.md-obsidian .md-callout[data-callout='success'],
+.md-obsidian .md-callout[data-callout='check'],
+.md-obsidian .md-callout[data-callout='done'] {
+  --callout: var(--ok);
+}
+.md-obsidian .md-callout[data-callout='warning'],
+.md-obsidian .md-callout[data-callout='caution'],
+.md-obsidian .md-callout[data-callout='attention'],
+.md-obsidian .md-callout[data-callout='question'],
+.md-obsidian .md-callout[data-callout='help'] {
+  --callout: var(--warn);
+}
+.md-obsidian .md-callout[data-callout='danger'],
+.md-obsidian .md-callout[data-callout='error'],
+.md-obsidian .md-callout[data-callout='failure'],
+.md-obsidian .md-callout[data-callout='bug'] {
+  --callout: var(--danger);
+}
+.md-obsidian .md-callout[data-callout='quote'],
+.md-obsidian .md-callout[data-callout='cite'],
+.md-obsidian .md-callout[data-callout='abstract'] {
+  --callout: var(--fg-secondary);
+}
+/* highlight.js tokens, mapped onto the design tokens so both themes work. */
+.md-obsidian .hljs-comment,
+.md-obsidian .hljs-quote {
+  color: var(--fg-muted);
+}
+.md-obsidian .hljs-keyword,
+.md-obsidian .hljs-selector-tag,
+.md-obsidian .hljs-built_in {
+  color: var(--accent);
+}
+.md-obsidian .hljs-string,
+.md-obsidian .hljs-attr,
+.md-obsidian .hljs-addition {
+  color: var(--ok);
+}
+.md-obsidian .hljs-number,
+.md-obsidian .hljs-literal,
+.md-obsidian .hljs-symbol {
+  color: var(--warn);
+}
+.md-obsidian .hljs-title,
+.md-obsidian .hljs-function,
+.md-obsidian .hljs-type {
+  color: var(--info);
+}
+.md-obsidian .hljs-deletion {
+  color: var(--danger);
+}

@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { diffLines } from 'diff';
 import type { DocumentContentDto } from '@studyhub/contracts';
 import { Button } from '@/components/ui/button';
+import { ObsidianMarkdown } from '@/components/ObsidianMarkdown';
 
 async function fetchContent(slug: string, documentId: string): Promise<DocumentContentDto> {
   const res = await fetch(`/api/subjects/${slug}/documents/${documentId}/content`);
@@ -160,9 +161,9 @@ export function DocumentContentClient({
       )}
 
       {query.isSuccess && !editing && (
-        <pre className="whitespace-pre-wrap rounded-[var(--radius-card)] border border-border bg-bg-surface p-4 font-mono text-sm text-fg-primary">
-          {query.data.markdown}
-        </pre>
+        <div className="rounded-[var(--radius-card)] border border-border bg-bg-surface p-6">
+          <ObsidianMarkdown source={query.data.markdown} />
+        </div>
       )}
 
       {query.isSuccess && editing && (
