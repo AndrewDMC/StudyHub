@@ -1,12 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray, lt, ne } from 'drizzle-orm';
+import { and, eq, inArray, lt } from 'drizzle-orm';
 import {
   artifacts,
   chunks,
-  documents,
+  buildPlanningUnits,
   exams,
   flashcards,
-  resolvePrimaryTopics,
+  heuristicMinutes,
+  loadBusyMinutesByDate,
+  loadEligibleDocs,
   studyPlans,
   subjects,
   tasks,
@@ -44,60 +46,6 @@ export interface GeneratePlanResult {
   usage: { inputTokens: number; outputTokens: number };
 }
 
-interface PlanningUnit {
-  /** A real `topics.id` when the unit is a tagged topic, else the document's own id. */
-  key: string;
-  topicId: string | null;
-  name: string;
-  pages: number;
-  /** Real `topics.mastery` when the unit is a tagged topic — the first time this Planner ever sees real mastery data. */
-  mastery: number | null;
-  docs: { id: string; pages: number }[];
-}
-
-/**
- * Groups eligible documents into planning units (docs/fasi/F2-materie.md
- * "Stato": `document_topics`, unblocked). A document tagged with more than
- * one topic is assigned to exactly one — its *primary* topic, the tagged
- * topic with the lowest `orderIndex` (ties broken by id) — so it is never
- * double-counted across two units. An untagged document is still its own
- * unit, exactly as before (`PlannerTopic`'s own doc comment: "a document
- * standing in for one") — subjects that haven't tagged anything yet see no
- * change at all.
- */
-async function buildPlanningUnits(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  db: any,
-  subjectId: string,
-  eligibleDocs: { id: string; originalName: string; pages: number }[],
-): Promise<PlanningUnit[]> {
-  if (eligibleDocs.length === 0) return [];
-  const docIds = eligibleDocs.map((d) => d.id);
-  const primaryByDoc = await resolvePrimaryTopics(db, subjectId, docIds);
-
-  const units = new Map<string, PlanningUnit>();
-  for (const doc of eligibleDocs) {
-    const primary = primaryByDoc.get(doc.id) ?? null;
-    const unitKey = primary ? primary.topicId : doc.id;
-
-    const existing = units.get(unitKey);
-    if (existing) {
-      existing.pages += doc.pages;
-      existing.docs.push({ id: doc.id, pages: doc.pages });
-    } else {
-      units.set(unitKey, {
-        key: unitKey,
-        topicId: primary ? primary.topicId : null,
-        name: primary ? primary.topicName : doc.originalName,
-        pages: doc.pages,
-        mastery: primary ? primary.mastery : null,
-        docs: [{ id: doc.id, pages: doc.pages }],
-      });
-    }
-  }
-  return [...units.values()];
-}
-
 /**
  * `generate_plan` (docs/04-planner.md §1-5): Fase A (AI estimate) + Fase B
  * (pure scheduling) in one job, producing a fresh `draft` study_plans row
@@ -123,13 +71,7 @@ export async function processGeneratePlan(
 
   const model = input.model ?? MODEL_ROUTING_PLAN;
 
-  const docRows: { id: string; originalName: string; pages: number | null }[] = await db
-    .select({ id: documents.id, originalName: documents.originalName, pages: documents.pages })
-    .from(documents)
-    .where(and(eq(documents.subjectId, input.subjectId), eq(documents.status, 'parsed')));
-  const eligibleDocs = docRows.filter(
-    (d): d is { id: string; originalName: string; pages: number } => (d.pages ?? 0) > 0,
-  );
+  const eligibleDocs = await loadEligibleDocs(db, input.subjectId);
 
   let plannerTopics: PlannerTopic[] = [];
   let usage = { inputTokens: 0, outputTokens: 0 };
@@ -184,7 +126,7 @@ export async function processGeneratePlan(
         key: u.key,
         topicId: u.topicId,
         name: u.name,
-        estimatedMinutes: est?.estimatedMinutes ?? Math.max(20, Math.round(u.pages * 3.5)),
+        estimatedMinutes: est?.estimatedMinutes ?? heuristicMinutes(u.pages),
         difficulty: est?.difficulty ?? 3,
         examWeight: est?.examWeight ?? 1 / units.length,
         prerequisites: est?.prerequisites.filter((p) => estByKey.has(p)) ?? [],
@@ -211,15 +153,9 @@ export async function processGeneratePlan(
   );
   const dueCardsByDate = Object.fromEntries(forecast.map((f) => [f.date, f.count]));
 
-  // Other subjects' active/in-progress tasks compete for the same daily minutes
-  // (docs/04-planner.md §7: "i minuti del giorno sono una risorsa condivisa").
-  const busyRows: { date: string; minutes: number }[] = await db
-    .select({ date: tasks.date, minutes: tasks.minutes })
-    .from(tasks)
-    .where(and(ne(tasks.subjectId, input.subjectId), inArray(tasks.status, ['todo', 'doing'])));
-  const busyMinutesByDate: Record<string, number> = {};
-  for (const row of busyRows)
-    busyMinutesByDate[row.date] = (busyMinutesByDate[row.date] ?? 0) + row.minutes;
+  // Other subjects' active tasks and imported calendar events compete for the same daily
+  // minutes (docs/04-planner.md §7, §9.4).
+  const busyMinutesByDate = await loadBusyMinutesByDate(db, input.subjectId);
 
   const plannerInput: PlannerInput = {
     startDate: input.startDate,

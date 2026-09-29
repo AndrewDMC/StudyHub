@@ -22,7 +22,7 @@ export interface Violation {
   message: string;
 }
 
-type TaskLike = Pick<
+export type TaskLike = Pick<
   PlannedTask,
   'key' | 'date' | 'kind' | 'topicKey' | 'minutes' | 'pinned' | 'title'
 >;

@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { createTestDb } from '@studyhub/db/testDb';
 import {
   artifacts,
+  calendarEvents,
   chunks,
   documentTopics,
   documents,
@@ -206,6 +207,20 @@ describe('processGeneratePlan', () => {
     const result = await processGeneratePlan(db, baseInput(), new FakeProvider());
     const taskRows = await db.select().from(tasks).where(eq(tasks.planId, result.planId));
     expect(taskRows.some((t) => t.date === '2026-01-05')).toBe(false);
+  });
+
+  it('imported calendar events take time out of the day, whatever the subject', async () => {
+    await addParsedDocument(10);
+    // The first Monday is 120 min; two imported events (60 each) leave nothing.
+    await db.insert(calendarEvents).values([
+      { id: randomUUID(), uid: 'a', date: '2026-01-05', title: 'Lezione' },
+      { id: randomUUID(), uid: 'b', date: '2026-01-05', title: 'Laboratorio' },
+    ]);
+
+    const result = await processGeneratePlan(db, baseInput(), new FakeProvider());
+    const taskRows = await db.select().from(tasks).where(eq(tasks.planId, result.planId));
+    expect(taskRows.some((t) => t.date === '2026-01-05')).toBe(false);
+    expect(taskRows.length).toBeGreaterThan(0);
   });
 
   it('groups documents tagged to the same topic into one planning unit, and persists the real topic id on tasks', async () => {

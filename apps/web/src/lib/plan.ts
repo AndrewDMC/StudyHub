@@ -3,7 +3,11 @@ import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import { and, eq, inArray } from 'drizzle-orm';
 import {
+  buildPlanningUnits,
   exams,
+  heuristicPlannerTopics,
+  loadBusyMinutesByDate,
+  loadEligibleDocs,
   recomputeTopicMastery,
   studyPlans,
   subjects,
@@ -12,20 +16,27 @@ import {
   type Task,
 } from '@studyhub/db';
 import {
+  applyBulkAction,
   buildCapacity,
   computeLoadPerDay,
   detectDrift,
   diffPlans,
+  addDays,
+  eachDay,
   moveTask as coreMoveTask,
   resolveSubjectSubpath,
+  schedulePlan,
+  weekday,
   type PlannerInput,
 } from '@studyhub/core';
 import type {
+  BulkPlanActionRequest,
   CreateManualTaskRequest,
   DriftReportDto,
   GeneratePlanRequest,
   PlanDiffDto,
   PlanDto,
+  PlanPreviewDto,
   TaskDto,
   UpdateTaskRequest,
 } from '@studyhub/contracts';
@@ -168,6 +179,59 @@ export async function enqueueGeneratePlan(
   const jobId = randomUUID();
   await queue.add('generate_plan', { ...input, subjectId: subject.id }, { jobId });
   return { jobId };
+}
+
+/**
+ * The wizard's free pre-flight (docs/fasi/F6): Fase B on a page-based estimate, no model call, no
+ * writes. Answers "is there enough time?" *before* the user spends the Fase A call, with the same
+ * `feasibility` (and the 3 strategies) the generated draft would carry. FSRS reviews are left out
+ * (the real job adds them), so the required minutes here are a lower bound.
+ */
+export async function getPlanPreview(
+  db: AnyDb,
+  subjectSlug: string,
+  input: GeneratePlanRequest,
+): Promise<PlanPreviewDto> {
+  const subject = await requireSubject(db, subjectSlug);
+  const units = await buildPlanningUnits(db, subject.id, await loadEligibleDocs(db, subject.id));
+  const busyMinutesByDate = await loadBusyMinutesByDate(db, subject.id);
+
+  const plannerInput: PlannerInput = {
+    startDate: input.startDate,
+    targetDate: input.targetDate,
+    availability: input.availability,
+    topics: heuristicPlannerTopics(units),
+    prefs: input.prefs,
+    busyMinutesByDate,
+    pinned: [],
+  };
+  const result = schedulePlan(plannerInput);
+
+  // Weeks start on Monday; a partial first/last week is reported as it is.
+  const weeks = new Map<string, { available: number; planned: number }>();
+  for (const d of result.loadPerDay) {
+    const start = addDays(d.date, -((weekday(d.date) + 6) % 7));
+    const w = weeks.get(start) ?? { available: 0, planned: 0 };
+    w.available += d.available;
+    w.planned += d.planned;
+    weeks.set(start, w);
+  }
+  const windowDays = new Set(eachDay(input.startDate, input.targetDate));
+  const busyMinutes = Object.entries(busyMinutesByDate)
+    .filter(([date]) => windowDays.has(date))
+    .reduce((sum, [, minutes]) => sum + minutes, 0);
+
+  return {
+    estimate: 'heuristic',
+    topicCount: units.length,
+    taskCount: result.tasks.length,
+    feasibility: result.feasibility,
+    warnings: result.warnings,
+    loadPerWeek: [...weeks.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([weekStart, w]) => ({ weekStart, ...w })),
+    busyMinutes,
+  };
 }
 
 /**
@@ -389,6 +453,65 @@ export async function moveTaskInPlan(
 }
 
 /**
+ * Bulk action on the current draft ("sposta di N giorni", "riduci il carico", "escludi argomento";
+ * docs/fasi/F6). Same pure engine as a single move (`applyBulkAction`): pinned tasks stay put and a
+ * change that would break a hard constraint is refused whole (`MoveRefusedError`), nothing written.
+ * Capacity is net of other subjects' tasks and imported events, like at generation time.
+ */
+export async function applyBulkToDraft(
+  db: AnyDb,
+  subjectSlug: string,
+  action: BulkPlanActionRequest,
+): Promise<PlanDto> {
+  const subject = await requireSubject(db, subjectSlug);
+  const [plan] = await db
+    .select()
+    .from(studyPlans)
+    .where(and(eq(studyPlans.subjectId, subject.id), eq(studyPlans.status, 'draft')));
+  if (!plan) throw new NoDraftPlanError();
+
+  const planTasks: Task[] = await db.select().from(tasks).where(eq(tasks.planId, plan.id));
+  const capacity = buildCapacity({
+    startDate: plan.startDate,
+    targetDate: plan.targetDate,
+    availability: plan.availability,
+    topics: [],
+    prefs: plan.prefs,
+    busyMinutesByDate: await loadBusyMinutesByDate(db, subject.id),
+  } as PlannerInput);
+  const result = applyBulkAction(
+    planTasks.map((t) => ({
+      key: t.taskKey,
+      date: t.date,
+      kind: t.kind,
+      topicKey: t.topicKey,
+      minutes: t.minutes,
+      pinned: t.pinned,
+      title: t.title,
+    })),
+    action,
+    { capacity, targetDate: plan.targetDate, prerequisites: new Map() },
+  );
+  if (!result.ok) throw new MoveRefusedError(result.reason);
+
+  const byKey = new Map(planTasks.map((t) => [t.taskKey, t]));
+  const now = new Date();
+  for (const t of result.tasks) {
+    const original = byKey.get(t.key);
+    if (!original || (original.date === t.date && original.minutes === t.minutes)) continue;
+    await db
+      .update(tasks)
+      .set({ date: t.date, minutes: t.minutes, updatedAt: now })
+      .where(eq(tasks.id, original.id));
+  }
+  const removedIds = result.removedKeys.map((k) => byKey.get(k)!.id);
+  if (removedIds.length > 0) await db.delete(tasks).where(inArray(tasks.id, removedIds));
+
+  const taskRows: Task[] = await db.select().from(tasks).where(eq(tasks.planId, plan.id));
+  return toPlanDto(plan, taskRows);
+}
+
+/**
  * "Debito" — _riassorbi nel piano_ (docs/fasi/F6-planner-calendario.md "Decisioni": an overdue task
  * doesn't just pile up — rimanda/riassorbi/archivia). Unlike `moveTaskInPlan` (a date the user
  * picked), this tries each day from `today` onward and takes the first one `coreMoveTask` accepts
@@ -416,7 +539,9 @@ export async function reabsorbTaskInPlan(
     });
     if (result.ok) return applyMoveResult(db, plan, planTasks, result);
   }
-  throw new MoveRefusedError('Nessun giorno del piano ha spazio libero per riassorbire questa task.');
+  throw new MoveRefusedError(
+    'Nessun giorno del piano ha spazio libero per riassorbire questa task.',
+  );
 }
 
 /** Daily Task widget (docs/fasi/F7-dashboard-polish.md "Oggi"): today's actionable tasks from the *active* plan. Overdue `todo`/`doing` tasks from the last 7 days are included as debt — see docs/fasi/F6 "Stato" for the full "Debito" UI this doesn't build yet. */

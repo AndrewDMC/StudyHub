@@ -194,3 +194,41 @@ export const DriftReportDtoSchema = z.object({
   reason: z.string().nullable(),
 });
 export type DriftReportDto = z.infer<typeof DriftReportDtoSchema>;
+
+/** Load of one week of the plan window (weeks start on Monday) — the wizard's preview chart. */
+export const WeekLoadDtoSchema = z.object({
+  weekStart: IsoDateSchema,
+  available: z.number(),
+  planned: z.number(),
+});
+export type WeekLoadDto = z.infer<typeof WeekLoadDtoSchema>;
+
+/**
+ * Free, model-less preview shown *before* generating (docs/fasi/F6: "il wizard
+ * dichiara il tempo insufficiente prima di generare"): Fase B run on a
+ * page-based estimate. `estimate` is always `heuristic` — the job's real Fase A
+ * refines it, so the numbers are an approximation, not a promise.
+ */
+export const PlanPreviewDtoSchema = z.object({
+  estimate: z.literal('heuristic'),
+  topicCount: z.number().int(),
+  taskCount: z.number().int(),
+  feasibility: FeasibilityDtoSchema,
+  warnings: z.array(z.string()),
+  loadPerWeek: z.array(WeekLoadDtoSchema),
+  /** Minutes taken out of the window by other subjects' tasks and imported events. */
+  busyMinutes: z.number(),
+});
+export type PlanPreviewDto = z.infer<typeof PlanPreviewDtoSchema>;
+
+/** Bulk edits on the draft under review (docs/fasi/F6 "Azioni bulk"). */
+export const BulkPlanActionRequestSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('shift'),
+    days: z.number().int().min(-30).max(30),
+    from: IsoDateSchema.optional(),
+  }),
+  z.object({ type: z.literal('reduce_load'), percent: z.number().min(1).max(90) }),
+  z.object({ type: z.literal('exclude_topic'), topicKey: z.string().min(1) }),
+]);
+export type BulkPlanActionRequest = z.infer<typeof BulkPlanActionRequestSchema>;

@@ -3,7 +3,15 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ExamDto, Intensity, PlanDiffDto, PlanDto, TaskDto } from '@studyhub/contracts';
+import type {
+  BulkPlanActionRequest,
+  ExamDto,
+  Intensity,
+  PlanDiffDto,
+  PlanDto,
+  PlanPreviewDto,
+  TaskDto,
+} from '@studyhub/contracts';
 
 async function getJson<T>(url: string, key: string): Promise<T> {
   const res = await fetch(url);
@@ -58,24 +66,50 @@ function WizardForm({
   const [sessionLength, setSessionLength] = useState(50);
   const [intensity, setIntensity] = useState<Intensity>('standard');
   const [simulationCount, setSimulationCount] = useState('auto');
+  const [blackoutText, setBlackoutText] = useState('');
+
+  // Comma/space separated YYYY-MM-DD; anything else is flagged, not silently dropped.
+  const blackoutTokens = blackoutText.split(/[\s,;]+/).filter(Boolean);
+  const isIso = (t: string) => /^\d{4}-\d{2}-\d{2}$/.test(t);
+  const blackoutDates = blackoutTokens.filter(isIso);
+  const blackoutInvalid = blackoutTokens.filter((t) => !isIso(t));
+
+  const requestBody = {
+    startDate,
+    targetDate,
+    examId: examId || undefined,
+    availability: { perWeekday, blackoutDates },
+    prefs: {
+      sessionLength,
+      intensity,
+      simulationCount: simulationCount === 'auto' ? 'auto' : Number(simulationCount),
+      simulationMinutes: 90,
+      reviewMinutesPerCard: 0.5,
+    },
+    force: false,
+  };
 
   const generate = useMutation({
-    mutationFn: () =>
-      send(`/api/subjects/${slug}/plan`, 'POST', {
-        startDate,
-        targetDate,
-        examId: examId || undefined,
-        availability: { perWeekday, blackoutDates: [] },
-        prefs: {
-          sessionLength,
-          intensity,
-          simulationCount: simulationCount === 'auto' ? 'auto' : Number(simulationCount),
-          simulationMinutes: 90,
-          reviewMinutesPerCard: 0.5,
-        },
-        force: false,
-      }),
+    mutationFn: () => send(`/api/subjects/${slug}/plan`, 'POST', requestBody),
     onSuccess: onGenerated,
+  });
+
+  // Free pre-flight (no AI call): re-run shortly after the form settles.
+  const previewKey = JSON.stringify(requestBody);
+  const [settledKey, setSettledKey] = useState(previewKey);
+  useEffect(() => {
+    const t = setTimeout(() => setSettledKey(previewKey), 500);
+    return () => clearTimeout(t);
+  }, [previewKey]);
+  const previewReady = !!targetDate && targetDate > startDate && blackoutInvalid.length === 0;
+  const previewQuery = useQuery({
+    queryKey: ['plan-preview', slug, settledKey],
+    queryFn: async () => {
+      const body = await send(`/api/subjects/${slug}/plan/preview`, 'POST', JSON.parse(settledKey));
+      return body.preview as PlanPreviewDto;
+    },
+    enabled: previewReady,
+    retry: false,
   });
 
   const setDay = (i: number, minutes: number) =>
@@ -157,6 +191,20 @@ function WizardForm({
         </div>
       </div>
 
+      <label className="flex flex-col gap-1 text-xs text-fg-secondary">
+        Giorni non disponibili (YYYY-MM-DD, separati da virgola)
+        <input
+          value={blackoutText}
+          onChange={(e) => setBlackoutText(e.target.value)}
+          placeholder="2026-04-25, 2026-05-01"
+          aria-invalid={blackoutInvalid.length > 0}
+          className="rounded-[var(--radius-control)] border border-border bg-bg-inset px-2 py-1 text-sm text-fg-primary"
+        />
+        {blackoutInvalid.length > 0 && (
+          <span className="text-danger">Data non valida: {blackoutInvalid.join(', ')}</span>
+        )}
+      </label>
+
       <div className="grid grid-cols-3 gap-3">
         <label className="flex flex-col gap-1 text-xs text-fg-secondary">
           Sessione (min)
@@ -192,6 +240,13 @@ function WizardForm({
         </label>
       </div>
 
+      {previewReady && previewQuery.data && <PreviewPanel preview={previewQuery.data} />}
+      {previewReady && previewQuery.isError && (
+        <p role="alert" className="text-xs text-danger">
+          Anteprima non disponibile: {(previewQuery.error as Error).message}
+        </p>
+      )}
+
       <button
         type="submit"
         disabled={generate.isPending}
@@ -208,6 +263,165 @@ function WizardForm({
         </p>
       )}
     </form>
+  );
+}
+
+/** What the wizard tells you before it spends the AI call: is there enough time, week by week. */
+function PreviewPanel({ preview }: { preview: PlanPreviewDto }) {
+  const { feasibility } = preview;
+  const peak = Math.max(1, ...preview.loadPerWeek.map((w) => Math.max(w.available, w.planned)));
+  return (
+    <div
+      data-testid="plan-preview"
+      className={`space-y-2 rounded-[var(--radius-card)] border p-3 text-xs ${feasibility.feasible ? 'border-ok' : 'border-warn'}`}
+    >
+      <p className={`font-medium ${feasibility.feasible ? 'text-ok' : 'text-warn'}`}>
+        {feasibility.feasible
+          ? 'Tempo sufficiente'
+          : `Tempo insufficiente: mancano ~${feasibility.shortfallMinutes} min su ${feasibility.requiredMinutes} richiesti`}
+      </p>
+      <p className="text-fg-muted">
+        {preview.topicCount} argomenti · ~{preview.taskCount} task · stima dalle pagine (non ancora
+        dall&apos;AI)
+        {preview.busyMinutes > 0 && ` · ${preview.busyMinutes} min già occupati da altri impegni`}
+      </p>
+      <ul className="space-y-1">
+        {preview.loadPerWeek.map((w) => (
+          <li key={w.weekStart} className="flex items-center gap-2">
+            <span className="w-20 shrink-0 font-mono tabular-nums text-fg-muted">
+              {w.weekStart}
+            </span>
+            <span className="relative h-2 flex-1 rounded-full bg-bg-inset">
+              <span
+                className="absolute inset-y-0 left-0 rounded-full bg-border"
+                style={{ width: `${(w.available / peak) * 100}%` }}
+              />
+              <span
+                className={`absolute inset-y-0 left-0 rounded-full ${w.planned > w.available ? 'bg-danger' : 'bg-accent'}`}
+                style={{ width: `${(Math.min(w.planned, w.available) / peak) * 100}%` }}
+              />
+            </span>
+            <span className="w-24 shrink-0 text-right font-mono tabular-nums text-fg-secondary">
+              {w.planned}/{w.available} min
+            </span>
+          </li>
+        ))}
+      </ul>
+      {!feasibility.feasible && (
+        <ul className="space-y-1 text-fg-secondary">
+          {feasibility.strategies.map((st) => (
+            <li key={st.id}>
+              <span className="font-medium text-fg-primary">{st.label}:</span> {st.description}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** Bulk edits on the draft (docs/fasi/F6 "Azioni bulk"); a refused action shows why and changes nothing. */
+function BulkBar({ slug, plan, onDone }: { slug: string; plan: PlanDto; onDone: () => void }) {
+  const [days, setDays] = useState(2);
+  const [percent, setPercent] = useState(20);
+  const [topicKey, setTopicKey] = useState('');
+
+  const topicOptions = [
+    ...new Map(
+      plan.tasks
+        .filter((t) => t.topicKey)
+        .filter((t) => t.kind === 'read') // "Studia <argomento> — pp. …" carries the topic's name
+        .map((t) => [t.topicKey!, t.title.replace(/^Studia /, '').split(' — ')[0]!] as const),
+    ),
+  ];
+  const run = useMutation({
+    mutationFn: (action: BulkPlanActionRequest) =>
+      send(`/api/subjects/${slug}/plan/bulk`, 'POST', action),
+    onSuccess: onDone,
+  });
+  const btn =
+    'rounded-[var(--radius-control)] border border-border px-2 py-1 text-[11px] text-fg-secondary hover:text-fg-primary disabled:opacity-50';
+  const num =
+    'w-14 rounded-[var(--radius-control)] border border-border bg-bg-inset px-1 py-1 text-center font-mono text-xs text-fg-primary';
+
+  return (
+    <div className="space-y-2 rounded-[var(--radius-card)] border border-border bg-bg-surface p-3 text-xs">
+      <p className="font-medium text-fg-secondary">
+        Azioni in blocco (le task fissate non si muovono)
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-fg-muted">Sposta di</span>
+        <input
+          type="number"
+          aria-label="Giorni di spostamento"
+          value={days}
+          min={-30}
+          max={30}
+          onChange={(e) => setDays(Number(e.target.value))}
+          className={num}
+        />
+        <span className="text-fg-muted">giorni</span>
+        <button
+          type="button"
+          className={btn}
+          disabled={run.isPending}
+          onClick={() => run.mutate({ type: 'shift', days })}
+        >
+          Sposta tutto
+        </button>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-fg-muted">Riduci il carico del</span>
+        <input
+          type="number"
+          aria-label="Percentuale di riduzione"
+          value={percent}
+          min={1}
+          max={90}
+          onChange={(e) => setPercent(Number(e.target.value))}
+          className={num}
+        />
+        <span className="text-fg-muted">%</span>
+        <button
+          type="button"
+          className={btn}
+          disabled={run.isPending}
+          onClick={() => run.mutate({ type: 'reduce_load', percent })}
+        >
+          Riduci
+        </button>
+      </div>
+      {topicOptions.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            aria-label="Argomento da escludere"
+            value={topicKey}
+            onChange={(e) => setTopicKey(e.target.value)}
+            className="min-w-0 max-w-[16rem] rounded-[var(--radius-control)] border border-border bg-bg-inset px-2 py-1 text-xs text-fg-primary"
+          >
+            <option value="">Escludi argomento…</option>
+            {topicOptions.map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className={btn}
+            disabled={!topicKey || run.isPending}
+            onClick={() => run.mutate({ type: 'exclude_topic', topicKey })}
+          >
+            Escludi
+          </button>
+        </div>
+      )}
+      {run.isError && (
+        <p role="alert" className="text-danger">
+          {(run.error as Error).message}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -316,9 +530,8 @@ function DiffPanel({ diff }: { diff: PlanDiffDto }) {
 
 /**
  * Planner wizard + review + committed-plan view in one screen (docs/04-planner.md
- * §9). **Not built in this slice** (docs/fasi/F6-planner-calendario.md "Stato"):
- * drag&drop (moves go through a button, not a pointer gesture), ICS export/import,
- * bulk actions, a month/week calendar grid — this is a day-grouped list.
+ * §9). This is a day-grouped list, not a calendar grid; moves go through a button, not a
+ * pointer gesture (docs/fasi/F6-planner-calendario.md "Stato").
  */
 export function PlanClient({ slug }: { slug: string }) {
   const queryClient = useQueryClient();
@@ -468,6 +681,7 @@ export function PlanClient({ slug }: { slug: string }) {
               </button>
             </div>
           )}
+          {plan.status === 'draft' && <BulkBar slug={slug} plan={plan} onDone={invalidatePlan} />}
           {commit.isError && (
             <p role="alert" className="text-xs text-danger">
               {(commit.error as Error).message}

@@ -30,9 +30,8 @@ Spec funzionale completa: `docs/04-planner.md`.
 
 - [ ] Piano a 30 giorni generato in <60s; fase B ricalcolata in <500ms. (Fase B è nell'ordine dei ms —
       vedi `schedule.test.ts` — ma non misurato end-to-end con Fase A reale, mai eseguita dal vivo.)
-- [ ] Tempo insufficiente → il wizard lo dichiara **prima** di generare e propone 3 strategie. (Le 3
-      strategie esistono e si vedono nella bozza — vedi "Stato" sotto — ma solo _dopo_ aver generato, non
-      prima come anteprima.)
+- [x] Tempo insufficiente → il wizard lo dichiara **prima** di generare e propone 3 strategie.
+      (Anteprima gratuita `POST .../plan/preview` — vedi "Completamento F6" in fondo.)
 - [x] Sposto una task di 2 giorni: il piano si riadatta senza violare i vincoli duri e senza chiamate AI.
 - [x] Due esami ravvicinati: nessun giorno supera i minuti disponibili (con la materia che genera per
       seconda che rispetta i minuti già occupati dalla prima — non un solver congiunto, vedi "Stato").
@@ -148,10 +147,7 @@ Cosa c'è, con test reali:
   campo data + bottone). Niente editing di blackout dates dalla UI (il campo esiste nel modello e nel
   wizard di generazione, non nel Calendario). Niente indicatore di fattibilità/sovraccarico sulla cella
   del giorno oltre al totale minuti.
-- **Anteprima di fattibilità _prima_ di generare**: il wizard lancia sempre il job; il verdetto di
-  fattibilità e le 3 strategie si vedono solo dopo, nella bozza generata — non prima di spendere la
-  chiamata Fase A.
-- **Azioni bulk** ("sposta la settimana di 2 giorni", "riduci il carico del 20%", "escludi argomento").
+- ~~Anteprima di fattibilità prima di generare~~ e ~~azioni bulk~~: chiuse, vedi "Completamento F6".
 - **`starts_at`/`ends_at`** (fasce orarie): le task hanno una `date`, non un orario — nessuna vista
   Settimana avrebbe comunque senso senza questo.
 - **CLI**: `studyhub plan generate`/`ls` esistono ora (vedi "Aggiornamento" in fondo al file) — manca
@@ -213,7 +209,7 @@ bozza, errore chiaro per materia sconosciuta, `ls` in ordine e con conteggio tas
 
 Export ICS reale — metà dello scope "Export ICS + import ICS" (import resta non iniziato, vedi
 "Non implementato"). `buildIcsCalendar` (`packages/core/src/ics.ts`) è uno scrittore RFC 5545
-minimale, dipendenze zero: escaping di testo (`;`, `,`, `\`, newline), *line folding* a 75
+minimale, dipendenze zero: escaping di testo (`;`, `,`, `\`, newline), _line folding_ a 75
 caratteri con continuazione indentata, `\r\n` ovunque come richiesto dalla spec — testato contro
 la spec stessa (`packages/core/test/ics.test.ts`, 7 casi), non contro un parser ICS di terze
 parti. `getIcsFeed` (`apps/web/src/lib/calendar.ts`) riusa `getCalendarRange` — stessa query di
@@ -271,7 +267,36 @@ disponibilità di ogni materia allo stesso modo), distinta da `tasks` come previ
   compaiono nella cella del giorno (📅) e nell'agenda del giorno selezionato, accanto a task ed
   esami — `getCalendarRange` ora restituisce anche `importedEvents`.
 
-**Non implementato in questa slice**: gli eventi importati sono solo mostrati, non ancora
-sottratti dalla capacità del Planner in `buildCapacity`/`schedulePlan` — un impegno importato non
-riduce ancora i minuti disponibili di un giorno quando si genera un piano. Nessuna cancellazione
-di un evento importato dalla UI (solo reimport, che aggiorna).
+**Non implementato in questa slice**: ~~gli eventi importati non sottraggono capacità~~ (chiuso, vedi
+"Completamento F6"). Nessuna cancellazione di un evento importato dalla UI (solo reimport, che aggiorna).
+
+## Completamento F6 (2026-09-29): anteprima, eventi che occupano tempo, azioni bulk
+
+- **Anteprima di fattibilità gratuita** (`getPlanPreview`, `POST /api/subjects/:slug/plan/preview`).
+  Fase B su una stima **euristica dalle pagine** (`heuristicPlannerTopics`, ~3,5 min/pagina, minimo 20),
+  senza modello e senza scrivere nulla: risponde "c'è abbastanza tempo?" _prima_ di spendere la Fase A,
+  con lo stesso `feasibility` (e le 3 strategie) della bozza. Restituisce anche il carico per settimana
+  (lunedì-domenica) e i minuti già occupati. È un **limite inferiore**: il job reale aggiunge le FSRS in
+  scadenza e usa la stima AI, quindi i numeri finali possono differire. Nel wizard compare mentre si
+  compila (debounce 500 ms).
+- **Blackout dates nel wizard** (campo testo, date non valide segnalate invece di scartate in silenzio).
+- **Gli eventi ICS importati occupano tempo**. `loadBusyMinutesByDate` (`packages/db/src/planning.ts`),
+  ora condivisa da worker e anteprima, somma alle task delle altre materie **60 min per evento**
+  (`IMPORTED_EVENT_MINUTES`). È un'assunzione dichiarata: un evento importato ha solo una data, non
+  un orario, quindi la durata reale è ignota. `buildPlanningUnits` è stata spostata nello stesso file
+  (nessun cambio di comportamento).
+- **Azioni bulk sulla bozza** (`applyBulkAction`, `packages/core/src/planner/bulk.ts`, pura come
+  `moveTask`; `POST .../plan/bulk`): _sposta di N giorni_ (da una data), _riduci il carico del X%_
+  (arrotonda a 5, minimo 10; simulazioni e riposo non si toccano), _escludi argomento_. Le task `pin`
+  non si muovono mai; un'azione che introdurrebbe una violazione dei vincoli duri è **rifiutata per
+  intero** (409) senza scrivere nulla. La capacità usata è al netto di altre materie ed eventi.
+- Test: `packages/core/test/planner/bulk.test.ts`, `apps/web/test/plan.test.ts` (anteprima senza
+  effetti, insufficienza dichiarata con 3 strategie, evento che riduce la disponibilità, evento fuori
+  finestra ignorato, bulk persistito/rifiutato/solo su bozza), `apps/worker/test/generatePlan.test.ts`
+  (evento importato → nessuna task quel giorno). e2e `apps/web/e2e/piano-f6.spec.ts` **scritto ma non
+  eseguito** (Docker non avviato).
+
+**Ancora non fatto** (dichiarato): Calendario solo vista Mese (niente Settimana/Agenda, niente
+drag&drop col mouse, niente editing blackout dal Calendario), `starts_at`/`ends_at`, `plan commit` da
+CLI, Daily Task nella home, Fase A mai eseguita dal vivo (criteri "<60s" e "Google Calendar" non
+misurati), allocazione congiunta fra materie ancora unidirezionale.

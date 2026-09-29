@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { createTestDb } from '@studyhub/db/testDb';
-import { documentTopics, documents, studyPlans, tasks, topics } from '@studyhub/db';
+import { calendarEvents, documentTopics, documents, studyPlans, tasks, topics } from '@studyhub/db';
 import { createSubject } from '../src/lib/subjects';
 import {
   commitPlan,
@@ -13,8 +13,10 @@ import {
   deleteDraftTask,
   discardDraft,
   enqueueGeneratePlan,
+  applyBulkToDraft,
   ExamNotFoundError,
   getCurrentPlan,
+  getPlanPreview,
   getDailyTasks,
   getPlanDiff,
   getPlanDrift,
@@ -415,5 +417,184 @@ describe('plan draft/commit lifecycle', () => {
     await expect(updateDraftTask(db, otherSubject.slug, taskId, { pinned: true })).rejects.toThrow(
       TaskNotFoundError,
     );
+  });
+});
+
+describe('getPlanPreview (free pre-flight, no AI)', () => {
+  let dataRoot: string;
+  let db: Awaited<ReturnType<typeof createTestDb>>;
+  let subjectSlug: string;
+  let subjectId: string;
+
+  beforeEach(async () => {
+    dataRoot = await mkdtemp(join(tmpdir(), 'studyhub-preview-'));
+    db = await createTestDb();
+    const subject = await createSubject(db, dataRoot, { name: 'Chimica', color: 'green' });
+    subjectSlug = subject.slug;
+    subjectId = subject.id;
+  });
+  afterEach(async () => {
+    await rm(dataRoot, { recursive: true, force: true });
+  });
+
+  async function addDoc(pages: number) {
+    await db.insert(documents).values({
+      id: randomUUID(),
+      subjectId,
+      type: 'appunti',
+      originalName: `doc-${pages}.pdf`,
+      storedPath: '/x',
+      mime: 'application/pdf',
+      bytes: 1,
+      sha256: randomUUID().replace(/-/g, '').padEnd(64, '0'),
+      status: 'parsed',
+      pages,
+    });
+  }
+
+  const request = (over: Partial<Parameters<typeof getPlanPreview>[2]> = {}) => ({
+    startDate: '2026-03-02',
+    targetDate: '2026-03-16',
+    availability: { perWeekday: [0, 120, 120, 120, 120, 120, 0], blackoutDates: [] },
+    prefs: PREFS,
+    force: false,
+    ...over,
+  });
+
+  it('says a plan is feasible with ample time, and writes nothing', async () => {
+    await addDoc(40);
+    const preview = await getPlanPreview(db, subjectSlug, request());
+    expect(preview.estimate).toBe('heuristic');
+    expect(preview.topicCount).toBe(1);
+    expect(preview.feasibility.feasible).toBe(true);
+    expect(preview.loadPerWeek.length).toBeGreaterThanOrEqual(2);
+    expect(await db.select().from(studyPlans)).toEqual([]);
+    expect(await db.select().from(tasks)).toEqual([]);
+  });
+
+  it('declares insufficient time BEFORE generating, with the 3 strategies', async () => {
+    await addDoc(400);
+    const preview = await getPlanPreview(
+      db,
+      subjectSlug,
+      request({ availability: { perWeekday: [0, 20, 20, 20, 20, 20, 0], blackoutDates: [] } }),
+    );
+    expect(preview.feasibility.feasible).toBe(false);
+    expect(preview.feasibility.shortfallMinutes).toBeGreaterThan(0);
+    expect(preview.feasibility.strategies).toHaveLength(3);
+  });
+
+  it('subtracts imported calendar events from the days they fall on', async () => {
+    await addDoc(20);
+    const without = await getPlanPreview(db, subjectSlug, request());
+    await db.insert(calendarEvents).values({
+      id: randomUUID(),
+      uid: 'ev-1',
+      date: '2026-03-03', // a Tuesday inside the window
+      title: 'Laboratorio',
+    });
+    const withEvent = await getPlanPreview(db, subjectSlug, request());
+    const sum = (p: typeof without) => p.loadPerWeek.reduce((a, w) => a + w.available, 0);
+    expect(withEvent.busyMinutes).toBe(60);
+    expect(sum(withEvent)).toBeLessThan(sum(without));
+  });
+
+  it('an event outside the window changes nothing', async () => {
+    await addDoc(20);
+    await db.insert(calendarEvents).values({
+      id: randomUUID(),
+      uid: 'ev-2',
+      date: '2027-01-01',
+      title: 'Lontano',
+    });
+    expect((await getPlanPreview(db, subjectSlug, request())).busyMinutes).toBe(0);
+  });
+});
+
+describe('applyBulkToDraft', () => {
+  let dataRoot: string;
+  let db: Awaited<ReturnType<typeof createTestDb>>;
+  let subjectSlug: string;
+  let subjectId: string;
+  let planId: string;
+
+  beforeEach(async () => {
+    dataRoot = await mkdtemp(join(tmpdir(), 'studyhub-bulk-'));
+    db = await createTestDb();
+    const subject = await createSubject(db, dataRoot, { name: 'Fisica 1', color: 'blue' });
+    subjectSlug = subject.slug;
+    subjectId = subject.id;
+    planId = randomUUID();
+    await db.insert(studyPlans).values({
+      id: planId,
+      subjectId,
+      startDate: '2026-01-05',
+      targetDate: '2026-02-04',
+      availability: AVAILABILITY,
+      prefs: PREFS,
+      feasibility: FEASIBILITY,
+      warnings: [],
+      model: 'fake-v1',
+      promptVersion: 'estimate_topics/v1',
+      status: 'draft',
+    });
+  });
+  afterEach(async () => {
+    await rm(dataRoot, { recursive: true, force: true });
+  });
+
+  async function addTask(o: Partial<typeof tasks.$inferInsert>) {
+    const id = randomUUID();
+    await db.insert(tasks).values({
+      id,
+      subjectId,
+      planId,
+      taskKey: `read:t:${id.slice(0, 4)}`,
+      date: '2026-01-06',
+      kind: 'read',
+      topicKey: 't',
+      minutes: 50,
+      title: 'Studia',
+      description: 'x',
+      payload: { action: 'read' },
+      status: 'proposed',
+      ...o,
+    });
+    return id;
+  }
+  const row = async (id: string) => (await db.select().from(tasks).where(eq(tasks.id, id)))[0]!;
+
+  it('shifts the unpinned draft tasks and persists it', async () => {
+    const a = await addTask({ date: '2026-01-06' }); // Tue
+    const b = await addTask({ date: '2026-01-07', pinned: true });
+    await applyBulkToDraft(db, subjectSlug, { type: 'shift', days: 1 });
+    expect((await row(a)).date).toBe('2026-01-07');
+    expect((await row(b)).date).toBe('2026-01-07'); // pinned: untouched
+  });
+
+  it('refuses a shift that lands on a day with no time (Sunday), changing nothing', async () => {
+    const a = await addTask({ date: '2026-01-10' }); // Saturday: Sunday has 0 minutes
+    await expect(
+      applyBulkToDraft(db, subjectSlug, { type: 'shift', days: 1 }),
+    ).rejects.toBeInstanceOf(MoveRefusedError);
+    expect((await row(a)).date).toBe('2026-01-10');
+  });
+
+  it('reduces the load and excludes a topic', async () => {
+    const a = await addTask({ minutes: 60, topicKey: 'x' });
+    const b = await addTask({ minutes: 60, topicKey: 'y' });
+    await applyBulkToDraft(db, subjectSlug, { type: 'reduce_load', percent: 50 });
+    expect((await row(a)).minutes).toBe(30);
+
+    const plan = await applyBulkToDraft(db, subjectSlug, { type: 'exclude_topic', topicKey: 'x' });
+    expect(plan.tasks.map((t) => t.id)).toEqual([b]);
+  });
+
+  it('needs a draft, and never touches an active plan', async () => {
+    await db.update(studyPlans).set({ status: 'active' }).where(eq(studyPlans.id, planId));
+    await addTask({});
+    await expect(
+      applyBulkToDraft(db, subjectSlug, { type: 'reduce_load', percent: 20 }),
+    ).rejects.toBeInstanceOf(NoDraftPlanError);
   });
 });
