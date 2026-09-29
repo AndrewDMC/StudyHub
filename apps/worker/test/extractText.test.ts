@@ -162,6 +162,65 @@ describe('processExtractText', () => {
     expect(doc?.status).toBe('failed');
   });
 
+  it('ingests an already-converted Markdown file verbatim, with no OCR/AI call', async () => {
+    const md =
+      '# Termodinamica\n\nIntro.\n\n## Entropia\n\nNon diminuisce mai.\n\n```\n# non un titolo\n```\n';
+    const storedPath = resolveDocumentSourcePath(
+      subjectSlug,
+      'appunti',
+      `${randomUUID()}.md`,
+      dataRoot,
+    );
+    await writeFile(storedPath, md, 'utf-8');
+    const docId = randomUUID();
+    await db.insert(documents).values({
+      id: docId,
+      subjectId,
+      type: 'appunti',
+      originalName: 'termo.md',
+      storedPath,
+      mime: 'text/markdown',
+      bytes: md.length,
+      sha256: 'c'.repeat(64),
+    });
+    const provider = fakeOcrProvider('mai chiamato');
+
+    const result = await processExtractText(db, dataRoot, { documentId: docId }, provider);
+
+    expect(provider.ocrText).not.toHaveBeenCalled();
+    expect(result.pages).toBe(2);
+    expect(await readFile(result.mdPath, 'utf-8')).toBe(md);
+    const rows = await db.select().from(chunks).where(eq(chunks.documentId, docId));
+    expect(rows).toHaveLength(2);
+    expect(rows.find((c) => c.ord === 1)?.text).toContain('# non un titolo');
+    const [doc] = await db.select().from(documents).where(eq(documents.id, docId));
+    expect(doc?.status).toBe('parsed');
+  });
+
+  it('fails an empty Markdown file and marks the document failed', async () => {
+    const storedPath = resolveDocumentSourcePath(
+      subjectSlug,
+      'appunti',
+      `${randomUUID()}.md`,
+      dataRoot,
+    );
+    await writeFile(storedPath, '  \n\n', 'utf-8');
+    const docId = randomUUID();
+    await db.insert(documents).values({
+      id: docId,
+      subjectId,
+      type: 'appunti',
+      originalName: 'vuoto.md',
+      storedPath,
+      mime: 'text/markdown',
+      bytes: 4,
+      sha256: 'd'.repeat(64),
+    });
+    await expect(processExtractText(db, dataRoot, { documentId: docId })).rejects.toThrow(/vuoto/);
+    const [doc] = await db.select().from(documents).where(eq(documents.id, docId));
+    expect(doc?.status).toBe('failed');
+  });
+
   it('OCRs a plain image upload (jpeg/png/webp) via AiProvider.ocrText', async () => {
     const docId = randomUUID();
     const storedPath = resolveDocumentSourcePath(

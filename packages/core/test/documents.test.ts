@@ -67,3 +67,27 @@ describe('generateStoredFilename', () => {
     expect(a).not.toBe(b);
   });
 });
+
+describe('sniffUploadMime — Markdown', () => {
+  const enc = (t: string) => new TextEncoder().encode(t);
+
+  it('accepts valid UTF-8 text with a .md / .markdown extension', () => {
+    expect(sniffUploadMime(enc('# Titolo\n\ntesto àèì'), 'note.md')).toBe('text/markdown');
+    expect(sniffUploadMime(enc('# Titolo'), 'NOTE.MARKDOWN')).toBe('text/markdown');
+  });
+
+  it('rejects text without a markdown extension', () => {
+    expect(sniffUploadMime(enc('# Titolo'), 'note.txt')).toBeNull();
+    expect(sniffUploadMime(enc('# Titolo'))).toBeNull();
+  });
+
+  it('rejects a binary renamed to .md (NUL bytes or invalid UTF-8)', () => {
+    expect(sniffUploadMime(new Uint8Array([0x4d, 0x5a, 0x90, 0x00]), 'x.md')).toBeNull();
+    expect(sniffUploadMime(new Uint8Array([0xc3, 0x28]), 'x.md')).toBeNull();
+  });
+
+  it('is an allowed upload mime and gets a .md stored name', () => {
+    expect(isAllowedUploadMime('text/markdown')).toBe(true);
+    expect(generateStoredFilename('text/markdown')).toMatch(/\.md$/);
+  });
+});

@@ -81,11 +81,11 @@ export async function uploadDocument(
     );
   }
 
-  const mime = sniffUploadMime(input.bytes);
+  const mime = sniffUploadMime(input.bytes, input.originalName);
   if (!mime) {
     throw new UploadError(
       'unsupported_file_type',
-      'Tipo di file non riconosciuto o non supportato (ammessi: PDF, JPEG, PNG, WEBP)',
+      'Tipo di file non riconosciuto o non supportato (ammessi: PDF, JPEG, PNG, WEBP, Markdown .md)',
     );
   }
 

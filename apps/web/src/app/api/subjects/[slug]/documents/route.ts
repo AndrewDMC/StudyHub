@@ -73,7 +73,11 @@ export async function POST(request: Request, { params }: RouteParams) {
       // a later `reconcile`/manual retry can pick it up. Never blocks the
       // response on Redis being up. `schemi` (hand-drawn photos) go through
       // vision transcription instead of the PDF text-layer extractor.
-      const jobType = type === 'schemi' ? 'transcribe_schema' : 'extract_text';
+      // Already-converted Markdown always takes the plain extract_text path.
+      const jobType =
+        type === 'schemi' && result.document.mime !== 'text/markdown'
+          ? 'transcribe_schema'
+          : 'extract_text';
       await getJobQueue()
         .add(jobType, { documentId: result.document.id }, { jobId: randomUUID() })
         .catch(() => {});

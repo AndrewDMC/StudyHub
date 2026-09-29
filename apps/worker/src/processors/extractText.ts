@@ -10,6 +10,7 @@ import { resolveProvider, type AiProvider } from '@studyhub/ai';
 import type { ExtractTextJobInput } from '@studyhub/contracts';
 import { processEmbedChunks } from './embedChunks.js';
 import { renderPdfPageToPng } from './renderPdfPage.js';
+import { splitMarkdownSections } from './splitMarkdown.js';
 import { writeCanonicalMarkdown } from './writeCanonicalMarkdown.js';
 
 const MODEL_ROUTING_OCR = 'claude-haiku-4-5-20251001'; // plain text reading, cheap model is enough
@@ -149,8 +150,20 @@ export async function processExtractText(
 
   try {
     let pages: ExtractedPage[];
+    // Already-converted Markdown is used verbatim as content.md: no extraction,
+    // no OCR, no AI cost. "Pages" are the heading-based sections (chunks).
+    let markdownOverride: string | undefined;
 
-    if (doc.mime === 'application/pdf') {
+    if (doc.mime === 'text/markdown') {
+      const decoded = await fs.readFile(doc.storedPath, 'utf-8');
+      const raw = decoded.charCodeAt(0) === 0xfeff ? decoded.slice(1) : decoded; // strip BOM
+      const sections = splitMarkdownSections(raw);
+      if (sections.length === 0) {
+        throw new Error('il file Markdown è vuoto');
+      }
+      pages = sections.map((text, i) => ({ pageNumber: i + 1, text }));
+      markdownOverride = raw.endsWith('\n') ? raw : `${raw}\n`;
+    } else if (doc.mime === 'application/pdf') {
       const pdfBytes = await fs.readFile(doc.storedPath);
       const extracted = await extractPdfText(new Uint8Array(pdfBytes));
       pages = await ocrScannedPages(
@@ -167,12 +180,12 @@ export async function processExtractText(
       pages = [{ pageNumber: 1, text: result.data.text, ocr: true }];
     } else {
       throw new Error(
-        `estrazione testo non supportata per ${doc.mime}: solo PDF e immagini (jpeg/png/webp)`,
+        `estrazione testo non supportata per ${doc.mime}: solo PDF, immagini (jpeg/png/webp) e Markdown`,
       );
     }
 
     const derivedDir = resolveDocumentDerivedDir(subject.slug, doc.id, dataRoot);
-    const markdown = renderContentMarkdown(doc.originalName, pages);
+    const markdown = markdownOverride ?? renderContentMarkdown(doc.originalName, pages);
     const { mdPath } = await writeCanonicalMarkdown(db, doc, derivedDir, markdown);
 
     await db.delete(chunks).where(eq(chunks.documentId, doc.id));

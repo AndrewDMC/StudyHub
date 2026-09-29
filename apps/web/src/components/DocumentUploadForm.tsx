@@ -72,7 +72,7 @@ export function DocumentUploadForm({
           ref={inputRef}
           type="file"
           multiple
-          accept="application/pdf,image/jpeg,image/png,image/webp"
+          accept="application/pdf,image/jpeg,image/png,image/webp,text/markdown,.md,.markdown"
           disabled={mutation.isPending}
           onChange={(e) => {
             if (e.target.files && e.target.files.length > 0) {
