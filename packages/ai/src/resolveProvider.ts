@@ -2,6 +2,7 @@ import type { AiProvider } from './provider.js';
 import { FakeProvider } from './fakeProvider.js';
 import { AnthropicProvider } from './anthropicProvider.js';
 import { ClaudeCliProvider } from './claudeCliProvider.js';
+import { readProviderPreference } from './providerPreference.js';
 
 /**
  * `AI_PROVIDER=claude-cli` -> shells out to the `claude` CLI, using whatever
@@ -13,6 +14,10 @@ import { ClaudeCliProvider } from './claudeCliProvider.js';
  * are all real, just against simulated content until a provider is configured.
  */
 export function resolveProvider(): AiProvider {
+  // Env wins (ops override); otherwise the choice made in-app via "Account Claude" on /admin.
   if (process.env.AI_PROVIDER === 'claude-cli') return new ClaudeCliProvider();
+  if (!process.env.AI_PROVIDER && readProviderPreference() === 'claude-cli') {
+    return new ClaudeCliProvider();
+  }
   return process.env.ANTHROPIC_API_KEY ? new AnthropicProvider() : new FakeProvider();
 }

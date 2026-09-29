@@ -184,7 +184,7 @@ function SubjectDetailClientInner({ slug }: { slug: string }) {
   const aiProviderQuery = useQuery({
     queryKey: ['ai-provider'],
     queryFn: fetchAiProvider,
-    staleTime: Infinity, // fixed by env at container start — never changes without a restart
+    staleTime: 30_000, // can change at runtime: the in-app Claude login on /admin switches it
   });
 
   if (subjectQuery.isLoading) {

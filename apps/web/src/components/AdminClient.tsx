@@ -47,6 +47,39 @@ async function postRetryJob(jobId: string): Promise<{ jobId: string }> {
   return body as { jobId: string };
 }
 
+interface ClaudeAuthSnapshot {
+  auth: {
+    cliAvailable: boolean;
+    loggedIn: boolean;
+    email?: string;
+    subscriptionType?: string;
+  };
+  login: { status: 'idle' | 'running' | 'succeeded' | 'failed'; url?: string; error?: string };
+  preferred: 'claude-cli' | 'auto';
+  activeProvider: string;
+  lockedByEnv: boolean;
+}
+
+type ClaudeAuthAction = 'login' | 'cancel-login' | 'logout' | 'use' | 'stop-using';
+
+async function fetchClaudeAuth(): Promise<ClaudeAuthSnapshot> {
+  const res = await fetch('/api/settings/claude-auth');
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error?.message ?? "Impossibile leggere lo stato dell'account");
+  return body as ClaudeAuthSnapshot;
+}
+
+async function postClaudeAuth(action: ClaudeAuthAction): Promise<ClaudeAuthSnapshot> {
+  const res = await fetch('/api/settings/claude-auth', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error?.message ?? 'Operazione non riuscita');
+  return body as ClaudeAuthSnapshot;
+}
+
 function formatCost(costEur: number): string {
   return costEur === 0 ? 'gratis' : `€${costEur.toFixed(4)}`;
 }
@@ -66,6 +99,139 @@ function StatusBadge({ status }: { status: string }) {
     <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[11px] ${colorClass}`}>
       {JOB_STATUS_LABELS[status] ?? status}
     </span>
+  );
+}
+
+/** Sign in with a Claude subscription via the `claude` CLI and route generation through it (no API key, no per-token billing). */
+function ClaudeAccountCard() {
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: ['claude-auth'],
+    queryFn: fetchClaudeAuth,
+    // Poll while the browser sign-in is in flight so the card flips to "connesso" on its own.
+    refetchInterval: (q) => (q.state.data?.login.status === 'running' ? 2000 : false),
+  });
+  const mutation = useMutation({
+    mutationFn: postClaudeAuth,
+    onSuccess: (data) => {
+      queryClient.setQueryData(['claude-auth'], data);
+      queryClient.invalidateQueries({ queryKey: ['ai-provider'] });
+    },
+  });
+
+  const data = query.data;
+  const running = data?.login.status === 'running';
+  const usingCli = data?.activeProvider === 'claude-cli';
+  const btn =
+    'rounded-[var(--radius-control)] border border-border px-2 py-1 text-xs text-fg-secondary hover:text-fg-primary disabled:opacity-50';
+
+  return (
+    <section className="rounded-[var(--radius-card)] border border-border bg-bg-surface p-4">
+      <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-fg-muted">
+        Account Claude
+      </h2>
+
+      {query.isLoading && <p className="text-sm text-fg-muted">Caricamento…</p>}
+      {(query.isError || mutation.isError) && (
+        <p role="alert" className="mb-2 text-xs text-danger">
+          {((query.error ?? mutation.error) as Error).message}
+        </p>
+      )}
+
+      {data && !data.auth.cliAvailable && (
+        <p className="text-sm text-fg-muted">
+          La CLI <code>claude</code> non è installata su questa macchina (o il web gira in un
+          container senza CLI): installa Claude Code ed esegui il login da lì, poi imposta{' '}
+          <code>AI_PROVIDER=claude-cli</code>.
+        </p>
+      )}
+
+      {data && data.auth.cliAvailable && (
+        <div className="space-y-3 text-xs text-fg-secondary">
+          {data.auth.loggedIn ? (
+            <p>
+              Connesso come{' '}
+              <span className="text-fg-primary">{data.auth.email ?? 'account Claude'}</span>
+              {data.auth.subscriptionType ? ` · piano ${data.auth.subscriptionType}` : ''}
+            </p>
+          ) : (
+            <p>Nessun account Claude collegato.</p>
+          )}
+
+          {running && (
+            <div className="rounded-[var(--radius-control)] border border-border bg-bg-inset p-2">
+              <p>Completa l&apos;accesso nella finestra del browser che si è aperta.</p>
+              {data.login.url && (
+                <p className="mt-1 break-all">
+                  Non si è aperta?{' '}
+                  <a
+                    href={data.login.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-accent underline"
+                  >
+                    Apri il link di accesso
+                  </a>
+                </p>
+              )}
+            </div>
+          )}
+          {data.login.status === 'failed' && data.login.error && (
+            <p role="alert" className="text-danger">
+              {data.login.error}
+            </p>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2">
+            {!data.auth.loggedIn && !running && (
+              <button
+                type="button"
+                disabled={mutation.isPending}
+                onClick={() => mutation.mutate('login')}
+                className={btn}
+              >
+                Accedi con Claude
+              </button>
+            )}
+            {running && (
+              <button type="button" onClick={() => mutation.mutate('cancel-login')} className={btn}>
+                Annulla
+              </button>
+            )}
+            {data.auth.loggedIn && !data.lockedByEnv && (
+              <button
+                type="button"
+                disabled={mutation.isPending}
+                onClick={() =>
+                  mutation.mutate(data.preferred === 'claude-cli' ? 'stop-using' : 'use')
+                }
+                className={btn}
+              >
+                {data.preferred === 'claude-cli'
+                  ? "Smetti di usare l'abbonamento"
+                  : "Usa questo abbonamento per l'AI"}
+              </button>
+            )}
+            {data.auth.loggedIn && (
+              <button
+                type="button"
+                disabled={mutation.isPending}
+                onClick={() => mutation.mutate('logout')}
+                className={btn}
+              >
+                Esci
+              </button>
+            )}
+          </div>
+
+          <p className="text-[11px] text-fg-muted">
+            Provider AI attivo: <span className="font-mono">{data.activeProvider}</span>
+            {data.lockedByEnv && " (fissato da AI_PROVIDER nell'ambiente)"}
+            {usingCli ? ' · le generazioni usano il tuo abbonamento, senza costo a token.' : ''}
+          </p>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -106,7 +272,9 @@ function FsSyncCard({ overview }: { overview: AdminOverviewDto }) {
         </p>
       )}
       {reconcileMutation.isSuccess && (
-        <p className="mb-2 text-[11px] text-ok">Job avviato — questo pannello si aggiorna a breve.</p>
+        <p className="mb-2 text-[11px] text-ok">
+          Job avviato — questo pannello si aggiorna a breve.
+        </p>
       )}
 
       {!fsSync.lastRunAt ? (
@@ -283,6 +451,8 @@ export function AdminClient() {
   return (
     <div className="mx-auto max-w-[960px] space-y-4 p-6">
       <h1 className="text-xl font-semibold tracking-[-0.02em]">Admin</h1>
+
+      <ClaudeAccountCard />
 
       {overviewQuery.isLoading && <p className="text-sm text-fg-muted">Caricamento…</p>}
       {overviewQuery.isError && (

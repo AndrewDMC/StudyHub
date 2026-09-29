@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "web",
-      "runtimeExecutable": "D:\\Documenti\\GitHub\\StudyHub\\scripts\\run-web-dev.cmd",
+      "runtimeExecutable": "C:\\Users\\andre\\Documents\\GitHub\\StudyHub\\scripts\\run-web-dev.cmd",
       "runtimeArgs": [],
       "port": 3000
     }

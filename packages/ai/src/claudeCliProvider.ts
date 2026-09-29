@@ -45,6 +45,7 @@ import {
   type SimulationOutput,
   type SummaryOutput,
 } from './schemas.js';
+import { resolveClaudeBinary } from './claudeBinary.js';
 import { loadPrompt } from './promptLoader.js';
 import {
   renderEstimateTopicsUserPrompt,
@@ -79,7 +80,7 @@ export type ClaudeCliRunner = (args: string[], stdin: string) => Promise<ClaudeC
 /** `claude --print --output-format json`, spawned with argv (no shell) so nothing in the prompt can be interpreted as shell syntax. */
 function spawnClaudeCli(args: string[], stdin: string): Promise<ClaudeCliResult> {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn('claude', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(resolveClaudeBinary(), args, { stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (chunk) => {
