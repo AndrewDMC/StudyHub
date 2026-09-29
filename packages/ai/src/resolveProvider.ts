@@ -6,8 +6,8 @@ import { readProviderPreference } from './providerPreference.js';
 
 /**
  * `AI_PROVIDER=claude-cli` -> shells out to the `claude` CLI, using whatever
- * subscription it's already logged into (docker/docker-compose.claude-cli.yml
- * mounts the host's `~/.claude`/`~/.claude.json` for this). Otherwise
+ * subscription it's logged into (the user signs in from /admin; in Docker the
+ * login lives in the `claude-auth` volume). Otherwise
  * `ANTHROPIC_API_KEY` set -> the billed Messages API. Otherwise the
  * deterministic `FakeProvider` (docs/fasi/F3-ai-core.md "Stato" addendum) —
  * the app stays fully usable, and the review queue / costs / job lifecycle

@@ -70,14 +70,14 @@ RUN npm install -g tsx
 RUN printf '#!/bin/sh\nexec tsx /app/apps/cli/src/index.ts "$@"\n' > /usr/local/bin/studyhub \
   && chmod +x /usr/local/bin/studyhub
 
-# Claude Code CLI — only exercised when AI_PROVIDER=claude-cli (ClaudeCliProvider,
-# packages/ai/src/claudeCliProvider.ts). Its auth comes from the host's
-# ~/.claude / ~/.claude.json, mounted read-write into $HOME at runtime via
-# docker/docker-compose.claude-cli.yml — nothing baked into the image.
-RUN npm install -g @anthropic-ai/claude-code
+# Claude Code CLI — used by ClaudeCliProvider (packages/ai/src/claudeCliProvider.ts)
+# once the user signs in from /admin. The login lives in the `claude-auth` volume
+# (docker-compose.yml), written by the web container and read here — nothing is
+# baked into the image and no host files are mounted.
+RUN npm install -g @anthropic-ai/claude-code   && mkdir -p /home/studyhub/.claude && chown studyhub:studyhub /home/studyhub/.claude
 
 USER studyhub
-ENV HOME=/home/studyhub
+ENV HOME=/home/studyhub CLAUDE_CONFIG_DIR=/home/studyhub/.claude
 ENV STUDYHUB_DATA_DIR=/data
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \

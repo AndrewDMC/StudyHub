@@ -66,7 +66,7 @@ const MAX_VALIDATION_RETRIES = 2; // same discipline as AnthropicProvider (docs/
 // `--tools ""` (not a --disallowedTools blocklist) so this stays true even as
 // Claude Code adds new built-in tools — a blocklist here would silently miss
 // them (e.g. Grep/Glob can still read arbitrary files, including the very
-// ~/.claude.json mounted into this container, which matters since the input
+// credentials in the shared `claude-auth` volume, which matters since the input
 // is untrusted document text).
 
 export interface ClaudeCliResult {
@@ -106,8 +106,8 @@ interface ClaudeCliEnvelope {
  * Uses the `claude` CLI (`--print --json-schema`, prompt piped on stdin)
  * instead of the billed Messages API — inference runs against whatever
  * subscription `claude` is already logged into on this machine (or, in
- * Docker, whatever `~/.claude` / `~/.claude.json` was mounted into the
- * container — see docker/docker-compose.claude-cli.yml). Same validation-retry
+ * Docker, the login made from /admin, kept in the `claude-auth` volume —
+ * see docker/docker-compose.yml). Same validation-retry
  * discipline as `AnthropicProvider`; the difference is entirely in how the
  * model is invoked, not in what's asked of it.
  */

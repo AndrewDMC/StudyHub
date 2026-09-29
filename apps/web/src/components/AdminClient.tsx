@@ -60,7 +60,9 @@ interface ClaudeAuthSnapshot {
   lockedByEnv: boolean;
 }
 
-type ClaudeAuthAction = 'login' | 'cancel-login' | 'logout' | 'use' | 'stop-using';
+type ClaudeAuthAction =
+  | { action: 'login' | 'cancel-login' | 'logout' | 'use' | 'stop-using' }
+  | { action: 'submit-code'; code: string };
 
 async function fetchClaudeAuth(): Promise<ClaudeAuthSnapshot> {
   const res = await fetch('/api/settings/claude-auth');
@@ -69,11 +71,11 @@ async function fetchClaudeAuth(): Promise<ClaudeAuthSnapshot> {
   return body as ClaudeAuthSnapshot;
 }
 
-async function postClaudeAuth(action: ClaudeAuthAction): Promise<ClaudeAuthSnapshot> {
+async function postClaudeAuth(payload: ClaudeAuthAction): Promise<ClaudeAuthSnapshot> {
   const res = await fetch('/api/settings/claude-auth', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action }),
+    body: JSON.stringify(payload),
   });
   const body = await res.json();
   if (!res.ok) throw new Error(body.error?.message ?? 'Operazione non riuscita');
@@ -119,6 +121,7 @@ function ClaudeAccountCard() {
     },
   });
 
+  const [code, setCode] = useState('');
   const data = query.data;
   const running = data?.login.status === 'running';
   const usingCli = data?.activeProvider === 'claude-cli';
@@ -160,19 +163,47 @@ function ClaudeAccountCard() {
 
           {running && (
             <div className="rounded-[var(--radius-control)] border border-border bg-bg-inset p-2">
-              <p>Completa l&apos;accesso nella finestra del browser che si è aperta.</p>
-              {data.login.url && (
-                <p className="mt-1 break-all">
-                  Non si è aperta?{' '}
-                  <a
-                    href={data.login.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-accent underline"
+              {data.login.url ? (
+                <>
+                  <p>
+                    1.{' '}
+                    <a
+                      href={data.login.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-accent underline"
+                    >
+                      Apri la pagina di accesso di Claude
+                    </a>{' '}
+                    e accedi con il tuo account.
+                  </p>
+                  <p className="mt-1">2. Copia il codice mostrato al termine e incollalo qui:</p>
+                  <form
+                    className="mt-1 flex gap-2"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (code.trim()) mutation.mutate({ action: 'submit-code', code });
+                    }}
                   >
-                    Apri il link di accesso
-                  </a>
-                </p>
+                    <input
+                      value={code}
+                      onChange={(e) => setCode(e.target.value)}
+                      aria-label="Codice di accesso"
+                      autoComplete="off"
+                      spellCheck={false}
+                      className="min-w-0 flex-1 rounded-[var(--radius-control)] border border-border bg-bg-surface px-2 py-1 font-mono text-xs text-fg-primary outline-none focus:border-accent"
+                    />
+                    <button
+                      type="submit"
+                      disabled={mutation.isPending || !code.trim()}
+                      className={btn}
+                    >
+                      Conferma
+                    </button>
+                  </form>
+                </>
+              ) : (
+                <p>Preparo il link di accesso…</p>
               )}
             </div>
           )}
@@ -187,14 +218,18 @@ function ClaudeAccountCard() {
               <button
                 type="button"
                 disabled={mutation.isPending}
-                onClick={() => mutation.mutate('login')}
+                onClick={() => mutation.mutate({ action: 'login' })}
                 className={btn}
               >
                 Accedi con Claude
               </button>
             )}
             {running && (
-              <button type="button" onClick={() => mutation.mutate('cancel-login')} className={btn}>
+              <button
+                type="button"
+                onClick={() => mutation.mutate({ action: 'cancel-login' })}
+                className={btn}
+              >
                 Annulla
               </button>
             )}
@@ -203,7 +238,9 @@ function ClaudeAccountCard() {
                 type="button"
                 disabled={mutation.isPending}
                 onClick={() =>
-                  mutation.mutate(data.preferred === 'claude-cli' ? 'stop-using' : 'use')
+                  mutation.mutate({
+                    action: data.preferred === 'claude-cli' ? 'stop-using' : 'use',
+                  })
                 }
                 className={btn}
               >
@@ -216,7 +253,7 @@ function ClaudeAccountCard() {
               <button
                 type="button"
                 disabled={mutation.isPending}
-                onClick={() => mutation.mutate('logout')}
+                onClick={() => mutation.mutate({ action: 'logout' })}
                 className={btn}
               >
                 Esci

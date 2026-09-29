@@ -52,7 +52,13 @@ COPY --from=build --chown=studyhub:studyhub /app/apps/web/.next/standalone ./
 COPY --from=build --chown=studyhub:studyhub /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build --chown=studyhub:studyhub /app/apps/web/public ./apps/web/public
 
+# Claude Code CLI — drives the in-app "Account Claude" sign-in on /admin. The
+# login lands in the `claude-auth` volume (docker-compose.yml), shared with the
+# worker; nothing is baked into the image and no host files are mounted.
+RUN npm install -g @anthropic-ai/claude-code   && mkdir -p /home/studyhub/.claude && chown studyhub:studyhub /home/studyhub/.claude
+
 USER studyhub
+ENV HOME=/home/studyhub CLAUDE_CONFIG_DIR=/home/studyhub/.claude
 EXPOSE 3000
 ENV PORT=3000 HOSTNAME=0.0.0.0
 

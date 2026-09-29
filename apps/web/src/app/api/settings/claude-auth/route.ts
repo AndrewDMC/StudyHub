@@ -13,7 +13,8 @@ import { formatError } from '@/lib/errors';
 export const dynamic = 'force-dynamic';
 
 const BodySchema = z.object({
-  action: z.enum(['login', 'cancel-login', 'logout', 'use', 'stop-using']),
+  action: z.enum(['login', 'submit-code', 'cancel-login', 'logout', 'use', 'stop-using']),
+  code: z.string().max(512).optional(),
 });
 
 async function snapshot() {
@@ -56,6 +57,19 @@ export async function POST(request: Request) {
     switch (parsed.data.action) {
       case 'login':
         claudeLogin.start();
+        break;
+      case 'submit-code':
+        if (!parsed.data.code || !claudeLogin.submitCode(parsed.data.code)) {
+          return NextResponse.json(
+            {
+              error: {
+                code: 'invalid_request',
+                message: 'Codice non valido o nessun accesso in corso',
+              },
+            },
+            { status: 400 },
+          );
+        }
         break;
       case 'cancel-login':
         claudeLogin.cancel();

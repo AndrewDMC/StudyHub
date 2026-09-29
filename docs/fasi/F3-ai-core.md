@@ -82,9 +82,11 @@ retry-con-feedback (max 2), ma invoca `claude --print --output-format json --jso
 terminale (prompt su stdin, nessun tool/MCP abilitato) invece della Messages API. Su richiesta
 esplicita: serve a far girare l'inferenza reale usando la subscription `claude` già loggata sulla
 macchina, non una `ANTHROPIC_API_KEY` a consumo. `resolveProvider()` lo sceglie con
-`AI_PROVIDER=claude-cli`; in Docker richiede l'override `docker/docker-compose.claude-cli.yml`, che
-monta `~/.claude`/`~/.claude.json` dell'host nel container worker (vedi README "Provider AI via CLI
-`claude`"). Le funzioni di rendering dei prompt (`documentsBlock`, `render*UserPrompt`) sono state
+`AI_PROVIDER=claude-cli` oppure, senza toccare l'ambiente, dalla card "Account Claude" di `/admin`
+(preferenza salvata in `<data root>/.studyhub-ai-provider.json`, condivisa da web/worker/CLI). Il login è
+per-utente: l'app pilota `claude auth login --claudeai` (link + codice incollato, funziona anche in
+Docker) e le credenziali restano nel volume `claude-auth` della propria installazione — nessun file
+dell'host montato (vedi README "Collegare il proprio account Claude"). Le funzioni di rendering dei prompt (`documentsBlock`, `render*UserPrompt`) sono state
 estratte in `packages/ai/src/promptRender.ts`, condivise da `AnthropicProvider` e
 `ClaudeCliProvider` — stesso testo di prompt, stessa igiene anti-injection (tag `<document>`
 neutralizzati), indipendentemente dal canale di invocazione. **Mai eseguito contro la CLI vera**

@@ -49,6 +49,7 @@ services:
       - '3000:3000'
     volumes:
       - ${STUDYHUB_DATA:-../data}:/data
+      - claude-auth:/home/studyhub/.claude
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,6 +63,7 @@ services:
     <<: *common-env
     volumes:
       - ${STUDYHUB_DATA:-../data}:/data
+      - claude-auth:/home/studyhub/.claude
     depends_on:
       postgres:
         condition: service_healthy
@@ -74,3 +76,5 @@ services:
 
 volumes:
   pgdata:
+  # Per-installation Claude login (written from /admin, read by web + worker).
+  claude-auth:

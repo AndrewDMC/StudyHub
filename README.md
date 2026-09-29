@@ -78,33 +78,28 @@ usando `FakeProvider` (estrazione deterministica, verbatim, costo zero — vedi
 [docs/fasi/F3-ai-core.md](docs/fasi/F3-ai-core.md) "Stato"). Imposta `ANTHROPIC_API_KEY` in `.env`
 per passare al provider reale (`AnthropicProvider`, API a consumo): nessun altro cambio richiesto.
 
-### Provider AI via CLI `claude` (subscription, senza API key)
+### Collegare il proprio account Claude (subscription, senza API key)
 
-`ClaudeCliProvider` ([packages/ai/src/claudeCliProvider.ts](packages/ai/src/claudeCliProvider.ts))
-instrada le stesse chiamate (`generateFlashcards`, `generateSummary`, `extractExamProfile`,
-`generateSimulation`, `gradeAnswer`, `estimateTopics`) attraverso la CLI `claude` da terminale
-(`claude --print --output-format json --json-schema ...`, prompt su stdin, nessun tool/MCP
-abilitato) invece della Messages API — usa quindi la sessione/subscription con cui `claude` è già
-loggato, non `ANTHROPIC_API_KEY`. Stessa disciplina di retry-con-feedback-di-validazione (max 2)
-dell'`AnthropicProvider`.
+Ogni utente collega **il proprio** account dall'app, senza toccare file o variabili:
 
-Per usarlo nell'ambiente Docker:
+1. Avvia lo stack (`docker compose -f docker/docker-compose.yml up`) e apri `/admin`.
+2. Nella card **Account Claude** premi _Accedi con Claude_, apri il link, accedi e incolla nel
+   campo il codice che Claude mostra alla fine.
+3. Fatto: le generazioni (`generateFlashcards`, `generateSummary`, `extractExamProfile`,
+   `generateSimulation`, `gradeAnswer`, `estimateTopics`, …) passano dal tuo abbonamento.
 
-1. Sulla macchina host, assicurati che `claude login` sia già stato eseguito (scrive
-   `~/.claude` e `~/.claude.json`).
-2. In `.env`, imposta `AI_PROVIDER=claude-cli` e i percorsi host `CLAUDE_CLI_HOME`/
-   `CLAUDE_CLI_CONFIG` (vedi commenti in `.env.example`).
-3. Avvia con l'override che monta quelle credenziali nel container e installa la CLI
-   (già nell'immagine worker):
+Come funziona: l'app pilota la CLI ufficiale (`claude auth login --claudeai`, poi
+`claude --print --json-schema ...` con prompt su stdin e nessun tool/MCP abilitato,
+[packages/ai/src/claudeCliProvider.ts](packages/ai/src/claudeCliProvider.ts)). StudyHub non vede né
+salva alcun token: la CLI li scrive nel volume Docker `claude-auth`, condiviso da web e worker e
+**locale alla tua installazione** — nessun file dell'host viene montato e nessuna credenziale è
+nell'immagine o nel repo. Stessa disciplina di retry-con-feedback-di-validazione (max 2)
+dell'`AnthropicProvider`. _Esci_ nella card revoca l'accesso; `docker compose down -v` cancella il volume.
 
-   ```bash
-   docker compose -f docker/docker-compose.yml -f docker/docker-compose.claude-cli.yml up
-   ```
-
-Il worker chiama quindi `claude` da terminale dentro il container, riusando la sessione OAuth
-montata dall'host — nessuna chiave API in gioco. Nota: `pricing.ts` resta una stima _per token_
-pensata per l'API a consumo — con la subscription il costo marginale reale per chiamata è zero,
-la cifra mostrata in UI/CLI è quindi puramente illustrativa quando si usa questo provider.
+`AI_PROVIDER=claude-cli` in `.env` resta disponibile per chi vuole fissare il provider da
+configurazione (la card lo segnala e non permette di cambiarlo). Nota: `pricing.ts` resta una stima
+_per token_ pensata per l'API a consumo — con la subscription la cifra in UI/CLI è illustrativa e
+consuma i limiti del tuo piano. L'app non ha autenticazione propria: tienila su `localhost`.
 
 ## Knowledge base
 

@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { resolveClaudeBinary } from './claudeBinary.js';
+import { writeProviderPreference } from './providerPreference.js';
 
 export interface ClaudeAuthStatus {
   /** `false` when the `claude` binary isn't on PATH (e.g. the web container) — login can't be driven from here. */
@@ -70,6 +71,9 @@ export async function claudeLogout(): Promise<void> {
   await runClaude(['auth', 'logout']);
 }
 
+/** Authorization codes are URL-safe tokens (`code#state`); anything else never reaches the CLI's stdin. */
+export const AUTH_CODE_RE = /^[A-Za-z0-9_\-#.~%]{8,512}$/;
+
 const URL_RE = /https:\/\/[^\s"'<>]+/;
 
 /**
@@ -94,7 +98,9 @@ class ClaudeLoginSession {
     let child: ChildProcess;
     try {
       child = spawn(resolveClaudeBinary(), ['auth', 'login', '--claudeai'], {
-        stdio: ['ignore', 'pipe', 'pipe'],
+        // stdin stays open: without a browser (Docker) the CLI prints the sign-in
+        // URL and waits for the code shown after sign-in to be pasted here.
+        stdio: ['pipe', 'pipe', 'pipe'],
       });
     } catch (err) {
       this.state = { status: 'failed', error: (err as Error).message };
@@ -127,16 +133,18 @@ class ClaudeLoginSession {
             : err.message,
       }),
     );
-    child.on('close', (code) =>
-      finish(
-        code === 0
-          ? { status: 'succeeded' }
-          : {
-              status: 'failed',
-              error: output.trim().slice(-300) || `login terminato (exit ${code})`,
-            },
-      ),
-    );
+    child.on('close', (code) => {
+      if (code === 0) {
+        // A successful sign-in is an intent to use the subscription: no second click needed.
+        writeProviderPreference('claude-cli');
+        finish({ status: 'succeeded' });
+        return;
+      }
+      finish({
+        status: 'failed',
+        error: output.trim().slice(-300) || `login terminato (exit ${code})`,
+      });
+    });
 
     this.timer = setTimeout(() => {
       child.kill();
@@ -144,6 +152,16 @@ class ClaudeLoginSession {
     }, LOGIN_TIMEOUT_MS);
 
     return this.get();
+  }
+
+  /** Feeds the pasted authorization code to the waiting `claude auth login`. Returns false when no login is waiting or the code is malformed. */
+  submitCode(code: string): boolean {
+    const trimmed = code.trim();
+    if (!this.child?.stdin || this.state.status !== 'running') return false;
+    if (!AUTH_CODE_RE.test(trimmed)) return false;
+    this.child.stdin.write(`${trimmed}
+`);
+    return true;
   }
 
   cancel(): void {

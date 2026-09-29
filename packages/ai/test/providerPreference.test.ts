@@ -39,3 +39,18 @@ describe('in-app provider preference', () => {
     expect(resolveProvider().name).toBe('anthropic');
   });
 });
+
+describe('claude login code handling', () => {
+  it('accepts URL-safe authorization codes only', async () => {
+    const { AUTH_CODE_RE } = await import('../src/claudeAuth.js');
+    expect(AUTH_CODE_RE.test('abc123XYZ_-.~#state987')).toBe(true);
+    expect(AUTH_CODE_RE.test('short')).toBe(false);
+    expect(AUTH_CODE_RE.test('has space in it')).toBe(false);
+    expect(AUTH_CODE_RE.test('line1\nrm -rf /')).toBe(false);
+  });
+
+  it('refuses a code when no login is waiting', async () => {
+    const { claudeLogin } = await import('../src/claudeAuth.js');
+    expect(claudeLogin.submitCode('abcdefgh12345678')).toBe(false);
+  });
+});
