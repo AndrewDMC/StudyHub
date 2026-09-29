@@ -15,3 +15,5 @@ export * from './ics.js';
 export * from './csv.js';
 export * from './schemaGraphRender.js';
 export * from './retention.js';
+export * from './coverage.js';
+export * from './calibration.js';

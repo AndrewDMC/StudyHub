@@ -15,3 +15,4 @@ export * from './calendar.js';
 export * from './dashboard.js';
 export * from './admin.js';
 export * from './overview.js';
+export * from './coverage.js';

@@ -8,6 +8,8 @@ export type FsrsRatingInput = z.infer<typeof FsrsRatingSchema>;
 export const SubmitReviewRequestSchema = z.object({
   rating: FsrsRatingSchema,
   elapsedMs: z.number().int().nonnegative(),
+  /** How sure the user was before seeing the answer: 1 non lo so · 2 forse · 3 lo so. Optional. */
+  confidence: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
 });
 export type SubmitReviewRequest = z.infer<typeof SubmitReviewRequestSchema>;
 
@@ -133,3 +135,32 @@ export const MergeDecksRequestSchema = z
     message: 'Scegli due mazzi diversi',
   });
 export type MergeDecksRequest = z.infer<typeof MergeDecksRequestSchema>;
+
+/** Confidence vs. correctness in one subject (docs/06-miglioramenti.md #4). */
+export const CalibrationLevelDtoSchema = z.object({
+  confidence: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  total: z.number().int(),
+  correct: z.number().int(),
+  accuracy: z.number().nullable(),
+  reliable: z.boolean(),
+});
+
+export const CalibrationDtoSchema = z.object({
+  total: z.number().int(),
+  levels: z.array(CalibrationLevelDtoSchema),
+  illusionRate: z.number().nullable(),
+  hiddenKnowledgeRate: z.number().nullable(),
+  bias: z.number().nullable(),
+  verdict: z.enum(['overconfident', 'underconfident', 'calibrated', 'insufficient_data']),
+  minSamplesPerLevel: z.number().int(),
+  illusionByTopic: z.array(
+    z.object({
+      topicId: z.string().uuid(),
+      name: z.string(),
+      sure: z.number().int(),
+      sureButWrong: z.number().int(),
+      illusionRate: z.number(),
+    }),
+  ),
+});
+export type CalibrationDto = z.infer<typeof CalibrationDtoSchema>;

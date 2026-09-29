@@ -23,11 +23,19 @@ async function fetchQueue(slug: string, params: QueueParams): Promise<FlashcardD
   return body.queue as FlashcardDto[];
 }
 
-async function rate(slug: string, cardId: string, rating: 1 | 2 | 3 | 4, elapsedMs: number) {
+type Confidence = 1 | 2 | 3;
+
+async function rate(
+  slug: string,
+  cardId: string,
+  rating: 1 | 2 | 3 | 4,
+  elapsedMs: number,
+  confidence: Confidence | null,
+) {
   const res = await fetch(`/api/subjects/${slug}/review/${cardId}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rating, elapsedMs }),
+    body: JSON.stringify({ rating, elapsedMs, ...(confidence ? { confidence } : {}) }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
@@ -55,6 +63,12 @@ const RATING_LABELS: Record<1 | 2 | 3 | 4, string> = {
   2: 'Hard',
   3: 'Good',
   4: 'Easy',
+};
+
+const CONFIDENCE_LABELS: Record<Confidence, string> = {
+  1: 'Non lo so',
+  2: 'Forse',
+  3: 'Lo so',
 };
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -109,6 +123,8 @@ export function ReviewSessionClient({ subjectSlug }: { subjectSlug: string }) {
   const [revealed, setRevealed] = useState(false);
   const [editing, setEditing] = useState<{ front: string; back: string } | null>(null);
   const cardStartRef = useRef(Date.now());
+  // Declared *before* the answer is shown (docs/06-miglioramenti.md #4); null when skipped with Space.
+  const [confidence, setConfidence] = useState<Confidence | null>(null);
   const [tally, setTally] = useState({ reviewed: 0, again: 0 });
 
   const queue = query.data ?? [];
@@ -117,12 +133,13 @@ export function ReviewSessionClient({ subjectSlug }: { subjectSlug: string }) {
   useEffect(() => {
     cardStartRef.current = Date.now();
     setRevealed(false);
+    setConfidence(null);
     setEditing(null);
   }, [current?.id]);
 
   const rateMutation = useMutation({
     mutationFn: ({ cardId, rating }: { cardId: string; rating: 1 | 2 | 3 | 4 }) =>
-      rate(subjectSlug, cardId, rating, Date.now() - cardStartRef.current),
+      rate(subjectSlug, cardId, rating, Date.now() - cardStartRef.current, confidence),
     onSuccess: (_data, { rating }) => {
       setTally((t) => ({ reviewed: t.reviewed + 1, again: t.again + (rating === 1 ? 1 : 0) }));
       setIndex((i) => i + 1);
@@ -161,6 +178,13 @@ export function ReviewSessionClient({ subjectSlug }: { subjectSlug: string }) {
         return;
       }
       const rating = ratingFromEvent(e);
+      if (!revealed && rating && rating <= 3) {
+        // 1-3 before the flip = "how sure am I"; it also reveals, so it costs no extra keystroke.
+        e.preventDefault();
+        setConfidence(rating as Confidence);
+        setRevealed(true);
+        return;
+      }
       if (revealed && rating) {
         rateMutation.mutate({ cardId: current.id, rating });
         return;
@@ -349,13 +373,31 @@ export function ReviewSessionClient({ subjectSlug }: { subjectSlug: string }) {
               </div>
             </>
           ) : (
-            <button
-              type="button"
-              onClick={() => setRevealed(true)}
-              className="rounded-[var(--radius-control)] bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
-            >
-              Mostra risposta (Space)
-            </button>
+            <div className="flex flex-col items-center gap-3">
+              <div role="group" aria-label="Quanto sei sicuro?" className="flex items-center gap-2">
+                <span className="text-xs text-fg-muted">Quanto sei sicuro?</span>
+                {([1, 2, 3] as const).map((level) => (
+                  <button
+                    key={level}
+                    type="button"
+                    onClick={() => {
+                      setConfidence(level);
+                      setRevealed(true);
+                    }}
+                    className="rounded-[var(--radius-control)] border border-border px-3 py-1.5 text-xs text-fg-secondary hover:border-accent hover:text-fg-primary"
+                  >
+                    {level} · {CONFIDENCE_LABELS[level]}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setRevealed(true)}
+                className="rounded-[var(--radius-control)] bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
+              >
+                Mostra risposta (Space)
+              </button>
+            </div>
           )}
         </div>
       )}

@@ -475,6 +475,9 @@ export const reviews = pgTable('reviews', {
   rating: integer('rating').notNull(), // 1..4 (Again|Hard|Good|Easy)
   elapsedMs: integer('elapsed_ms').notNull(),
   reviewedAt: timestamp('reviewed_at', { withTimezone: true }).notNull().defaultNow(),
+  // Confidence declared *before* the answer was shown, 1..3 (docs/06-miglioramenti.md #4).
+  // null = the user didn't say (Space reveals without declaring) — never a guessed default.
+  confidence: integer('confidence'),
   prevStability: real('prev_stability'),
   newStability: real('new_stability').notNull(),
 });

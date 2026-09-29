@@ -27,6 +27,8 @@ import { DailyTasksPanel } from './DailyTasksPanel';
 import { SearchPanel } from './SearchPanel';
 import { GapsPanel, RecentActivityPanel, SuggestedActionsPanel } from './OverviewPanel';
 import { FlashcardListPanel } from './FlashcardListPanel';
+import { CalibrationPanel } from './CalibrationPanel';
+import { CoveragePanel } from './CoveragePanel';
 
 const TABS = [
   { key: 'panoramica', label: 'Panoramica' },
@@ -35,6 +37,7 @@ const TABS = [
   { key: 'esami', label: 'Esami' },
   { key: 'flashcard', label: 'Flashcard' },
   { key: 'simulazioni', label: 'Simulazioni' },
+  { key: 'lacune', label: 'Lacune' },
 ] as const;
 type TabKey = (typeof TABS)[number]['key'];
 
@@ -349,10 +352,15 @@ function SubjectDetailClientInner({ slug }: { slug: string }) {
             <div className="space-y-4">
               <div className="max-w-md">
                 <StatsPanel subjectSlug={slug} />
+                <div className="mt-4">
+                  <CalibrationPanel subjectSlug={slug} />
+                </div>
               </div>
               <FlashcardListPanel subjectSlug={slug} topics={topics} />
             </div>
           )}
+
+          {activeTab === 'lacune' && <CoveragePanel subjectSlug={slug} />}
 
           {activeTab === 'simulazioni' && (
             <div className="max-w-md">

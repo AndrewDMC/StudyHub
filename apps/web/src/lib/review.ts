@@ -113,6 +113,7 @@ export async function getReviewQueue(
 export interface SubmitReviewInput {
   rating: FsrsRating;
   elapsedMs: number;
+  confidence?: 1 | 2 | 3 | undefined;
 }
 
 /**
@@ -159,6 +160,7 @@ export async function submitReview(
     flashcardId: cardId,
     rating: input.rating,
     elapsedMs: input.elapsedMs,
+    confidence: input.confidence ?? null,
     prevStability: result.prevStability,
     newStability: result.newStability,
   });
