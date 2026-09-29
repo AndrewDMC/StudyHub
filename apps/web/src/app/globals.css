@@ -3,7 +3,8 @@
 
 /*
  * Design tokens — "Calm Futurism" (docs/05-design-system.md §2).
- * Dark-first; a light theme is planned but not yet implemented (F7).
+ * Dark-first, with a complete light theme (data-theme=light) and three densities
+ * (data-density), both set before first paint by NO_FLASH_SCRIPT (src/lib/appearance.ts).
  */
 :root {
   --bg-base: #0a0b0f;
@@ -31,6 +32,44 @@
   --radius-modal: 14px;
 
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/*
+ * Light theme: every token redefined, not just the surfaces. Text/accent/status colors are
+ * darkened so they keep >= 4.5:1 on the light surfaces (the dark-theme values would not).
+ */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg-base: #f6f7f9;
+  --bg-surface: #ffffff;
+  --bg-raised: #eef0f4;
+  --bg-inset: #eceff3;
+  --border: #dde1e8;
+  --border-strong: #c5ccd8;
+
+  --fg-primary: #14171f;
+  --fg-secondary: #444c5c;
+  --fg-muted: #5f6879;
+
+  --accent: #2a5bd7;
+  --accent-hover: #1f49b3;
+  --accent-subtle: #2a5bd71a;
+
+  --ok: #0c7a52;
+  --warn: #8f5a00;
+  --danger: #c22b2b;
+  --info: #0a7570;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+/* Density scales the rem: every Tailwind spacing/type utility follows it. */
+:root[data-density='compact'] {
+  font-size: 93.75%;
+}
+:root[data-density='dense'] {
+  font-size: 87.5%;
 }
 
 @theme inline {
@@ -65,7 +104,7 @@ body {
 }
 
 body {
-  font-size: 14px;
+  font-size: 0.875rem; /* 14px at comfortable density */
   font-family: var(--font-sans);
 }
 

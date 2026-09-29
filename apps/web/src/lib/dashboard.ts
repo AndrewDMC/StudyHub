@@ -1,7 +1,16 @@
 import { and, eq, gt, isNotNull, isNull, lte, or } from 'drizzle-orm';
-import { artifacts, exams, flashcards, subjects, topics } from '@studyhub/db';
+import {
+  artifacts,
+  documents,
+  exams,
+  flashcards,
+  studyPlans,
+  subjects,
+  tasks,
+  topics,
+} from '@studyhub/db';
 import { addDays, diffDays, type IsoDate } from '@studyhub/core';
-import type { DashboardSummaryDto } from '@studyhub/contracts';
+import type { DashboardSummaryDto, OnboardingDto } from '@studyhub/contracts';
 import { listSubjectSummaries } from './subjects';
 import { getCalendarRange } from './calendar';
 import { getRecentJobs } from './jobs';
@@ -94,6 +103,82 @@ async function nextExam(db: AnyDb, startOfToday: Date) {
 }
 
 /**
+ * The first-run checklist, from what actually exists (archived subjects don't count). Each step
+ * links to where it is done: the first subject's page, or the subject list before there is one.
+ * "Ready" means a document reached `parsed` — uploading isn't enough to get cards out of it.
+ */
+export async function getOnboarding(db: AnyDb): Promise<OnboardingDto> {
+  const live = isNull(subjects.archivedAt);
+  const subjectRows: { slug: string }[] = await db
+    .select({ slug: subjects.slug })
+    .from(subjects)
+    .where(live)
+    .orderBy(subjects.createdAt);
+  const docRows: { status: string }[] = await db
+    .select({ status: documents.status })
+    .from(documents)
+    .innerJoin(subjects, eq(documents.subjectId, subjects.id))
+    .where(live);
+  const cardRows: { id: string }[] = await db
+    .select({ id: flashcards.id })
+    .from(flashcards)
+    .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
+    .innerJoin(subjects, eq(artifacts.subjectId, subjects.id))
+    .where(live)
+    .limit(1);
+  // A committed plan with at least one task: what "vedi la prima task" needs.
+  const planRows: { id: string }[] = await db
+    .select({ id: tasks.id })
+    .from(tasks)
+    .innerJoin(studyPlans, eq(tasks.planId, studyPlans.id))
+    .innerJoin(subjects, eq(studyPlans.subjectId, subjects.id))
+    .where(and(live, eq(studyPlans.status, 'active')))
+    .limit(1);
+
+  const slug = subjectRows[0]?.slug;
+  const subjectHref = slug ? `/materie/${slug}` : '/materie';
+  const steps: OnboardingDto['steps'] = [
+    {
+      key: 'subject',
+      label: 'Crea una materia',
+      hint: 'Ogni materia è una cartella con tutto il suo materiale.',
+      done: subjectRows.length > 0,
+      href: '/materie',
+    },
+    {
+      key: 'document',
+      label: 'Carica un PDF o una foto',
+      hint: 'Appunti, slide o un esame passato: diventano Markdown pulito.',
+      done: docRows.length > 0,
+      href: subjectHref,
+    },
+    {
+      key: 'ready',
+      label: 'Aspetta che sia pronto',
+      hint: 'Il documento deve arrivare a "Pronto" prima di generare da esso.',
+      done: docRows.some((d) => d.status === 'parsed'),
+      href: subjectHref,
+    },
+    {
+      key: 'flashcards',
+      label: 'Genera le prime flashcard',
+      hint: 'Dal pannello AI della materia: scegli il documento e genera.',
+      done: cardRows.length > 0,
+      href: subjectHref,
+    },
+    {
+      key: 'plan',
+      label: 'Conferma un piano di studio',
+      hint: "Indica la data dell'esame: le task del giorno compaiono qui.",
+      done: planRows.length > 0,
+      href: slug ? `/materie/${slug}/piano` : '/materie',
+    },
+  ];
+  const next = steps.find((s) => !s.done);
+  return { steps, completed: !next, nextKey: next ? next.key : null };
+}
+
+/**
  * Everything the Dashboard home needs in one call (docs/fasi/F7-dashboard-polish.md
  * "Scope — Dashboard"): status tiles, today's actionable tasks, a 14-day
  * strip, per-subject flashcard load, and the recent-jobs activity feed.
@@ -101,16 +186,25 @@ async function nextExam(db: AnyDb, startOfToday: Date) {
 export async function getDashboardSummary(db: AnyDb, today: IsoDate): Promise<DashboardSummaryDto> {
   const startOfToday = new Date(`${today}T00:00:00.000Z`);
   const endOfToday = new Date(`${today}T23:59:59.999Z`);
-  const [subjectSummaries, dueBySubject, dueCardsCount, avgMastery, exam, upcoming, recentJobs] =
-    await Promise.all([
-      listSubjectSummaries(db),
-      countDueCardsBySubject(db, endOfToday),
-      countDueCards(db, endOfToday),
-      averageMastery(db),
-      nextExam(db, startOfToday),
-      getCalendarRange(db, today, addDays(today, UPCOMING_DAYS)),
-      getRecentJobs(db, 10),
-    ]);
+  const [
+    subjectSummaries,
+    dueBySubject,
+    dueCardsCount,
+    avgMastery,
+    exam,
+    upcoming,
+    recentJobs,
+    onboarding,
+  ] = await Promise.all([
+    listSubjectSummaries(db),
+    countDueCardsBySubject(db, endOfToday),
+    countDueCards(db, endOfToday),
+    averageMastery(db),
+    nextExam(db, startOfToday),
+    getCalendarRange(db, today, addDays(today, UPCOMING_DAYS)),
+    getRecentJobs(db, 10),
+    getOnboarding(db),
+  ]);
 
   const todayTasksAll = upcoming.tasks.filter((t) => t.date === today);
   const minutesPlannedToday = todayTasksAll.reduce((s, t) => s + t.minutes, 0);
@@ -142,5 +236,6 @@ export async function getDashboardSummary(db: AnyDb, today: IsoDate): Promise<Da
       dueCardsCount: dueBySubject.get(s.id) ?? 0,
     })),
     recentJobs,
+    onboarding,
   };
 }

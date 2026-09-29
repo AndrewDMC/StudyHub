@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { AppearanceMenu } from './AppearanceMenu';
 import { CommandPalette } from './CommandPalette';
 
 const NAV_ITEMS = [
@@ -47,7 +48,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-12 items-center justify-between border-b border-border bg-bg-surface px-4">
           <span className="text-sm text-fg-secondary">StudyHub</span>
-          <CommandPalette />
+          <div className="flex items-center gap-2">
+            <AppearanceMenu />
+            <CommandPalette />
+          </div>
         </header>
         <main className="min-h-0 flex-1 overflow-y-auto bg-technical-grid">{children}</main>
       </div>

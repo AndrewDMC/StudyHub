@@ -4,9 +4,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createTestDb } from '@studyhub/db/testDb';
-import { artifacts, exams, flashcards, jobs, studyPlans, tasks, topics } from '@studyhub/db';
+import {
+  artifacts,
+  documents,
+  exams,
+  flashcards,
+  jobs,
+  studyPlans,
+  tasks,
+  topics,
+} from '@studyhub/db';
 import { createSubject, setSubjectArchived } from '../src/lib/subjects';
-import { getDashboardSummary } from '../src/lib/dashboard';
+import { getDashboardSummary, getOnboarding } from '../src/lib/dashboard';
 
 const AVAILABILITY = { perWeekday: [0, 120, 120, 120, 120, 120, 0], blackoutDates: [] };
 const PREFS = {
@@ -321,5 +330,133 @@ describe('getDashboardSummary', () => {
       costEur: 0.01,
     });
     expect(summary.recentJobs[1]).toMatchObject({ type: 'reconcile', subjectSlug: null });
+  });
+});
+
+describe('getOnboarding (first-run checklist)', () => {
+  let dataRoot: string;
+  let db: Awaited<ReturnType<typeof createTestDb>>;
+
+  beforeEach(async () => {
+    dataRoot = await mkdtemp(join(tmpdir(), 'studyhub-onboarding-'));
+    db = await createTestDb();
+  });
+  afterEach(async () => {
+    await rm(dataRoot, { recursive: true, force: true });
+  });
+
+  const doneKeys = (o: Awaited<ReturnType<typeof getOnboarding>>) =>
+    o.steps.filter((s) => s.done).map((s) => s.key);
+
+  async function addDoc(subjectId: string, status: 'parsing' | 'parsed') {
+    await db.insert(documents).values({
+      id: randomUUID(),
+      subjectId,
+      type: 'appunti',
+      originalName: 'a.pdf',
+      storedPath: '/x',
+      mime: 'application/pdf',
+      bytes: 1,
+      sha256: randomUUID().replace(/-/g, '').padEnd(64, '0'),
+      status,
+      pages: 3,
+    });
+  }
+
+  it('starts empty: nothing done, first step is creating a subject', async () => {
+    const o = await getOnboarding(db);
+    expect(o.completed).toBe(false);
+    expect(o.nextKey).toBe('subject');
+    expect(doneKeys(o)).toEqual([]);
+    expect(o.steps[0]!.href).toBe('/materie');
+    expect(o.steps).toHaveLength(5);
+  });
+
+  it('advances with real state, and links the next step to the subject', async () => {
+    const subject = await createSubject(db, dataRoot, { name: 'Fisica 1', color: 'blue' });
+    let o = await getOnboarding(db);
+    expect(doneKeys(o)).toEqual(['subject']);
+    expect(o.nextKey).toBe('document');
+    expect(o.steps.find((s) => s.key === 'document')!.href).toBe(`/materie/${subject.slug}`);
+
+    await addDoc(subject.id, 'parsing');
+    o = await getOnboarding(db);
+    expect(doneKeys(o)).toEqual(['subject', 'document']);
+    expect(o.nextKey).toBe('ready'); // uploaded is not enough: it has to be parsed
+
+    await addDoc(subject.id, 'parsed');
+    o = await getOnboarding(db);
+    expect(doneKeys(o)).toEqual(['subject', 'document', 'ready']);
+    expect(o.nextKey).toBe('flashcards');
+  });
+
+  it('is completed once a card exists and a plan is active — and a draft plan does not count', async () => {
+    const subject = await createSubject(db, dataRoot, { name: 'Fisica 1', color: 'blue' });
+    await addDoc(subject.id, 'parsed');
+
+    const deckId = randomUUID();
+    await db.insert(artifacts).values({
+      id: deckId,
+      subjectId: subject.id,
+      kind: 'flashcard_deck',
+      title: 'Deck',
+      path: '/d.json',
+      model: 'fake-v1',
+      promptVersion: 'flashcards/v1',
+    });
+    await db.insert(flashcards).values({
+      id: randomUUID(),
+      deckId,
+      type: 'basic',
+      front: 'Q',
+      back: 'A',
+      sourceRef: { docId: randomUUID(), page: 1, quote: 'q' },
+    });
+    expect((await getOnboarding(db)).nextKey).toBe('plan');
+
+    const planId = randomUUID();
+    await db.insert(studyPlans).values({
+      id: planId,
+      subjectId: subject.id,
+      startDate: '2026-01-05',
+      targetDate: '2026-02-04',
+      availability: AVAILABILITY,
+      prefs: PREFS,
+      feasibility: FEASIBILITY,
+      warnings: [],
+      model: 'fake-v1',
+      promptVersion: 'estimate_topics/v1',
+      status: 'draft',
+    });
+    await db.insert(tasks).values({
+      id: randomUUID(),
+      subjectId: subject.id,
+      planId,
+      taskKey: 'read:a:001',
+      date: TODAY,
+      kind: 'read',
+      minutes: 30,
+      title: 'Studia',
+      description: '',
+      payload: { action: 'read' },
+      status: 'proposed',
+    });
+    expect((await getOnboarding(db)).completed).toBe(false); // a draft is invisible to the app
+
+    await db.update(studyPlans).set({ status: 'active' });
+    const o = await getOnboarding(db);
+    expect(o.completed).toBe(true);
+    expect(o.nextKey).toBeNull();
+  });
+
+  it('ignores archived subjects entirely', async () => {
+    const subject = await createSubject(db, dataRoot, { name: 'Vecchia', color: 'rose' });
+    await addDoc(subject.id, 'parsed');
+    await setSubjectArchived(db, subject.slug, true);
+    expect(doneKeys(await getOnboarding(db))).toEqual([]);
+  });
+
+  it('is part of the dashboard summary', async () => {
+    expect((await getDashboardSummary(db, TODAY)).onboarding.nextKey).toBe('subject');
   });
 });

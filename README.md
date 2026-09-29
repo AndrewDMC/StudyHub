@@ -33,10 +33,30 @@ Local-first: le materie sono cartelle reali su disco, l'AI è un worker eseguibi
 > `generate_simulation` di F5), con **`ModelPicker` + stima costo pre-flight** in UI prima di ogni
 > generazione. **Pagina `/admin`** (job, costi per mese, stato sync FS, reset indice). **Export CSV**
 > di un mazzo flashcard (importabile in Anki, mono-direzionale — niente ancora `.apkg` con stato
-> di scheduling). Niente ancora tema light, densità, distribuzione Docker. 533 test
-> (`pnpm turbo run test`), tutti verdi. Dettagli e limiti dichiarati nella sezione "Stato" di ogni
+> di scheduling). **Tema chiaro/scuro/sistema e tre densità** (menu "Aspetto"), **checklist di
+> primo avvio** in dashboard. Non ancora: immagini Docker pubblicate, profilo `lite` SQLite, audit
+> axe/Lighthouse. Test: `pnpm turbo run test`. Dettagli e limiti dichiarati nella sezione "Stato" di ogni
 > `docs/fasi/F*.md`; roadmap completa in
 > [docs/fasi/README.md](docs/fasi/README.md).
+
+## Quickstart
+
+Serve solo Docker (con Compose v2). Le immagini **non sono ancora pubblicate**: la prima volta si
+costruiscono in locale, quindi conta qualche minuto di build in più.
+
+```bash
+git clone <questo-repo> studyhub && cd studyhub
+cp .env.example .env
+docker compose -f docker/docker-compose.yml up --build
+```
+
+Apri <http://localhost:3000>: la dashboard mostra la checklist **Per iniziare** — crea una materia,
+carica un PDF, attendi "Pronto", genera le prime flashcard, conferma un piano. Senza
+`ANTHROPIC_API_KEY` l'AI è simulata (`FakeProvider`: gratuita, deterministica, estrae testo vero dal
+tuo materiale ma non lo "capisce"); imposta la chiave in `.env` per usare il modello reale.
+
+I tuoi dati stanno nella cartella `data/` (una cartella per materia): `studyhub backup` la salva
+insieme al database.
 
 ## Sviluppo locale
 

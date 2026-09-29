@@ -44,6 +44,27 @@ export type NextExamDto = z.infer<typeof NextExamDtoSchema>;
  * nothing writes `topics.mastery` yet anywhere in the app (see
  * docs/fasi/F7-dashboard-polish.md "Stato").
  */
+/**
+ * First-run checklist (docs/fasi/F7: "crea materia -> carica un PDF -> genera card -> vedi la prima
+ * task"). Derived from real state, never stored: a step is done when the thing it asks for exists.
+ */
+export const OnboardingStepDtoSchema = z.object({
+  key: z.enum(['subject', 'document', 'ready', 'flashcards', 'plan']),
+  label: z.string(),
+  hint: z.string(),
+  done: z.boolean(),
+  /** Where to go to do this step. */
+  href: z.string(),
+});
+export const OnboardingDtoSchema = z.object({
+  steps: z.array(OnboardingStepDtoSchema),
+  /** Every step done: the checklist has nothing left to say. */
+  completed: z.boolean(),
+  /** Key of the first undone step (null when completed). */
+  nextKey: OnboardingStepDtoSchema.shape.key.nullable(),
+});
+export type OnboardingDto = z.infer<typeof OnboardingDtoSchema>;
+
 export const DashboardSummaryDtoSchema = z.object({
   subjectsCount: z.number().int(),
   daysToNextExam: z.number().int().nullable(),
@@ -55,5 +76,6 @@ export const DashboardSummaryDtoSchema = z.object({
   upcoming: CalendarRangeDtoSchema,
   subjects: z.array(SubjectDueDtoSchema),
   recentJobs: z.array(RecentJobDtoSchema),
+  onboarding: OnboardingDtoSchema,
 });
 export type DashboardSummaryDto = z.infer<typeof DashboardSummaryDtoSchema>;

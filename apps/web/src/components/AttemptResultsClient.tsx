@@ -75,7 +75,7 @@ export function AttemptResultsClient({
       for (const itemId of landed) next.delete(itemId);
       return next;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Deliberately keyed on the fetched data only (a state updater must not re-run on its own writes).
   }, [resultsQuery.data]);
 
   const drill = useMutation({
@@ -205,7 +205,8 @@ export function AttemptResultsClient({
                   {r.secondOpinion ? (
                     <div className="mt-3 rounded-[var(--radius-control)] border border-accent/40 bg-bg-inset px-3 py-2 text-xs">
                       <p className="font-medium text-accent">
-                        Seconda opinione ({r.secondOpinion.model}): {r.secondOpinion.awarded}/{r.max}
+                        Seconda opinione ({r.secondOpinion.model}): {r.secondOpinion.awarded}/
+                        {r.max}
                       </p>
                       <ul className="mt-1.5 space-y-1">
                         {r.secondOpinion.criteria.map((c) => (

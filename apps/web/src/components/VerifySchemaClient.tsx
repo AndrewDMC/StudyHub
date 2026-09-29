@@ -392,7 +392,7 @@ export function VerifySchemaClient({
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="relative flex items-start justify-center rounded-[var(--radius-card)] border border-border bg-bg-inset p-4">
           <div className="relative inline-block">
-            {/* eslint-disable-next-line @next/next/no-img-element -- local/private document bytes, not an optimizable remote asset */}
+            {/* Plain <img>: local/private document bytes, not an optimizable remote asset. */}
             <img
               src={`/api/subjects/${subjectSlug}/documents/${documentId}/file`}
               alt={document.originalName}

@@ -13,6 +13,7 @@
     "lint": "turbo run lint",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
+    "check:bundle": "node scripts/check-bundle-secrets.mjs",
     "prepare": "husky"
   },
   "devDependencies": {

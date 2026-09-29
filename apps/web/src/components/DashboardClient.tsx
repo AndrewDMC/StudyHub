@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { DashboardSummaryDto } from '@studyhub/contracts';
+import type { DashboardSummaryDto, OnboardingDto } from '@studyhub/contracts';
 import { SUBJECT_COLOR_HEX } from '@/lib/subjectColors';
 
 async function fetchDashboard(): Promise<DashboardSummaryDto> {
@@ -47,6 +47,67 @@ function StatTile({
       <p className="mt-1 text-2xl font-semibold tracking-[-0.02em] text-fg-primary">{value}</p>
       {sub && <p className="mt-0.5 text-xs text-fg-muted">{sub}</p>}
     </div>
+  );
+}
+
+/**
+ * First-run checklist: five steps from an empty install to "I see my first task". Every step is
+ * derived from real state (`getOnboarding`), so it can't drift from what the user actually did,
+ * and it disappears on its own once complete.
+ */
+function OnboardingCard({ onboarding }: { onboarding: OnboardingDto }) {
+  const done = onboarding.steps.filter((s) => s.done).length;
+  return (
+    <section
+      aria-label="Per iniziare"
+      data-testid="onboarding"
+      className="rounded-[var(--radius-card)] border border-accent bg-bg-surface p-4"
+    >
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <h2 className="text-sm font-semibold text-fg-primary">Per iniziare</h2>
+        <span className="font-mono text-xs tabular-nums text-fg-muted">
+          {done}/{onboarding.steps.length}
+        </span>
+      </div>
+      <ol className="space-y-2">
+        {onboarding.steps.map((step, i) => {
+          const isNext = step.key === onboarding.nextKey;
+          return (
+            <li key={step.key} className="flex items-start gap-3">
+              <span
+                aria-hidden="true"
+                className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] ${
+                  step.done
+                    ? 'border-ok text-ok'
+                    : isNext
+                      ? 'border-accent text-accent'
+                      : 'border-border text-fg-muted'
+                }`}
+              >
+                {step.done ? '✓' : i + 1}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p
+                  className={`text-sm ${step.done ? 'text-fg-muted line-through' : 'font-medium text-fg-primary'}`}
+                >
+                  {step.label}
+                  <span className="sr-only">{step.done ? ' (fatto)' : ''}</span>
+                </p>
+                {isNext && <p className="mt-0.5 text-xs text-fg-secondary">{step.hint}</p>}
+              </div>
+              {isNext && (
+                <Link
+                  href={step.href}
+                  className="shrink-0 rounded-[var(--radius-control)] bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-hover"
+                >
+                  Vai
+                </Link>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </section>
   );
 }
 
@@ -303,6 +364,8 @@ export function DashboardClient() {
   return (
     <div className="mx-auto max-w-[1440px] space-y-4 p-6">
       <h1 className="text-xl font-semibold tracking-[-0.02em]">Dashboard</h1>
+
+      {!summary.onboarding.completed && <OnboardingCard onboarding={summary.onboarding} />}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile

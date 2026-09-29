@@ -27,13 +27,16 @@ Tutto converge nella home; il prodotto è installabile da terzi in 5 minuti.
 ## Criteri di accettazione
 
 - [ ] Una persona che non conosce il progetto arriva alla prima flashcard in <5 minuti seguendo il README.
+      (Quickstart e checklist "Per iniziare" esistono; **mai cronometrato con una persona vera**, e le
+      immagini non sono pubblicate, quindi la prima build Docker pesa sul tempo.)
 - [ ] La Dashboard risponde alla domanda "cosa faccio adesso" senza scroll. (La sezione "Oggi" con la
       next-action in evidenza è la prima cosa sotto le tile — non misurato su viewport reali, vedi "Stato".)
 - [ ] Lighthouse ≥ 90 su performance e accessibilità nelle pagine principali. (Mai eseguito in questo ambiente.)
 - [x] Backup e restore su macchina diversa: stato identico. (Testato con DB e cartella `/data` entrambi
       freschi, che è esattamente la condizione "macchina diversa" — vedi "Stato".)
-- [ ] Nessuna chiave API raggiungibile dal client (verificato nel bundle). (Invariante ereditata da F3,
-      non ri-verificata nel bundle in questa sessione.)
+- [x] Nessuna chiave API raggiungibile dal client (verificato nel bundle). (`pnpm check:bundle`, vedi
+      "Completamento F7" — con il limite che il controllo sui _valori_ dipende dalle variabili d'ambiente
+      presenti quando lo si lancia.)
 
 ---
 
@@ -80,16 +83,13 @@ Cosa c'è, con test reali:
 
 **Non implementato in questa slice**:
 
-- **Tema light**: `apps/web/src/app/globals.css` ha solo il set di token dark — nessun `data-theme`,
-  nessuna variante chiara.
-- **3 densità** (comfortable/compact/dense): non esistono, né come token né come switch.
+- ~~Tema light~~ e ~~3 densità~~: chiusi, vedi "Completamento F7".
 - **Audit a11y con axe**: mai eseguito.
 - **Lighthouse**: mai eseguito in questo ambiente.
-- **Onboarding guidato**: nessun flusso dedicato "primo avvio → materia → PDF → 10 card → prima task";
-  il percorso esiste (le pagine ci sono tutte) ma non è cucito insieme con un wizard.
+- ~~Onboarding guidato~~: chiuso come checklist, vedi "Completamento F7".
 - **Immagini Docker pubblicate, `docker-compose.yml` one-liner, profilo `lite` SQLite**: nessun Docker
   daemon disponibile in questo ambiente per costruire/pubblicare immagini (stesso limite di F0).
-- **Verifica bundle "nessuna chiave API lato client"**: non ri-eseguita in questa sessione.
+- ~~Verifica bundle "nessuna chiave API lato client"~~: eseguita, vedi "Completamento F7".
 - **Backup/restore reali contro Postgres**: testati solo con pglite (nessun Postgres/Docker disponibile
   — stesso limite dichiarato in ogni fase precedente). La logica è la stessa SQL via Drizzle, ma un
   primo giro contro un Postgres vero resta da fare prima di fidarsi in produzione.
@@ -143,3 +143,43 @@ job o per materia, solo per stato.
 nuovo tentativo, non una mutazione della riga fallita. Rifiuta un job non `failed`
 (`JobNotRetryableError`) o inesistente (`JobNotFoundError`). Bottone "Rilancia" in `AdminClient`
 solo sulle righe `failed`. Non copre ancora la cancellazione di un job.
+
+## Completamento F7 (2026-09-29): aspetto, onboarding, verifica del bundle, build
+
+- **Tema chiaro/scuro/sistema** (`apps/web/src/lib/appearance.ts`, `AppearanceMenu`, menu "Aspetto"
+  nella top bar). Il tema chiaro ridefinisce **ogni** token, non solo le superfici, scurendo testo,
+  accento e colori di stato: un test (`apps/web/test/appearance.test.ts`) legge `globals.css`, calcola
+  il contrasto WCAG e richiede ≥ 4,5:1 per ogni colore di testo su ognuna delle 4 superfici e per il
+  bianco sui pulsanti d'accento — contrasto misurato, non a occhio. "Sistema" segue l'OS dal vivo.
+  Un piccolo script inline nel `<head>` (`NO_FLASH_SCRIPT`) applica la preferenza prima del primo
+  paint; il test lo **esegue** contro gli helper tipizzati su tutte le combinazioni, così non
+  divergono, e verifica che non lanci con lo storage bloccato. La preferenza sta in `localStorage`
+  (per-browser), non nel DB.
+- **Tre densità** (comoda/compatta/densa): scalano il `rem` di `<html>` (100% / 93,75% / 87,5%), quindi
+  ogni utility Tailwind di spazio e testo le segue; il corpo è ora in `rem` invece di `14px` fissi.
+  `prefers-reduced-motion` era già rispettato in `globals.css`.
+- **Checklist "Per iniziare"** (`getOnboarding`, in `GET /api/dashboard`): 5 passi — materia, documento
+  caricato, documento **pronto** (`parsed`), prime flashcard, piano **attivo** con task. Calcolata
+  dallo stato reale (mai salvata), quindi non può divergere da ciò che l'utente ha fatto; una bozza di
+  piano non conta, le materie archiviate nemmeno; si nasconde da sola a passi completati. Il passo
+  successivo ha un link "Vai" diretto.
+- **Verifica del bundle** (`pnpm check:bundle`, `scripts/check-bundle-secrets.mjs`): scansiona
+  `.next/static` (solo ciò che va al browser) cercando la forma di chiavi note (Anthropic, OpenAI-style,
+  AWS, chiavi private, URL Postgres con password) e i **valori** di `ANTHROPIC_API_KEY`/`DATABASE_URL`/
+  `REDIS_URL`… se presenti nell'ambiente. Esce con errore se non ha scansionato nulla. Eseguito su una
+  build vera: 111 file, nessuna fuga; provato anche con una chiave finta iniettata (rilevata, exit 1).
+  **Limite**: senza quelle variabili nell'ambiente il controllo sui valori è vuoto e restano solo le
+  forme note — per una verifica piena, lanciarlo con il `.env` caricato.
+- **Bug trovato dalla build di produzione**: `next build` **falliva** — due commenti `eslint-disable`
+  (`AttemptResultsClient.tsx`, `VerifySchemaClient.tsx`) citavano regole (`react-hooks/exhaustive-deps`,
+  `@next/next/no-img-element`) che la config ESLint del repo non definisce, e Next le tratta come
+  errori. Sostituiti da commenti normali. I test unitari non potevano accorgersene.
+- **README**: sezione Quickstart (Docker, 3 comandi) e stato aggiornato.
+
+**Ancora non fatto** (dichiarato): immagini pubblicate su `ghcr.io` e profilo `lite` SQLite (nessun
+Docker daemon qui), audit **axe** e **Lighthouse** (servono l'app in esecuzione su Postgres), "prima
+flashcard in <5 minuti" mai cronometrato con una persona vera, dropzone di upload globale, azioni AI
+nella command palette (resta navigazione e ricerca), log strutturato persistito, verifica vera del
+tema chiaro su tutte le pagine (verificato in browser solo lo shell e `/materie` — applicazione,
+persistenza al reload e densità; il contrasto è calcolato dai token, non misurato sulle pagine
+renderizzate; la Dashboard e le pagine con dati non erano raggiungibili senza Postgres).
