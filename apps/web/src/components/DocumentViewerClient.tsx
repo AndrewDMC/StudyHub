@@ -18,7 +18,7 @@ async function fetchText(url: string): Promise<string> {
   return res.text();
 }
 
-function MarkdownFile({ url }: { url: string }) {
+function MarkdownFile({ url, subjectSlug }: { url: string; subjectSlug: string }) {
   const query = useQuery({ queryKey: ['documentFileText', url], queryFn: () => fetchText(url) });
   if (query.isLoading) return <p className="text-sm text-fg-muted">Caricamento…</p>;
   if (query.isError)
@@ -29,7 +29,7 @@ function MarkdownFile({ url }: { url: string }) {
     );
   return (
     <div className="mx-auto max-w-3xl p-6">
-      <ObsidianMarkdown source={query.data ?? ''} />
+      <ObsidianMarkdown source={query.data ?? ''} subjectSlug={subjectSlug} />
     </div>
   );
 }
@@ -104,7 +104,9 @@ export function DocumentViewerClient({
                 className="mx-auto max-h-full max-w-full object-contain"
               />
             )}
-            {doc.mime === 'text/markdown' && <MarkdownFile url={fileUrl} />}
+            {doc.mime === 'text/markdown' && (
+              <MarkdownFile url={fileUrl} subjectSlug={subjectSlug} />
+            )}
           </div>
         </>
       )}

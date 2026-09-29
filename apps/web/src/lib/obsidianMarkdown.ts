@@ -25,7 +25,11 @@ function splitText(value: string): PhrasingContent[] | null {
         value: embed ? `${label}` : label,
         data: {
           hName: 'span',
-          hProperties: { className: [embed ? 'md-embed' : 'md-wikilink'], title: target },
+          hProperties: {
+            className: [embed ? 'md-embed' : 'md-wikilink'],
+            title: target,
+            'data-target': target,
+          },
         },
       } as Text);
     } else if (match[3]) {
@@ -107,4 +111,30 @@ export function splitFrontmatter(source: string): {
     if (kv) properties.push([kv[1]!.trim(), kv[2]!.replace(/^\[|\]$/g, '').trim()]);
   }
   return { properties, body: source.slice(match[0].length) };
+}
+
+const stem = (name: string) =>
+  name
+    .replace(/\.[A-Za-z0-9]{1,8}$/, '')
+    .normalize('NFC')
+    .trim()
+    .toLowerCase();
+
+/**
+ * Resolves a `[[wikilink]]` target (`Folder/Note#Heading|alias` minus the alias) to a document of
+ * the same subject by file name, ignoring case, folders, extension and heading/block anchors —
+ * Obsidian's own "shortest path" matching, with the subject's documents as the vault.
+ */
+export function resolveWikilink<T extends { originalName: string }>(
+  target: string,
+  documents: readonly T[],
+): T | null {
+  const name = target.split(/[#^]/)[0]!.split('/').pop() ?? '';
+  const wanted = stem(name);
+  if (!wanted) return null;
+  return (
+    documents.find((d) => d.originalName.normalize('NFC').toLowerCase() === name.toLowerCase()) ??
+    documents.find((d) => stem(d.originalName) === wanted) ??
+    null
+  );
 }

@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ObsidianMarkdown } from '../src/components/ObsidianMarkdown';
-import { splitFrontmatter } from '../src/lib/obsidianMarkdown';
+import { resolveWikilink, splitFrontmatter } from '../src/lib/obsidianMarkdown';
 
 const render = (source: string) =>
-  renderToStaticMarkup(createElement(ObsidianMarkdown, { source }));
+  renderToStaticMarkup(
+    createElement(
+      QueryClientProvider,
+      { client: new QueryClient() },
+      createElement(ObsidianMarkdown, { source }),
+    ),
+  );
 
 describe('splitFrontmatter', () => {
   it('separates YAML properties from the body', () => {
@@ -31,7 +38,8 @@ describe('ObsidianMarkdown', () => {
   });
   it('renders wikilinks (alias wins), highlights and tags', () => {
     const html = render('Vedi [[Limiti|i limiti]] e ==importante== #analisi/1');
-    expect(html).toContain('<span class="md-wikilink" title="Limiti">i limiti</span>');
+    expect(html).toContain('md-wikilink md-unresolved');
+    expect(html).toContain('i limiti');
     expect(html).toContain('<mark>importante</mark>');
     expect(html).toContain('md-tag');
   });
@@ -40,5 +48,18 @@ describe('ObsidianMarkdown', () => {
     expect(html).toContain('katex');
     expect(html).toContain('<table>');
     expect(html).toContain('type="checkbox"');
+  });
+});
+
+describe('resolveWikilink', () => {
+  const docs = [{ originalName: 'Analisi 1.md' }, { originalName: 'Fisica.pdf' }];
+  it('matches by name ignoring case, folder, extension and anchor', () => {
+    expect(resolveWikilink('analisi 1', docs)).toBe(docs[0]);
+    expect(resolveWikilink('Corsi/Fisica#Cinematica', docs)).toBe(docs[1]);
+    expect(resolveWikilink('Fisica.pdf', docs)).toBe(docs[1]);
+  });
+  it('returns null when nothing matches', () => {
+    expect(resolveWikilink('Chimica', docs)).toBeNull();
+    expect(resolveWikilink('#solo-anchor', docs)).toBeNull();
   });
 });

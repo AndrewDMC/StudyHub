@@ -162,7 +162,7 @@ export function DocumentContentClient({
 
       {query.isSuccess && !editing && (
         <div className="rounded-[var(--radius-card)] border border-border bg-bg-surface p-6">
-          <ObsidianMarkdown source={query.data.markdown} />
+          <ObsidianMarkdown source={query.data.markdown} subjectSlug={subjectSlug} />
         </div>
       )}
 

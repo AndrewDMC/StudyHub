@@ -369,3 +369,11 @@ body {
 .md-obsidian .hljs-deletion {
   color: var(--danger);
 }
+.md-obsidian a.md-wikilink:hover {
+  text-decoration: underline;
+}
+.md-obsidian .md-wikilink.md-unresolved {
+  color: var(--fg-muted);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
