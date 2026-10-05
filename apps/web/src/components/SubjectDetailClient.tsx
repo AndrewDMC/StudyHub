@@ -35,6 +35,7 @@ const TABS = [
   { key: 'appunti', label: 'Appunti' },
   { key: 'schemi', label: 'Schemi' },
   { key: 'esami', label: 'Esami' },
+  { key: 'altro', label: 'Altro' },
   { key: 'flashcard', label: 'Flashcard' },
   { key: 'simulazioni', label: 'Simulazioni' },
   { key: 'lacune', label: 'Lacune' },
@@ -95,17 +96,21 @@ async function fetchAiProvider(): Promise<string> {
 function DocumentTypeTab({
   subjectSlug,
   type,
+  includeTypes = [type],
   documents,
   extra,
 }: {
   subjectSlug: string;
+  /** The type the upload form starts on. */
   type: DocumentType;
+  /** Every type listed in the tab (the "Altro" tab also collects `slide`). */
+  includeTypes?: DocumentType[];
   documents: DocumentDto[];
   extra?: React.ReactNode;
 }) {
   const { docIds, setDocIds, topicIds } = useSelection();
   const filtered = documents
-    .filter((d) => d.type === type)
+    .filter((d) => includeTypes.includes(d.type))
     .filter((d) => topicIds.size === 0 || d.topicIds.some((id) => topicIds.has(id)));
 
   return (
@@ -337,6 +342,15 @@ function SubjectDetailClientInner({ slug }: { slug: string }) {
 
           {activeTab === 'schemi' && (
             <DocumentTypeTab subjectSlug={slug} type="schemi" documents={documents} />
+          )}
+
+          {activeTab === 'altro' && (
+            <DocumentTypeTab
+              subjectSlug={slug}
+              type="altro"
+              includeTypes={['altro', 'slide']}
+              documents={documents}
+            />
           )}
 
           {activeTab === 'esami' && (
