@@ -23,6 +23,16 @@ export interface ExtractedPage {
   ocr?: boolean;
 }
 
+/**
+ * Postgres rejects NUL (`0x00`) in text columns ("invalid byte sequence for encoding UTF8"),
+ * and some PDFs (broken font encodings) or OCR output carry them, along with other C0 control
+ * characters that are never real text. Tab, newline and carriage return are kept.
+ */
+export function stripControlChars(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+}
+
 /** Pure PDF -> per-page text. No DB/FS access — kept separately testable. */
 export async function extractPdfText(pdfBytes: Uint8Array): Promise<ExtractedPage[]> {
   const task = pdfjsLib.getDocument({
@@ -36,9 +46,9 @@ export async function extractPdfText(pdfBytes: Uint8Array): Promise<ExtractedPag
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
       const page = await pdf.getPage(pageNumber);
       const content = await page.getTextContent();
-      const text = content.items
-        .map((item) => ('str' in item ? item.str : ''))
-        .join(' ')
+      const text = stripControlChars(
+        content.items.map((item) => ('str' in item ? item.str : '')).join(' '),
+      )
         .replace(/\s+/g, ' ')
         .trim();
       pages.push({ pageNumber, text });
@@ -183,6 +193,11 @@ export async function processExtractText(
         `estrazione testo non supportata per ${doc.mime}: solo PDF, immagini (jpeg/png/webp) e Markdown`,
       );
     }
+
+    // One choke point for every source (PDF, OCR, image, Markdown): nothing with a NUL
+    // reaches the chunks table or content.md.
+    pages = pages.map((p) => ({ ...p, text: stripControlChars(p.text) }));
+    if (markdownOverride !== undefined) markdownOverride = stripControlChars(markdownOverride);
 
     const derivedDir = resolveDocumentDerivedDir(subject.slug, doc.id, dataRoot);
     const markdown = markdownOverride ?? renderContentMarkdown(doc.originalName, pages);
