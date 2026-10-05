@@ -9,7 +9,11 @@ import { createTestDb } from '@studyhub/db/testDb';
 import { chunks, documents, subjects } from '@studyhub/db';
 import { createManifest, resolveDocumentSourcePath, scaffoldSubject } from '@studyhub/core';
 import type { AiProvider } from '@studyhub/ai';
-import { extractPdfText, processExtractText } from '../src/processors/extractText.js';
+import {
+  extractPdfText,
+  processExtractText,
+  stripControlChars,
+} from '../src/processors/extractText.js';
 
 function fakeOcrProvider(text: string): AiProvider {
   return {
@@ -57,6 +61,13 @@ describe('extractPdfText (pure)', () => {
     const bytes = await makeFixturePdf(['']);
     const pages = await extractPdfText(bytes);
     expect(pages).toEqual([{ pageNumber: 1, text: '' }]);
+  });
+});
+
+describe('stripControlChars', () => {
+  it('removes NUL and other C0 control characters but keeps tab, newline and CR', () => {
+    expect(stripControlChars('a\u0000b\u0001c\u001Fd')).toBe('abcd');
+    expect(stripControlChars('riga1\nriga2\r\n\tx')).toBe('riga1\nriga2\r\n\tx');
   });
 });
 
@@ -268,6 +279,36 @@ describe('processExtractText', () => {
       .orderBy(chunks.ord);
     expect(chunkRows[0]?.text).toBe('Testo trascritto dalla pagina scansionata.');
     expect(chunkRows[1]?.text).toBe('Pagina con testo vero.');
+  });
+
+  it('ingests OCR text containing NUL bytes instead of failing with "invalid byte sequence"', async () => {
+    const docId = randomUUID();
+    const storedPath = resolveDocumentSourcePath(
+      subjectSlug,
+      'appunti',
+      `${randomUUID()}.png`,
+      dataRoot,
+    );
+    await writeFile(storedPath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    await db.insert(documents).values({
+      id: docId,
+      subjectId,
+      type: 'appunti',
+      originalName: 'foto-sporca.png',
+      storedPath,
+      mime: 'image/png',
+      bytes: 4,
+      sha256: 'd'.repeat(64),
+    });
+
+    const provider = fakeOcrProvider('Testo\u0000 con\u0000 byte nulli.');
+    const result = await processExtractText(db, dataRoot, { documentId: docId }, provider);
+
+    const [chunk] = await db.select().from(chunks).where(eq(chunks.documentId, docId));
+    expect(chunk?.text).toBe('Testo con byte nulli.');
+    expect(await readFile(result.mdPath, 'utf-8')).not.toContain('\u0000');
+    const [doc] = await db.select().from(documents).where(eq(documents.id, docId));
+    expect(doc?.status).toBe('parsed');
   });
 
   it('throws a clear error for a non-existent document id', async () => {

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { DocumentDto, TopicDto } from '@studyhub/contracts';
+import { DeleteDocumentButton } from '@/components/DeleteDocumentButton';
 
 const STATUS_LABEL: Record<DocumentDto['status'], string> = {
   uploaded: 'Caricato',
@@ -307,6 +308,16 @@ export function DocumentList({
                       {doc.mdConflict ? 'Conflitto da risolvere' : 'Vedi testo'}
                     </Link>
                   )}
+                  <DeleteDocumentButton
+                    subjectSlug={subjectSlug}
+                    doc={doc}
+                    onDeleted={(id) => {
+                      if (!onSelectionChange || !selectedDocIds?.has(id)) return;
+                      const next = new Set(selectedDocIds);
+                      next.delete(id);
+                      onSelectionChange(next);
+                    }}
+                  />
                 </div>
               </div>
             );

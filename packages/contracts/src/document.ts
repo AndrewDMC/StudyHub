@@ -40,6 +40,24 @@ export const UploadDocumentResponseSchema = z.object({
 });
 export type UploadDocumentResponse = z.infer<typeof UploadDocumentResponseSchema>;
 
+/**
+ * What deleting a document touches, shown before the confirm. Flashcards and
+ * artifacts built from it are kept (they carry review history); only their link
+ * to this source breaks. `blockedReason` is set while a job is still working on it.
+ */
+export const DocumentDeletionImpactSchema = z.object({
+  documentId: z.string().uuid(),
+  name: z.string(),
+  deletable: z.boolean(),
+  blockedReason: z.string().nullable(),
+  chunks: z.number().int(),
+  topics: z.array(z.string()),
+  artifacts: z.array(z.object({ id: z.string().uuid(), title: z.string(), kind: z.string() })),
+  flashcardsCiting: z.number().int(),
+  openTasks: z.number().int(),
+});
+export type DocumentDeletionImpact = z.infer<typeof DocumentDeletionImpactSchema>;
+
 /** PUT body: replaces the full set of topics a document is tagged with. */
 export const SetDocumentTopicsRequestSchema = z.object({
   topicIds: z.array(z.string().uuid()),

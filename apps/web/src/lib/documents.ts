@@ -1,15 +1,33 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
-import { eq, and, inArray } from 'drizzle-orm';
-import { documentTopics, documents, subjects, type Document } from '@studyhub/db';
+import { eq, and, inArray, sql } from 'drizzle-orm';
+import {
+  artifactSources,
+  artifacts,
+  chunks,
+  documentTopics,
+  documents,
+  flashcards,
+  recomputeTopicMastery,
+  subjects,
+  tasks,
+  topics,
+  type Document,
+} from '@studyhub/db';
 import {
   generateStoredFilename,
+  moveDocumentToTrash,
   resolveDocumentSourcePath,
   sniffUploadMime,
   type DocumentType,
 } from '@studyhub/core';
-import type { DocumentDto } from '@studyhub/contracts';
+import type { DocumentDeletionImpact, DocumentDto } from '@studyhub/contracts';
 import { DocumentNotFoundError } from './documentTopics';
+import { SubjectNotFoundError } from './errors';
+import { ConflictError } from './examPrep';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyDb = any;
 
 export const MAX_UPLOAD_BYTES = Number(process.env.STUDYHUB_MAX_UPLOAD_BYTES ?? 100 * 1024 * 1024);
 
@@ -218,4 +236,109 @@ export async function listDocuments(
     topicsByDoc.set(link.documentId, [...(topicsByDoc.get(link.documentId) ?? []), link.topicId]);
 
   return rows.map((r) => toDto(r, topicsByDoc.get(r.id) ?? []));
+}
+
+/** A document a job is still working on can't be removed: the worker would write into a vanished folder. */
+function busyReason(status: Document['status']): string | null {
+  return status === 'uploaded' || status === 'parsing'
+    ? 'Il documento è ancora in elaborazione: attendi che finisca (o vada in errore) per eliminarlo.'
+    : null;
+}
+
+async function requireOwnedDocument(db: AnyDb, subjectSlug: string, documentId: string) {
+  const [subject] = await db.select().from(subjects).where(eq(subjects.slug, subjectSlug));
+  if (!subject) throw new SubjectNotFoundError(subjectSlug);
+  const [document] = await db.select().from(documents).where(eq(documents.id, documentId));
+  if (!document || document.subjectId !== subject.id) throw new DocumentNotFoundError(documentId);
+  return { subject: subject as typeof subjects.$inferSelect, document: document as Document };
+}
+
+export async function getDocumentDeletionImpact(
+  db: AnyDb,
+  subjectSlug: string,
+  documentId: string,
+): Promise<DocumentDeletionImpact> {
+  const { document } = await requireOwnedDocument(db, subjectSlug, documentId);
+
+  const [chunkCount] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(chunks)
+    .where(eq(chunks.documentId, documentId));
+  const topicRows: { name: string }[] = await db
+    .select({ name: topics.name })
+    .from(documentTopics)
+    .innerJoin(topics, eq(topics.id, documentTopics.topicId))
+    .where(eq(documentTopics.documentId, documentId));
+  const artifactRows: { id: string; title: string; kind: string }[] = await db
+    .select({ id: artifacts.id, title: artifacts.title, kind: artifacts.kind })
+    .from(artifactSources)
+    .innerJoin(artifacts, eq(artifacts.id, artifactSources.artifactId))
+    .where(eq(artifactSources.documentId, documentId));
+  const [cardCount] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(flashcards)
+    .where(sql`${flashcards.sourceRef}->>'docId' = ${documentId}`);
+  const [taskCount] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(tasks)
+    .where(
+      and(
+        inArray(tasks.status, ['proposed', 'todo', 'doing']),
+        sql`${tasks.payload}->'material' @> ${JSON.stringify([{ docId: documentId }])}::jsonb`,
+      ),
+    );
+
+  const blockedReason = busyReason(document.status);
+  return {
+    documentId,
+    name: document.originalName,
+    deletable: blockedReason === null,
+    blockedReason,
+    chunks: chunkCount?.n ?? 0,
+    topics: topicRows.map((t) => t.name),
+    artifacts: artifactRows,
+    flashcardsCiting: cardCount?.n ?? 0,
+    openTasks: taskCount?.n ?? 0,
+  };
+}
+
+/**
+ * Deletes a document: files go to `.trash/` (recoverable by hand), the row goes
+ * and takes its chunks, schema blocks, topic links and artifact links with it
+ * (all `ON DELETE CASCADE`). Mastery of the topics it was tagged to is
+ * recomputed, since its coverage no longer counts. If the DB delete fails after
+ * the files moved, they are put back.
+ */
+export async function deleteDocument(
+  db: AnyDb,
+  dataRoot: string,
+  subjectSlug: string,
+  documentId: string,
+): Promise<{ trashedTo: string }> {
+  const { subject, document } = await requireOwnedDocument(db, subjectSlug, documentId);
+  const blocked = busyReason(document.status);
+  if (blocked) throw new ConflictError(blocked);
+
+  const linkedTopicIds: string[] = (
+    await db
+      .select({ topicId: documentTopics.topicId })
+      .from(documentTopics)
+      .where(eq(documentTopics.documentId, documentId))
+  ).map((r: { topicId: string }) => r.topicId);
+
+  const trashed = await moveDocumentToTrash(
+    subject.slug,
+    documentId,
+    document.storedPath,
+    dataRoot,
+  );
+  try {
+    await db.delete(documents).where(eq(documents.id, documentId));
+  } catch (err) {
+    await trashed.undo();
+    throw err;
+  }
+
+  for (const topicId of linkedTopicIds) await recomputeTopicMastery(db, topicId);
+  return { trashedTo: trashed.dest };
 }
