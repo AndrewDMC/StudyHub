@@ -58,6 +58,11 @@ export function learningMinutes(topic: PlannerTopic): number {
   return Math.max(MIN_CHUNK_MINUTES, Math.round(topic.estimatedMinutes * factor));
 }
 
+function scaledLearningMinutes(topic: PlannerTopic, scale: number): number {
+  const full = learningMinutes(topic);
+  return scale >= 1 ? full : Math.max(MIN_CHUNK_MINUTES, Math.round(full * scale));
+}
+
 function revisitMinutes(learn: number, sessionLength: number): number {
   return Math.min(sessionLength, Math.max(MIN_CHUNK_MINUTES, Math.round(learn * 0.25)));
 }
@@ -165,10 +170,55 @@ interface PendingRevisit {
   minutes: number;
 }
 
+/** Lowest share of the planned study time a compressed plan will shrink to. */
+const MIN_COMPRESSION = 0.1;
+const COMPRESSION_STEP = 0.85;
+const MAX_COMPRESSION_TRIES = 12;
+
+/**
+ * Always returns a plan. When the time is not enough, the study time of every topic is shrunk
+ * (a lighter, shallower pass over all of it) until everything fits; the result is still flagged
+ * infeasible, with the strategies, so the student knows it is a compressed plan.
+ */
 export function schedulePlan(input: PlannerInput): PlanResult {
+  const full = schedulePlanAt(input, 1);
+  if (full.feasibility.feasible || full.feasibility.availableMinutes <= 0) return full;
+
+  const { availableMinutes, requiredMinutes } = full.feasibility;
+  let scale = Math.max(
+    MIN_COMPRESSION,
+    Math.min(0.95, (availableMinutes / Math.max(1, requiredMinutes)) * 0.9),
+  );
+  let best = schedulePlanAt(input, scale);
+  for (
+    let i = 0;
+    i < MAX_COMPRESSION_TRIES &&
+    best.feasibility.unscheduledTopicKeys.length > 0 &&
+    scale > MIN_COMPRESSION;
+    i++
+  ) {
+    scale = Math.max(MIN_COMPRESSION, scale * COMPRESSION_STEP);
+    best = schedulePlanAt(input, scale);
+  }
+  return best;
+}
+
+function schedulePlanAt(input: PlannerInput, scale: number): PlanResult {
   const warnings: string[] = [];
   const days = eachDay(input.startDate, input.targetDate);
   const capacity = buildCapacity(input);
+  // Said out loud: other subjects' tasks and imported events are hard constraints, so a day they fill is lost here.
+  const declaredDays = days.filter(
+    (d) =>
+      (input.availability.perWeekday[weekday(d)] ?? 0) > 0 &&
+      !input.availability.blackoutDates.includes(d),
+  );
+  const takenDays = declaredDays.filter((d) => (capacity.get(d) ?? 0) === 0).length;
+  if (takenDays > 0) {
+    warnings.push(
+      `${takenDays} giorni su ${declaredDays.length} con ore disponibili sono interamente occupati da task di altre materie o da eventi del calendario: non c'è tempo libero per questa materia.`,
+    );
+  }
   const remaining = new Map(capacity);
   const tasks: PlannedTask[] = [];
   const lastTwo = new Set(days.slice(-2));
@@ -269,8 +319,8 @@ export function schedulePlan(input: PlannerInput): PlanResult {
     order.map((t) => [
       t.key,
       {
-        total: learningMinutes(t),
-        left: learningMinutes(t),
+        total: scaledLearningMinutes(t, scale),
+        left: scaledLearningMinutes(t, scale),
         sessions: 0,
         finishedOn: null as IsoDate | null,
         pages: totalPages(t.material),
@@ -393,18 +443,28 @@ export function schedulePlan(input: PlannerInput): PlanResult {
   }
 
   // Feasibility.
-  const learnTotal = order.reduce((s, t) => s + state.get(t.key)!.total, 0);
-  const learnLeft = order.reduce((s, t) => s + Math.max(0, state.get(t.key)!.left), 0);
+  const learnScaled = order.reduce((s, t) => s + state.get(t.key)!.total, 0);
+  const learnFull = order.reduce((s, t) => s + learningMinutes(t), 0);
+  const learnTotal = learnScaled;
+  // A compressed plan owes the time it cut, so it reads as "not enough time" with an honest shortfall.
+  const learnLeft =
+    order.reduce((s, t) => s + Math.max(0, state.get(t.key)!.left), 0) +
+    Math.max(0, learnFull - learnScaled);
   const revisitTotal = order.reduce(
-    (s, t) =>
-      s + REVISIT_OFFSETS_DAYS.length * revisitMinutes(state.get(t.key)!.total, sessionLength),
+    (s, t) => s + REVISIT_OFFSETS_DAYS.length * revisitMinutes(learningMinutes(t), sessionLength),
     0,
   );
   const availableMinutes = [...capacity.values()].reduce((s, v) => s + v, 0);
   const requiredMinutes =
-    learnTotal + revisitTotal + simIndexes.length * simMinutes + requiredReview;
+    learnFull + revisitTotal + simIndexes.length * simMinutes + requiredReview;
   const unscheduledTopicKeys = order.filter((t) => state.get(t.key)!.left > 0).map((t) => t.key);
-  const feasible = unscheduledTopicKeys.length === 0 && (days.length > 0 || learnTotal === 0);
+  const feasible =
+    unscheduledTopicKeys.length === 0 && scale >= 1 && (days.length > 0 || learnTotal === 0);
+  if (scale < 1 && order.length > 0) {
+    warnings.push(
+      `Tempo insufficiente: il piano è compresso a circa il ${Math.round(scale * 100)}% del tempo di studio previsto per ogni argomento.`,
+    );
+  }
   const shortfallMinutes = days.length === 0 ? requiredMinutes : learnLeft;
 
   const feasibility: Feasibility = {
@@ -418,7 +478,7 @@ export function schedulePlan(input: PlannerInput): PlanResult {
       : strategies(
           input,
           order,
-          learnTotal,
+          learnFull,
           learnLeft,
           shortfallMinutes,
           availableMinutes,
@@ -508,7 +568,9 @@ function strategies(
       label: 'Sposta la data',
       description:
         newDate === null
-          ? 'Nessuna disponibilità settimanale indicata: aggiungi ore di studio per poter stimare una data.'
+          ? weeklyMinutes > 0
+            ? 'Tutto il tempo che indichi è già occupato da altre materie o impegni: libera dei giorni o sposta le loro task.'
+            : 'Nessuna disponibilità settimanale indicata: aggiungi ore di studio per poter stimare una data.'
           : `Servono circa ${extraDays} giorni in più${daysToExam <= 0 ? ' (la data è già passata o è oggi)' : ''}: data suggerita ${newDate}.`,
     },
   ];
