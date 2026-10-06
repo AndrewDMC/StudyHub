@@ -8,6 +8,7 @@ import {
   heuristicPlannerTopics,
   loadBusyMinutesByDate,
   loadEligibleDocs,
+  loadTimeFactor,
   recomputeTopicMastery,
   studyPlans,
   subjects,
@@ -22,6 +23,8 @@ import {
   detectDrift,
   diffPlans,
   addDays,
+  applyTimeFactor,
+  describeTimeFactor,
   eachDay,
   moveTask as coreMoveTask,
   resolveSubjectSubpath,
@@ -195,12 +198,13 @@ export async function getPlanPreview(
   const subject = await requireSubject(db, subjectSlug);
   const units = await buildPlanningUnits(db, subject.id, await loadEligibleDocs(db, subject.id));
   const busyMinutesByDate = await loadBusyMinutesByDate(db, subject.id);
+  const timeFactor = await loadTimeFactor(db);
 
   const plannerInput: PlannerInput = {
     startDate: input.startDate,
     targetDate: input.targetDate,
     availability: input.availability,
-    topics: heuristicPlannerTopics(units),
+    topics: applyTimeFactor(heuristicPlannerTopics(units), timeFactor.factor),
     prefs: input.prefs,
     busyMinutesByDate,
     pinned: [],
@@ -231,6 +235,11 @@ export async function getPlanPreview(
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([weekStart, w]) => ({ weekStart, ...w })),
     busyMinutes,
+    timeFactor: {
+      factor: timeFactor.factor,
+      sampleCount: timeFactor.sampleCount,
+      note: describeTimeFactor(timeFactor),
+    },
   };
 }
 

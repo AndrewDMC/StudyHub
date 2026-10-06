@@ -1,6 +1,6 @@
 # Sessione di studio — piano di implementazione
 
-> Stato: **fase 1 implementata** (2026-09-29); fasi 2–4 da fare. Vedi §10 per lo stato e §9 per le decisioni prese.
+> Stato: **fasi 1, 2, 3 e 4 implementate** (2026-09-29 / 2026-10-05 / 2026-10-06 / 2026-10-06). Vedi §10 per lo stato e §9 per le decisioni prese.
 > Realizza anche il "pannello AI contestuale" rinviato da F2 (`packages/db/src/schema.ts`, commento su `exams`).
 
 ## 1. Cosa vuole l'utente, in una frase
@@ -180,12 +180,12 @@ testata della chat.
 
 ## 7. Fette di consegna (ognuna usabile da sola)
 
-| #   | Fetta                     | Contenuto                                                                                                       | AI?      |
-| --- | ------------------------- | --------------------------------------------------------------------------------------------------------------- | -------- |
-| 1   | **Sessione + materiale**  | tabelle, §3, avvio e chiusura, pagina con pannello Materiale, timer, "Inizia" collegato                         | no       |
-| 2   | **Chat citata**           | retrieval filtrato, `chatStream` su 3 provider, SSE, selezione → chat, costi                                    | sì       |
-| 3   | **Briefing**              | job `prepare_session`, punti chiave ed esercizi, checklist, "altri esercizi"                                    | sì       |
-| 4   | **Chiusura intelligente** | correzione esercizi, flashcard dai punti chiave, esercizi sbagliati nei drill (#8), `active_ms` al Planner (#7) | parziale |
+| #   | Fetta                       | Contenuto                                                                                                       | AI?      |
+| --- | --------------------------- | --------------------------------------------------------------------------------------------------------------- | -------- |
+| 1   | **Sessione + materiale**    | tabelle, §3, avvio e chiusura, pagina con pannello Materiale, timer, "Inizia" collegato                         | no       |
+| 2   | **Chat citata** ✔           | retrieval filtrato, `chatStream` su 3 provider, SSE, selezione → chat, costi                                    | sì       |
+| 3   | **Briefing** ✔              | job `prepare_session`, punti chiave ed esercizi, checklist, "altri esercizi"                                    | sì       |
+| 4   | **Chiusura intelligente** ✔ | correzione esercizi, flashcard dai punti chiave, esercizi sbagliati nei drill (#8), `active_ms` al Planner (#7) | parziale |
 
 Metto la chat prima del briefing perché è il pezzo che dà più valore subito e riusa di più
 (ricerca ibrida già pronta). Il briefing ha senso una volta che la pagina esiste già.
@@ -263,6 +263,127 @@ Metto la chat prima del briefing perché è il pezzo che dà più valore subito 
 aperta dal vivo (lo stack Docker in esecuzione ha l'immagine precedente e va ricostruito, con la
 migrazione 0016).
 
-### Prossimo: fase 2 (chat con citazioni)
+### Fase 2 — chat con citazioni — fatta
 
-Con la decisione 2, la fase 2 include la scrittura della trascrizione `.md` alla chiusura.
+- **Dati**: tabella `session_messages` e colonna `study_sessions.transcript_path` (migrazione `0018_session_chat.sql`).
+- **Provider**: `AiProvider.chatStream(input, model): AsyncIterable<ChatDelta>` (`text` a pezzi, poi un `done` con i
+  token). `AnthropicProvider` → `messages.create({ stream: true })`; `ClaudeCliProvider` →
+  `claude --print --output-format stream-json --include-partial-messages` senza tool (con ripiego sul messaggio
+  intero se non arrivano i parziali); `FakeProvider` → risposta estrattiva, citata, a pezzi. Prompt
+  `session_chat/v1.md`; fonti, passaggio selezionato, storia e domanda entrano in tag escapati.
+- **Citazioni**: il modello cita con marcatori numerici `[n]` (le fonti sono numerate nel prompt), non con
+  `[doc:pagina]` come ipotizzato in §5.3: è più corto da generare e si valida con una semplice mappa
+  `n → chunk`. Un marcatore verso una fonte mai fornita viene tolto dal testo, mai trasformato in citazione
+  (`parseAnswerCitations`, `packages/core/src/sessionChat.ts`). Una risposta senza citazioni valide si vede
+  marcata come «non ancorata al materiale».
+- **Retrieval ristretto**: `retrieveChunks` in `apps/web/src/lib/search.ts` riusa la ricerca ibrida FTS +
+  vettoriale + RRF con un filtro `documentIds` (top‑k 8; test: un chunk di un documento fuori sessione non
+  compare mai). Per la chat l'FTS usa un **OR** sulle parole significative: con la sintassi `websearch`
+  (AND) una domanda in linguaggio naturale non trovava nulla. Il passaggio selezionato porta sempre con sé i
+  chunk della sua pagina.
+- **Route**: `POST /sessions/[id]/messages` (SSE: `user` → `delta`… → `done` | `error`; gli errori prevedibili
+  — sessione inesistente o terminata, passaggio di un documento fuori sessione — escono come normale errore
+  HTTP prima dello stream), `GET /sessions/[id]/messages` (storia + costo), `GET /sessions/[id]/transcript`.
+- **Costi**: ogni risposta scrive una riga `jobs` di tipo `session_chat` con il costo, quindi compare in
+  `/admin` e nel costo mensile; il totale della sessione è nella testata della chat. Storia limitata a 10
+  messaggi / 6000 caratteri, fonti troncate a 1800 caratteri.
+- **Trascrizione** (decisione 2): `Termina` scrive `data/subjects/<materia>/sessioni/AAAA-MM-GG-<titolo>-<id8>.md`
+  (front matter, turni, passaggio selezionato come citazione, fonti come `[[wikilink#p. N]]`). Se la scrittura
+  fallisce la sessione resta comunque chiusa. A sessione terminata la chat mostra la trascrizione in sola lettura.
+- **UI**: `SessionChat` a destra (sotto `lg` due tab Materiale / Chat); selezionando testo nel viewer compare
+  «Chiedi all'AI» (la pagina si ricava dai titoli `## Pagina N` del `content.md`); i chip di citazione aprono il
+  documento e scorrono alla pagina; selettore modello (`ModelPicker`), invio con Invio, risposta in streaming.
+- **Test**: 10 unit (core) + 9 di integrazione pglite (chat) + 8 sui provider.
+
+**Non fatto / limiti**
+
+- La trascrizione non è ancora indicizzata come documento della materia (quindi non è cercabile come gli altri
+  documenti, come prevede la decisione 2): oggi è un file `.md` sul disco, letto dalla sessione stessa.
+- Interrompere la risposta dal browser ferma il modello ma non salva il parziale né il costo di quel turno.
+- Se una risposta fallisce, la domanda resta nella storia senza risposta (e viene rimandata al modello nei turni
+  successivi); non c'è un «riprova».
+- **Non verificato nel browser** (come la fase 1): Docker non era in esecuzione, quindi la pagina e lo stream SSE
+  non sono stati provati dal vivo. Coperti da test e typecheck: la logica, il retrieval, le route lato libreria e
+  i tre provider contro client simulati; il parsing dello stream di `claude` è basato sul formato `stream-json`
+  documentato, non su un'esecuzione reale. Serve ricostruire lo stack (migrazioni 0016–0018).
+
+### Fase 3 — briefing (punti chiave ed esercizi) — fatta
+
+- **Dati**: tabella `session_items` e colonna `study_sessions.briefing_job_id` (migrazione `0019_session_items.sql`).
+  Niente stato `preparing` sulla sessione (decisione 3: il briefing parte solo su richiesta): lo stato è quello
+  dell'ultimo job, letto da `jobs`; finché il worker non lo prende non c'è la riga e la UI mostra «in coda».
+- **AI**: `AiProvider.generateSessionBriefing(input, model)` su Anthropic (tool `emit_session_briefing`), claude CLI e
+  `FakeProvider` (estrattivo: punti chiave = frasi dei chunk, esercizi = cloze su una parola lunga). Prompt
+  `session_briefing/v1.md`, schema `SessionBriefingOutputSchema`.
+- **Worker**: job `prepare_session` (`processors/generation/prepareSession.ts`). I chunk sono quelli dei documenti
+  della sessione, con priorità alle pagine pianificate dalla task e un tetto di ~48k caratteri
+  (`selectBriefingChunks`, core). 6 punti chiave + 4 esercizi; «altri esercizi» = 3, senza ripetere quelli
+  esistenti. Un elemento sopravvive solo se la `quote` è **verbatim** nel chunk citato (come le flashcard). Se non
+  sopravvive nulla il job fallisce con un messaggio chiaro. Lo stile degli esercizi segue `exam_profiles`, se c'è.
+  Budget giornaliero rispettato (`prepare_session` è fra i tipi AI conteggiati).
+- **Route**: `GET|POST /sessions/[id]/briefing` (elementi + stato job + costo; avvio del job),
+  `POST /sessions/[id]/briefing/estimate` (stima costo pre-flight), `PATCH /sessions/[id]/items/[itemId]`
+  (spunta di un punto chiave; risposta e autovalutazione di un esercizio). «Tutto» si può generare una volta sola;
+  mai due generazioni insieme; solo a sessione attiva.
+- **UI**: al centro della pagina una scheda «Punti chiave ed esercizi» (accanto a «Documento»): `ModelPicker` e costo
+  stimato sul pulsante, scheletro mentre il job gira (polling ogni 2 s), errore reale con «riprova»; checklist con
+  chip di citazione `↗` che apre il documento alla pagina e «Spiegami meglio» che manda la citazione alla chat;
+  esercizi con risposta libera, «Mostra la soluzione» e autovalutazione «Ho risposto bene / Ho sbagliato»
+  (decisione 1, via gratuita). Costo cumulativo del briefing in testata.
+- **Test**: 5 unit (core), 3 (provider fake + prompt), 6 worker (pglite: citazioni, "altri esercizi", validazione,
+  runJob) e 11 web (avvio, conflitti, stato job, stima, aggiornamento item).
+
+**Non fatto / limiti**
+
+- «Correggi con l'AI» (job `gradeAnswer`), flashcard dai punti chiave, esercizi sbagliati nei drill e `active_ms`
+  al Planner restano alla fase 4. Per ora gli esercizi si autovalutano e lo stato `wrong` non alimenta nulla.
+- `topic_id` di un elemento è l'argomento della sessione a cui è taggato il documento citato (il primo, se più d'uno).
+- «Altri esercizi» con materiale piccolo può non trovarne di nuovi: il job fallisce con «Nessun nuovo esercizio».
+- Un job rimasto in coda (worker spento) mostra «in preparazione» senza limite di tempo.
+- **Non verificato nel browser** (come le fasi 1–2): serve ricostruire lo stack Docker (migrazioni 0016–0019) e
+  provare pagina, worker e job reali. Coperti da test e typecheck: logica, validazione delle citazioni, route lato
+  libreria e provider; i provider reali (Anthropic, claude CLI) per `generateSessionBriefing` non sono stati
+  provati contro il servizio vero.
+
+### Fase 4 — chiusura intelligente — fatta
+
+- **«Correggi con l'AI»** (decisione 1, via a pagamento accanto a «Mostra la soluzione»): `POST .../items/[itemId]/grade`
+  chiama direttamente `gradeAnswer` (una chiamata breve, come la chat: niente coda). L'esercizio è corretto come un item
+  a un solo criterio contro la sua soluzione attesa; il punteggio è limitato a 0–1 (il correttore non può dare più
+  della rubrica) e da 0,6 in su lo stato diventa `correct`, altrimenti `wrong` (soglia `EXERCISE_PASS_RATIO`, la stessa
+  degli item deboli delle simulazioni). Restano modificabili a mano con l'autovalutazione. Il feedback (`session_items.feedback`:
+  punteggio, commento, cosa manca) si cancella se la risposta cambia, perché appartiene a quella risposta. Ogni correzione
+  scrive una riga `jobs` di tipo `session_grade` (compare in `/admin` e nel costo della sessione, ora «Costo AI»).
+  Modello predefinito: sonnet (routing «grade» di docs/03 §4).
+- **Alla chiusura** (`SessionClosing`, solo a sessione terminata, così l'insieme è definitivo) due azioni gratuite e
+  idempotenti (una seconda richiesta restituisce lo stesso oggetto; `study_sessions.flashcard_deck_id` e `drill_id`):
+  - **Flashcard dai punti chiave** (`POST .../flashcards`): una carta `basic` per punto (fronte = punto, retro = spiegazione,
+    stessa citazione, stesso argomento). **Nessuna chiamata AI**: i punti sono già generati e validati. Il mazzo nasce in
+    **bozza** come ogni mazzo generato, da approvare.
+  - **Esercizi sbagliati nei drill** (`POST .../drill`): una simulazione `drill_argomento` con gli esercizi `wrong`
+    (1 punto ciascuno, 5 min a esercizio, rubrica a un criterio, soluzione = quella attesa). È un normale drill: si
+    tenta e si corregge come gli altri. Gratis da creare.
+- **Tempo reale al Planner** (#7, `packages/core/src/timeFactor.ts`): `computeTimeFactor` = **mediana** di
+  `minuti studiati / minuti pianificati` sulle ultime 20 sessioni terminate nate da una task (scarta quelle sotto i 5 min
+  e le task senza stima), limitata a 0,5–2 e **applicata solo da 3 sessioni in su**. Il fattore è personale (tutte le
+  materie). `generate_plan` scala le stime degli argomenti e lo salva sul piano (`study_plans.time_factor`); le sessioni
+  successive si misurano dividendo per il fattore già applicato dal loro piano, altrimenti una correzione giusta
+  leggerebbe «nessun errore» e il fattore oscillerebbe. L'anteprima del wizard mostra «Tempi corretti sui tuoi dati:
+  sottostimi del 40% (×1.4, da N sessioni)». Nella chiusura si vedono «minuti studiati su previsti».
+- **Migrazione** `0020_session_closing.sql`: `session_items.feedback`, `study_sessions.{flashcard_deck_id,drill_id}`,
+  `study_plans.time_factor`.
+- **Test**: 8 unit (core, fattore), 4 db (`loadTimeFactor`), 1 worker (piano sul ritmo dello studente), 5 web chiusura
+  (mazzo, drill, idempotenza, tentabile) e 5 web correzione.
+
+**Non fatto / limiti**
+
+- **Non verificato nel browser né sul servizio vero** (come le fasi 1–3): serve ricostruire lo stack Docker
+  (migrazioni 0016–0020). La correzione con Anthropic / claude CLI riusa `gradeAnswer`, già provato per gli esami, ma non
+  con questo input.
+- La correzione fa una chiamata sincrona: nessun controllo del budget giornaliero (come la chat), costo minimo per
+  chiamata ma non nullo.
+- I mazzi creati dai punti chiave non passano per il dedup semantico degli altri mazzi (nessun embedding): un punto
+  uguale a una carta già esistente produce un duplicato.
+- Il fattore tempo non distingue il tipo di task (lettura, schemi…) né la materia: è un solo numero per persona. Le
+  task `review`/`simulation` non aprono sessioni, quindi non lo alimentano.
+- Un esercizio `wrong` dopo la chiusura non può più cambiare stato; il drill si crea una volta sola per sessione.

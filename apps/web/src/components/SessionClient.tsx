@@ -1,11 +1,14 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   DocumentContentDto,
+  SessionCitationDto,
   SessionDocumentDto,
+  SessionFocus,
+  SessionItemCitationDto,
   StudySessionDto,
   TopicDto,
   UpdateSessionRequest,
@@ -13,6 +16,9 @@ import type {
 import { Button } from '@/components/ui/button';
 import { ObsidianMarkdown } from '@/components/ObsidianMarkdown';
 import { formatClock, PomodoroPanel, usePomodoro } from '@/components/PomodoroTimer';
+import { SessionBriefing } from '@/components/SessionBriefing';
+import { SessionClosing } from '@/components/SessionClosing';
+import { SessionChat } from '@/components/SessionChat';
 
 async function readJson<T>(res: Response, fallback: string): Promise<T> {
   const body = await res.json().catch(() => null);
@@ -81,12 +87,101 @@ function formatRanges(doc: SessionDocumentDto): string {
     .join(', ');
 }
 
-function DocumentViewer({ slug, doc }: { slug: string; doc: SessionDocumentDto }) {
+/** The page a node sits on, from the `## Pagina N` headings the ingest writes into every content.md. */
+function pageOfNode(node: Node, root: HTMLElement): number | null {
+  let page: number | null = null;
+  for (const heading of root.querySelectorAll('h2')) {
+    const match = /^Pagina\s+(\d+)/.exec(heading.textContent ?? '');
+    if (!match) continue;
+    if (heading.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) {
+      page = Number(match[1]);
+    } else {
+      break;
+    }
+  }
+  return page;
+}
+
+interface PendingAsk {
+  x: number;
+  y: number;
+  text: string;
+  page: number | null;
+}
+
+function DocumentViewer({
+  slug,
+  doc,
+  canAsk,
+  onAsk,
+  target,
+}: {
+  slug: string;
+  doc: SessionDocumentDto;
+  /** The chat is only interactive while the session is active. */
+  canAsk: boolean;
+  onAsk: (focus: SessionFocus) => void;
+  /** A cited page to scroll to once the document is rendered. */
+  target: { page: number; nonce: number } | null;
+}) {
   const query = useQuery({
     queryKey: ['documentContent', slug, doc.id],
     queryFn: () => fetchContent(slug, doc.id),
     enabled: doc.hasContent,
   });
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [ask, setAsk] = useState<PendingAsk | null>(null);
+
+  // A cited page: scroll the matching "Pagina N" heading into view once the text is on screen.
+  useEffect(() => {
+    if (!target || !query.isSuccess) return;
+    const wanted = new RegExp(`^Pagina\\s+${target.page}\\b`);
+    const heading = [...(bodyRef.current?.querySelectorAll('h2') ?? [])].find((h) =>
+      wanted.test(h.textContent ?? ''),
+    );
+    heading?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [target, query.isSuccess]);
+
+  // The floating button is positioned from the selection: drop it when the selection goes away.
+  useEffect(() => {
+    if (!ask) return;
+    const dismiss = () => setAsk(null);
+    const onSelectionChange = () => {
+      if (window.getSelection()?.isCollapsed) dismiss();
+    };
+    document.addEventListener('selectionchange', onSelectionChange);
+    window.addEventListener('scroll', dismiss, true);
+    return () => {
+      document.removeEventListener('selectionchange', onSelectionChange);
+      window.removeEventListener('scroll', dismiss, true);
+    };
+  }, [ask]);
+
+  function readSelection() {
+    const root = bodyRef.current;
+    const selection = window.getSelection();
+    const text = selection?.toString().trim();
+    if (
+      !canAsk ||
+      !root ||
+      !selection ||
+      !text ||
+      !selection.anchorNode ||
+      !selection.focusNode ||
+      !root.contains(selection.anchorNode) ||
+      !root.contains(selection.focusNode)
+    ) {
+      setAsk(null);
+      return;
+    }
+    const rect = selection.getRangeAt(0).getBoundingClientRect();
+    setAsk({
+      x: rect.left + rect.width / 2,
+      y: rect.top,
+      text: text.slice(0, 4000),
+      page: pageOfNode(selection.anchorNode, root),
+    });
+  }
 
   return (
     <article className="rounded-[var(--radius-card)] border border-border bg-bg-surface p-6">
@@ -125,7 +220,28 @@ function DocumentViewer({ slug, doc }: { slug: string; doc: SessionDocumentDto }
           {(query.error as Error).message}
         </p>
       )}
-      {query.isSuccess && <ObsidianMarkdown source={query.data.markdown} subjectSlug={slug} />}
+      {query.isSuccess && (
+        <div ref={bodyRef} onMouseUp={readSelection} onKeyUp={readSelection}>
+          <ObsidianMarkdown source={query.data.markdown} subjectSlug={slug} />
+        </div>
+      )}
+
+      {ask && (
+        <button
+          type="button"
+          // Keep the selection alive: a normal click would collapse it before the handler runs.
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            onAsk({ docId: doc.id, page: ask.page, text: ask.text });
+            window.getSelection()?.removeAllRanges();
+            setAsk(null);
+          }}
+          style={{ left: ask.x, top: ask.y - 8, transform: 'translate(-50%, -100%)' }}
+          className="fixed z-20 rounded-[var(--radius-control)] bg-accent px-2.5 py-1 text-xs font-medium text-white shadow-lg hover:bg-accent-hover"
+        >
+          Chiedi all&apos;AI
+        </button>
+      )}
     </article>
   );
 }
@@ -225,9 +341,10 @@ function TopicPicker({
 }
 
 /**
- * The work page opened by "Inizia" on a task (docs/08-sessione-di-studio.md,
- * phase 1): the material of the task's topics at a glance, a real-time
- * timer, and "Termina". The AI briefing and chat land in later phases.
+ * The work page opened by "Inizia" on a task (docs/08-sessione-di-studio.md):
+ * the material of the task's topics at a glance, a real-time timer, "Termina"
+ * (phase 2) a tutor chat that answers only from that material and cites it and
+ * (phase 3) key points and exercises generated on request.
  */
 export function SessionClient({ slug, sessionId }: { slug: string; sessionId: string }) {
   const queryClient = useQueryClient();
@@ -235,6 +352,12 @@ export function SessionClient({ slug, sessionId }: { slug: string; sessionId: st
   const query = useQuery({ queryKey: sessionKey, queryFn: () => fetchSession(slug, sessionId) });
   const topicsQuery = useQuery({ queryKey: ['topics', slug], queryFn: () => fetchTopics(slug) });
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Below `lg` the columns become two tabs; on desktop everything is side by side.
+  const [tab, setTab] = useState<'material' | 'chat'>('material');
+  // The middle column shows either the document or the key points / exercises.
+  const [center, setCenter] = useState<'document' | 'study'>('document');
+  const [focus, setFocus] = useState<SessionFocus | null>(null);
+  const [target, setTarget] = useState<{ docId: string; page: number; nonce: number } | null>(null);
 
   const session = query.data;
   const active = session?.status === 'active';
@@ -276,9 +399,23 @@ export function SessionClient({ slug, sessionId }: { slug: string; sessionId: st
   const selected = docs.find((d) => d.id === selectedId) ?? docs[0] ?? null;
   const topicsById = new Map((topicsQuery.data ?? []).map((t) => [t.id, t.name]));
   const shownMs = active ? timer.studyMs : (session?.activeMs ?? 0);
+  const documentNames = new Map(docs.map((d) => [d.id, d.name]));
+
+  const openCitation = (
+    citation: Pick<SessionCitationDto | SessionItemCitationDto, 'docId' | 'page'>,
+  ) => {
+    setSelectedId(citation.docId);
+    setTarget({ docId: citation.docId, page: citation.page, nonce: Date.now() });
+    setCenter('document');
+    setTab('material');
+  };
+  const askAboutSelection = (next: SessionFocus) => {
+    setFocus(next);
+    setTab('chat');
+  };
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-4 p-6">
+    <div className="mx-auto flex max-w-[100rem] flex-col gap-4 p-6">
       <Link
         href={`/materie/${slug}`}
         className="text-xs text-fg-muted underline-offset-2 hover:text-fg-primary hover:underline"
@@ -329,14 +466,41 @@ export function SessionClient({ slug, sessionId }: { slug: string; sessionId: st
               </span>
             )}
           </header>
+          {!active && (
+            <SessionClosing
+              slug={slug}
+              sessionId={sessionId}
+              session={session}
+              sessionKey={sessionKey}
+            />
+          )}
           {(endMutation.isError || patchMutation.isError) && (
             <p role="alert" className="text-sm text-danger">
               {((endMutation.error ?? patchMutation.error) as Error).message}
             </p>
           )}
 
-          <div className="grid gap-4 md:grid-cols-[18rem_1fr]">
-            <aside className="space-y-3">
+          <div role="tablist" aria-label="Sezioni" className="flex gap-1 lg:hidden">
+            {(['material', 'chat'] as const).map((id) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={tab === id}
+                onClick={() => setTab(id)}
+                className={`rounded-[var(--radius-control)] border px-3 py-1 text-sm ${
+                  tab === id
+                    ? 'border-accent bg-bg-raised text-fg-primary'
+                    : 'border-border text-fg-secondary'
+                }`}
+              >
+                {id === 'material' ? 'Materiale' : 'Chat'}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-[16rem_minmax(0,1fr)_24rem]">
+            <aside className={`space-y-3 ${tab === 'chat' ? 'hidden lg:block' : ''}`}>
               <PomodoroPanel timer={timer} active={active} />
               <TopicPicker
                 topics={topicsQuery.data ?? []}
@@ -357,21 +521,80 @@ export function SessionClient({ slug, sessionId }: { slug: string; sessionId: st
                 <MaterialList
                   session={session}
                   selectedId={selected?.id ?? null}
-                  onSelect={setSelectedId}
+                  onSelect={(id) => {
+                    setSelectedId(id);
+                    setCenter('document');
+                  }}
                   topicsById={topicsById}
                 />
               )}
             </aside>
 
-            <main className="min-w-0">
-              {selected ? (
-                <DocumentViewer key={selected.id} slug={slug} doc={selected} />
+            <main className={`min-w-0 space-y-3 ${tab === 'chat' ? 'hidden lg:block' : ''}`}>
+              <div role="tablist" aria-label="Centro della pagina" className="flex gap-1">
+                {(
+                  [
+                    ['document', 'Documento'],
+                    ['study', 'Punti chiave ed esercizi'],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="tab"
+                    aria-selected={center === id}
+                    onClick={() => setCenter(id)}
+                    className={`rounded-[var(--radius-control)] border px-3 py-1 text-sm ${
+                      center === id
+                        ? 'border-accent bg-bg-raised text-fg-primary'
+                        : 'border-border text-fg-secondary'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {center === 'study' ? (
+                <SessionBriefing
+                  slug={slug}
+                  sessionId={sessionId}
+                  active={active}
+                  hasDocuments={docs.length > 0}
+                  onOpenCitation={openCitation}
+                  onAsk={askAboutSelection}
+                />
+              ) : selected ? (
+                <DocumentViewer
+                  key={selected.id}
+                  slug={slug}
+                  doc={selected}
+                  canAsk={active}
+                  onAsk={askAboutSelection}
+                  target={target?.docId === selected.id ? target : null}
+                />
               ) : (
                 <div className="rounded-[var(--radius-card)] border border-dashed border-border p-8 text-center text-sm text-fg-muted">
                   Seleziona un documento per leggerlo qui.
                 </div>
               )}
             </main>
+
+            <div
+              className={`h-[75vh] min-h-0 flex-col lg:sticky lg:top-4 lg:flex lg:h-[calc(100vh-2rem)] ${
+                tab === 'material' ? 'hidden' : 'flex'
+              }`}
+            >
+              <SessionChat
+                slug={slug}
+                sessionId={sessionId}
+                active={active}
+                documentNames={documentNames}
+                focus={focus}
+                onClearFocus={() => setFocus(null)}
+                onOpenCitation={openCitation}
+              />
+            </div>
           </div>
         </>
       )}

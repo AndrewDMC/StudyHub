@@ -285,6 +285,12 @@ function PreviewPanel({ preview }: { preview: PlanPreviewDto }) {
         dall&apos;AI)
         {preview.busyMinutes > 0 && ` · ${preview.busyMinutes} min già occupati da altri impegni`}
       </p>
+      {preview.timeFactor.note && (
+        <p className="text-fg-muted">
+          Tempi corretti sui tuoi dati: {preview.timeFactor.note} (×{preview.timeFactor.factor}, da{' '}
+          {preview.timeFactor.sampleCount} sessioni).
+        </p>
+      )}
       <ul className="space-y-1">
         {preview.loadPerWeek.map((w) => (
           <li key={w.weekStart} className="flex items-center gap-2">

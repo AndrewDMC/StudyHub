@@ -18,6 +18,7 @@ import type {
 import { SubjectNotFoundError } from './errors';
 import { ConflictError, NotFoundError } from './examPrep';
 import { setTaskStatus } from './plan';
+import { writeSessionTranscript } from './sessionChat';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyDb = any;
@@ -176,6 +177,8 @@ export async function endSession(
   subjectSlug: string,
   sessionId: string,
   final: { activeMs?: number | undefined; pomodoros?: number | undefined } = {},
+  /** Where the chat transcript is written; without it no file is produced (tests, CLI). */
+  options: { dataRoot?: string } = {},
 ): Promise<StudySessionDto> {
   const subject = await requireSubject(db, subjectSlug);
   const row = await requireSession(db, subject.id, sessionId);
@@ -196,7 +199,23 @@ export async function endSession(
   if (task && (task.status === 'todo' || task.status === 'doing')) {
     await setTaskStatus(db, subjectSlug, task.id, 'done');
   }
-  return toDto(db, updated, await loadTask(db, row.taskId));
+
+  let ended: StudySession = updated;
+  if (options.dataRoot) {
+    // The session is already closed: a failed transcript must not undo that or hide it from the student.
+    try {
+      const transcriptPath = await writeSessionTranscript(
+        db,
+        options.dataRoot,
+        subjectSlug,
+        updated,
+      );
+      ended = { ...updated, transcriptPath };
+    } catch (err) {
+      console.error(`[sessions] trascrizione non scritta per ${updated.id}:`, err);
+    }
+  }
+  return toDto(db, ended, await loadTask(db, row.taskId));
 }
 
 async function toDto(db: AnyDb, row: StudySession, task: TaskRow | null): Promise<StudySessionDto> {
@@ -270,5 +289,8 @@ async function toDto(db: AnyDb, row: StudySession, task: TaskRow | null): Promis
     pomodoros: row.pomodoros,
     startedAt: row.startedAt.toISOString(),
     endedAt: row.endedAt ? row.endedAt.toISOString() : null,
+    transcriptPath: row.transcriptPath,
+    flashcardDeckId: row.flashcardDeckId,
+    drillId: row.drillId,
   };
 }

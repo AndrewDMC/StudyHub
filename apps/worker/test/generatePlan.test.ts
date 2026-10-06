@@ -10,6 +10,7 @@ import {
   documents,
   flashcards,
   studyPlans,
+  studySessions,
   subjects,
   tasks,
   topics,
@@ -93,6 +94,51 @@ describe('processGeneratePlan', () => {
     // Reading tasks cite the actual document, not a placeholder.
     const readTask = taskRows.find((t) => t.kind === 'read');
     expect(readTask?.payload.material?.[0]?.docId).toBe(docId);
+  });
+
+  it('plans on the student’s own pace once enough real sessions say they take longer', async () => {
+    await addParsedDocument(20);
+    const before = await processGeneratePlan(db, baseInput(), new FakeProvider());
+    const readMinutes = async (planId: string) =>
+      (await db.select().from(tasks).where(eq(tasks.planId, planId)))
+        .filter((t) => t.kind === 'read')
+        .reduce((sum, t) => sum + t.minutes, 0);
+    const baseline = await readMinutes(before.planId);
+    const [first] = await db.select().from(studyPlans).where(eq(studyPlans.id, before.planId));
+    expect(first?.timeFactor).toBe(1);
+
+    // Three finished sessions that each took twice the planned time.
+    for (let i = 0; i < 3; i++) {
+      const taskId = randomUUID();
+      await db.insert(tasks).values({
+        id: taskId,
+        subjectId,
+        planId: before.planId,
+        taskKey: `read:history-${i}`,
+        date: '2026-01-06',
+        kind: 'read',
+        minutes: 30,
+        title: 'Leggi',
+        description: '',
+        payload: { action: 'read' },
+        status: 'done',
+      });
+      await db.insert(studySessions).values({
+        id: randomUUID(),
+        subjectId,
+        taskId,
+        topicIds: [],
+        documentIds: [],
+        status: 'ended',
+        activeMs: 60 * 60_000,
+        endedAt: new Date(2026, 0, 10 + i),
+      });
+    }
+
+    const after = await processGeneratePlan(db, baseInput(), new FakeProvider());
+    const [second] = await db.select().from(studyPlans).where(eq(studyPlans.id, after.planId));
+    expect(second?.timeFactor).toBe(2);
+    expect(await readMinutes(after.planId)).toBeGreaterThan(baseline);
   });
 
   it('is a no-op AI call (zero cost, no reading tasks) when the subject has no parsed documents', async () => {

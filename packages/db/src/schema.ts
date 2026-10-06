@@ -9,6 +9,7 @@ import {
   pgTable,
   primaryKey,
   real,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
@@ -661,6 +662,9 @@ export const studyPlans = pgTable('study_plans', {
   model: text('model').notNull(),
   promptVersion: text('prompt_version').notNull(),
   jobKey: text('job_key'),
+  // The student's personal time factor applied to the estimates when this plan was made (1 = none),
+  // kept so later sessions are measured against the raw estimate (`loadTimeFactor`).
+  timeFactor: real('time_factor').notNull().default(1),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   committedAt: timestamp('committed_at', { withTimezone: true }),
 });
@@ -744,10 +748,108 @@ export const studySessions = pgTable(
     activeMs: integer('active_ms').notNull().default(0),
     // Completed Pomodoro focus phases (docs/08-sessione-di-studio.md); `activeMs` then counts focus time only.
     pomodoros: integer('pomodoros').notNull().default(0),
+    // Chat transcript written on "Termina" (relative to the subject folder), docs/08 decision 2.
+    transcriptPath: text('transcript_path'),
+    // Latest `prepare_session` job (key points + exercises, phase 3); no FK: the row exists only once the worker picks it up.
+    briefingJobId: uuid('briefing_job_id'),
+    // Closing actions of phase 4 (docs/08): the deck of key-point cards and the drill of wrong exercises
+    // made from this session — set once, so asking again returns them instead of duplicating.
+    flashcardDeckId: uuid('flashcard_deck_id').references(() => artifacts.id, {
+      onDelete: 'set null',
+    }),
+    drillId: uuid('drill_id').references(() => artifacts.id, { onDelete: 'set null' }),
     startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
     endedAt: timestamp('ended_at', { withTimezone: true }),
   },
   (table) => [index('study_sessions_subject_idx').on(table.subjectId, table.status)],
+);
+
+/** A source the assistant cited in a session chat message; `ref` is the `[n]` marker in the text. */
+export interface SessionCitation {
+  ref: number;
+  chunkId: string;
+  docId: string;
+  documentName: string;
+  page: number;
+}
+
+/** The passage the student selected ("Chiedi all'AI"): sent along as context, always. */
+export interface SessionMessageFocus {
+  docId: string;
+  page: number | null;
+  text: string;
+}
+
+/**
+ * The chat of a study session (docs/08-sessione-di-studio.md §4, phase 2). Interactive only while the
+ * session is active; on "Termina" it is written to a Markdown transcript and stays here as the index.
+ */
+export const sessionMessages = pgTable(
+  'session_messages',
+  {
+    id: uuid('id').primaryKey(),
+    sessionId: uuid('session_id')
+      .notNull()
+      .references(() => studySessions.id, { onDelete: 'cascade' }),
+    role: text('role').$type<'user' | 'assistant'>().notNull(),
+    content: text('content').notNull(),
+    focus: jsonb('focus').$type<SessionMessageFocus>(),
+    citations: jsonb('citations').$type<SessionCitation[]>().notNull().default([]),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    model: text('model'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('session_messages_session_idx').on(table.sessionId, table.createdAt)],
+);
+
+/** A source the briefing cites for a key point or an exercise: a verbatim quote of the material. */
+export interface SessionItemCitation {
+  docId: string;
+  page: number;
+  quote: string;
+}
+
+/** The AI's grade of an exercise answer ("Correggi con l'AI", docs/08 decision 1): score 0..1. */
+export interface SessionItemFeedback {
+  score: number;
+  feedback: string;
+  missing: string[];
+  model: string;
+  gradedAt: string;
+}
+
+export type SessionItemKind = 'key_point' | 'exercise';
+/** Key points: `open` | `done` (checked). Exercises: `open` | `correct` | `wrong` (self-assessed). */
+export type SessionItemState = 'open' | 'done' | 'correct' | 'wrong';
+
+/**
+ * The AI briefing of a study session (docs/08-sessione-di-studio.md §4, phase 3): the key points
+ * to understand and the exercises to practise, generated only on request (decision 3). `title` is
+ * the key point or the exercise text; `body` the explanation or the expected solution.
+ */
+export const sessionItems = pgTable(
+  'session_items',
+  {
+    id: uuid('id').primaryKey(),
+    sessionId: uuid('session_id')
+      .notNull()
+      .references(() => studySessions.id, { onDelete: 'cascade' }),
+    kind: text('kind').$type<SessionItemKind>().notNull(),
+    orderIndex: integer('order_index').notNull(),
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    // Exercises only (1 easy – 3 hard).
+    difficulty: smallint('difficulty'),
+    citations: jsonb('citations').$type<SessionItemCitation[]>().notNull().default([]),
+    topicId: uuid('topic_id').references(() => topics.id, { onDelete: 'set null' }),
+    state: text('state').$type<SessionItemState>().notNull().default('open'),
+    answer: text('answer'),
+    // Null until the student asks for the AI correction; self-assessment never writes it.
+    feedback: jsonb('feedback').$type<SessionItemFeedback>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('session_items_session_idx').on(table.sessionId, table.kind, table.orderIndex)],
 );
 
 /**
@@ -822,3 +924,7 @@ export type NewTranscriptionCorrection = typeof transcriptionCorrections.$inferI
 
 export type StudySession = typeof studySessions.$inferSelect;
 export type NewStudySession = typeof studySessions.$inferInsert;
+export type SessionMessage = typeof sessionMessages.$inferSelect;
+export type NewSessionMessage = typeof sessionMessages.$inferInsert;
+export type SessionItem = typeof sessionItems.$inferSelect;
+export type NewSessionItem = typeof sessionItems.$inferInsert;

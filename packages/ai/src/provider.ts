@@ -10,6 +10,7 @@ import type {
   OcrTextOutput,
   SchemaGraphOutput,
   SchemaOutput,
+  SessionBriefingOutput,
   SimulationItem,
   SimulationOutput,
   SummaryOutput,
@@ -152,6 +153,48 @@ export interface ExtractTopicsPromptInput {
   existingTopics?: { name: string }[];
 }
 
+/** docs/08-sessione-di-studio.md §5.2: key points + exercises on the session's material. */
+export interface SessionBriefingPromptInput {
+  subjectName: string;
+  /** The session's topic names, for orientation only. */
+  topicNames: string[];
+  chunks: ChunkRef[];
+  /** How many key points to produce (0 when only more exercises are wanted). */
+  keyPointCount: number;
+  exerciseCount: number;
+  /** Prompts of the exercises the student already has, so new ones don't repeat them. */
+  existingExercises: string[];
+  /** One-line summary of how the course's exams are written, when an exam profile exists. */
+  examStyle?: string | undefined;
+}
+
+/** One numbered source block of the study-session chat; the model cites it as `[n]`. */
+export interface SessionChatSource {
+  /** 1-based number the model must cite. */
+  ref: number;
+  docId: string;
+  documentName: string;
+  page: number;
+  text: string;
+}
+
+export interface SessionChatPromptInput {
+  subjectName: string;
+  /** The session's topic names, for orientation only. */
+  topicNames: string[];
+  sources: SessionChatSource[];
+  /** Earlier turns (already windowed), oldest first — without the question being asked now. */
+  history: { role: 'user' | 'assistant'; content: string }[];
+  /** The passage the student selected ("Chiedi all'AI"), when there is one. */
+  focus?: { documentName: string; page: number | null; text: string } | undefined;
+  question: string;
+}
+
+/** What `AiProvider.chatStream` yields: text pieces, then exactly one `done` with the usage. */
+export type ChatDelta =
+  | { type: 'text'; text: string }
+  | { type: 'done'; usage: AiUsage; model: string; promptVersion: string };
+
 /**
  * `packages/core` and other model-agnostic code never talk to a provider
  * directly — they go through this interface. `AnthropicProvider` is the
@@ -202,4 +245,10 @@ export interface AiProvider {
     input: ExtractTopicsPromptInput,
     model: string,
   ): Promise<GeneratedWithMeta<ExtractTopicsOutput>>;
+  generateSessionBriefing(
+    input: SessionBriefingPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<SessionBriefingOutput>>;
+  /** Streaming, free-text answer for the study-session chat (docs/08-sessione-di-studio.md §5.3). */
+  chatStream(input: SessionChatPromptInput, model: string): AsyncIterable<ChatDelta>;
 }

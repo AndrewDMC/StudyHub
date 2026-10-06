@@ -468,6 +468,8 @@ describe('getPlanPreview (free pre-flight, no AI)', () => {
     expect(preview.topicCount).toBe(1);
     expect(preview.feasibility.feasible).toBe(true);
     expect(preview.loadPerWeek.length).toBeGreaterThanOrEqual(2);
+    // No finished sessions yet: the Planner's own estimates stand.
+    expect(preview.timeFactor).toEqual({ factor: 1, sampleCount: 0, note: null });
     expect(await db.select().from(studyPlans)).toEqual([]);
     expect(await db.select().from(tasks)).toEqual([]);
   });
