@@ -40,7 +40,12 @@ export const PlannerPrefsSchema = z.object({
  */
 export const GeneratePlanJobInputSchema = z.object({
   subjectId: z.string().uuid(),
+  /** The exam or partial this plan prepares for; plans of different exams of one subject coexist. */
   examId: z.string().uuid().optional(),
+  /** Topics the plan covers (a partial's syllabus). Absent = the whole subject. */
+  topicIds: z.array(z.string().uuid()).min(1).max(500).optional(),
+  /** The student's description of the exam, sent to the estimating model. Saved on the exam when `examId` is set. */
+  notes: z.string().trim().max(2000).optional(),
   startDate: IsoDateSchema,
   targetDate: IsoDateSchema,
   availability: AvailabilitySchema,

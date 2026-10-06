@@ -10,6 +10,7 @@ import {
   SCHEMA_PROMPT_VERSION,
   type AiProvider,
   type SchemaNode,
+  resolveModel,
 } from '@studyhub/ai';
 import type { GenerateSchemaJobInput } from '@studyhub/contracts';
 import {
@@ -53,7 +54,7 @@ export async function processGenerateSchema(
   const [subject] = await db.select().from(subjects).where(eq(subjects.id, input.subjectId));
   if (!subject) throw new Error(`subject not found: ${input.subjectId}`);
 
-  const model = input.model ?? MODEL_ROUTING_SCHEMA;
+  const model = input.model ?? resolveModel(MODEL_ROUTING_SCHEMA);
   const scopeChunks = await resolveScopeChunks(db, input.subjectId, input.scope);
 
   const jobKey = computeJobKey({

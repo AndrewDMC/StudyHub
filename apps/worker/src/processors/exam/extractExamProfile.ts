@@ -10,6 +10,7 @@ import {
   estimateCostEur,
   resolveProvider,
   type AiProvider,
+  resolveModel,
 } from '@studyhub/ai';
 import type { ExtractExamProfileJobInput } from '@studyhub/contracts';
 import { checkBudget, computeJobKey, resolveScopeChunks } from '../generation/shared.js';
@@ -73,7 +74,7 @@ export async function processExtractExamProfile(
     );
   }
 
-  const model = input.model ?? MODEL_ROUTING_EXAM_PROFILE;
+  const model = input.model ?? resolveModel(MODEL_ROUTING_EXAM_PROFILE);
   const sortedDocIds = [...docIds].sort();
   const jobKey = computeJobKey({
     type: 'extract_exam_profile',

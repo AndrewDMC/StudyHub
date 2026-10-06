@@ -391,7 +391,7 @@ export function SessionClient({ slug, sessionId }: { slug: string; sessionId: st
     onSuccess: (next) => {
       queryClient.setQueryData(sessionKey, next);
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['plan', slug] });
+      queryClient.invalidateQueries({ queryKey: ['plans', slug] });
     },
   });
 

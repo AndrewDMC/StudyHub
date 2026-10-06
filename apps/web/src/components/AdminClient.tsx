@@ -272,6 +272,71 @@ function ClaudeAccountCard() {
   );
 }
 
+/** One model for every AI function that does not name its own; "Automatico" leaves each function on its default (Haiku to extract, Sonnet to generate, Opus to reason). */
+function AiModelCard() {
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: ['ai-model'],
+    queryFn: async () => {
+      const res = await fetch('/api/settings/ai-model');
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error?.message ?? 'Impossibile leggere il modello');
+      return body as { model: string | null; options: { id: string; label: string }[] };
+    },
+  });
+  const mutation = useMutation({
+    mutationFn: async (model: string | null) => {
+      const res = await fetch('/api/settings/ai-model', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error?.message ?? 'Operazione non riuscita');
+      return body as { model: string | null; options: { id: string; label: string }[] };
+    },
+    onSuccess: (data) => queryClient.setQueryData(['ai-model'], data),
+  });
+  const data = query.data;
+
+  return (
+    <section className="rounded-[var(--radius-card)] border border-border bg-bg-surface p-4">
+      <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-fg-muted">Modello AI</h2>
+      {query.isLoading && <p className="text-sm text-fg-muted">Caricamento…</p>}
+      {(query.isError || mutation.isError) && (
+        <p role="alert" className="mb-2 text-xs text-danger">
+          {((query.error ?? mutation.error) as Error).message}
+        </p>
+      )}
+      {data && (
+        <div className="space-y-2 text-xs text-fg-secondary">
+          <label className="flex flex-col gap-1">
+            Modello usato dalle funzioni AI
+            <select
+              value={data.model ?? ''}
+              disabled={mutation.isPending}
+              onChange={(e) => mutation.mutate(e.target.value || null)}
+              className="rounded-[var(--radius-control)] border border-border bg-bg-inset px-2 py-1 text-sm text-fg-primary"
+            >
+              <option value="">Automatico — il migliore per ogni funzione</option>
+              {data.options.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="text-[11px] text-fg-muted">
+            {data.model
+              ? 'Vale per tutte le funzioni che non indicano un modello proprio: piano, simulazioni, flashcard, riassunti, sessione di studio. Un modello più capace costa e impiega di più.'
+              : 'Ogni funzione usa il suo modello: Haiku per estrarre, Sonnet per generare e correggere, Opus per piano e simulazioni.'}
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function FsSyncCard({ overview }: { overview: AdminOverviewDto }) {
   const queryClient = useQueryClient();
   const reconcileMutation = useMutation({
@@ -490,6 +555,7 @@ export function AdminClient() {
       <h1 className="text-xl font-semibold tracking-[-0.02em]">Admin</h1>
 
       <ClaudeAccountCard />
+      <AiModelCard />
 
       {overviewQuery.isLoading && <p className="text-sm text-fg-muted">Caricamento…</p>}
       {overviewQuery.isError && (

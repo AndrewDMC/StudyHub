@@ -98,6 +98,9 @@ export function renderEstimateTopicsUserPrompt(input: EstimateTopicsPromptInput)
   return [
     `Materia: ${input.subjectName}`,
     `${input.units.length} unità da stimare. Per ciascuna, restituisci la stima con la stessa "key".`,
+    ...(input.notes?.trim()
+      ? ['', `<exam_notes>\n${escapeClosingTag(input.notes.trim(), 'exam_notes')}\n</exam_notes>`]
+      : []),
     '',
     ...input.units.map(
       (u) =>

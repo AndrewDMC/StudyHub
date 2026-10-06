@@ -1,8 +1,14 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { readProviderPreference, writeProviderPreference } from '../src/providerPreference.js';
+import {
+  readModelPreference,
+  readProviderPreference,
+  resolveModel,
+  writeModelPreference,
+  writeProviderPreference,
+} from '../src/providerPreference.js';
 import { resolveProvider } from '../src/resolveProvider.js';
 
 describe('in-app provider preference', () => {
@@ -37,6 +43,46 @@ describe('in-app provider preference', () => {
     process.env.AI_PROVIDER = 'other';
     process.env.ANTHROPIC_API_KEY = 'sk-test';
     expect(resolveProvider().name).toBe('anthropic');
+  });
+});
+
+describe('global model preference', () => {
+  let dir: string;
+  const saved = { ...process.env };
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'studyhub-model-'));
+    process.env.STUDYHUB_DATA_DIR = dir;
+  });
+  afterEach(() => {
+    process.env = { ...saved };
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('keeps each function on its own default until a model is forced', () => {
+    expect(readModelPreference()).toBeNull();
+    expect(resolveModel('claude-haiku-4-5-20251001')).toBe('claude-haiku-4-5-20251001');
+    writeModelPreference('claude-opus-5-5');
+    expect(resolveModel('claude-haiku-4-5-20251001')).toBe('claude-opus-5-5');
+    writeModelPreference(null);
+    expect(resolveModel('claude-sonnet-5-5')).toBe('claude-sonnet-5-5');
+  });
+
+  it('refuses a model that is not on the list, and ignores a tampered file', () => {
+    expect(() => writeModelPreference('gpt-4')).toThrow(/non selezionabile/);
+    writeFileSync(join(dir, '.studyhub-ai-provider.json'), '{"model":"gpt-4"}', 'utf8');
+    expect(readModelPreference()).toBeNull();
+  });
+
+  it('shares the file with the provider choice without erasing either', () => {
+    writeProviderPreference('claude-cli');
+    writeModelPreference('claude-sonnet-5-5');
+    expect(readProviderPreference()).toBe('claude-cli');
+    writeProviderPreference('auto');
+    expect(readModelPreference()).toBe('claude-sonnet-5-5');
+    expect(JSON.parse(readFileSync(join(dir, '.studyhub-ai-provider.json'), 'utf8'))).toEqual({
+      provider: 'auto',
+      model: 'claude-sonnet-5-5',
+    });
   });
 });
 

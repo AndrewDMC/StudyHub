@@ -11,6 +11,7 @@ import {
   FLASHCARDS_PROMPT_VERSION,
   type AiProvider,
   type GeneratedFlashcard,
+  resolveModel,
 } from '@studyhub/ai';
 import type { GenerateFlashcardsJobInput } from '@studyhub/contracts';
 import {
@@ -53,7 +54,7 @@ export async function processGenerateFlashcards(
   const [subject] = await db.select().from(subjects).where(eq(subjects.id, input.subjectId));
   if (!subject) throw new Error(`subject not found: ${input.subjectId}`);
 
-  const model = input.model ?? MODEL_ROUTING_FLASHCARDS;
+  const model = input.model ?? resolveModel(MODEL_ROUTING_FLASHCARDS);
   const scopeChunks = await resolveScopeChunks(db, input.subjectId, input.scope);
 
   const jobKey = computeJobKey({

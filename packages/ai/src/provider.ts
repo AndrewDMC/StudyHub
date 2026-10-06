@@ -137,6 +137,8 @@ export interface TopicEstimateUnit {
 export interface EstimateTopicsPromptInput {
   subjectName: string;
   units: TopicEstimateUnit[];
+  /** The student's own description of the exam or partial (what it covers, how it runs), if any. */
+  notes?: string;
 }
 
 /** One document to consider for `extract_topics` — id echoed back so proposals can cite it. */

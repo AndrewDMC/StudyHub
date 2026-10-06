@@ -60,7 +60,7 @@ export function DeleteDocumentButton({
       onDeleted?.(doc.id);
       queryClient.invalidateQueries({ queryKey: ['documents', subjectSlug] });
       queryClient.invalidateQueries({ queryKey: ['topics', subjectSlug] });
-      queryClient.invalidateQueries({ queryKey: ['plan'] });
+      queryClient.invalidateQueries({ queryKey: ['plans'] });
     },
   });
 

@@ -31,9 +31,11 @@ Un algoritmo non sa stimare "questo capitolo è concettualmente più duro". Si u
 ```
 
 ## 3. Fase A — Analisi AI (1 chiamata, opus)
+
 Output strutturato per ogni argomento:
 `{ topicId, estimatedHours, conceptualDifficulty 1..5, examWeight 0..1, prerequisites[], suggestedMethods[] }`
-+ `overallAssessment: { feasible: boolean, shortfallHours, recommendation }`.
+
+- `overallAssessment: { feasible: boolean, shortfallHours, recommendation }`.
 
 **Se il tempo non basta, il Planner lo dice subito e propone tre strategie**
 (copertura completa superficiale / focus sull'80% del peso d'esame / estensione della data).
@@ -42,28 +44,33 @@ Un planner che promette l'impossibile è peggio di nessun planner.
 ## 4. Fase B — Scheduling deterministico
 
 Vincoli **duri**:
+
 - mai superare i minuti disponibili del giorno; rispettare blackout;
 - un argomento non inizia prima dei suoi prerequisiti;
 - le card in scadenza (FSRS) hanno precedenza assoluta (il debito di ripasso non si rimanda);
 - ultimi 2 giorni: **solo** ripasso e simulazione leggera, nessun contenuto nuovo.
 
 Vincoli **morbidi** (funzione obiettivo, pesi esposti in `plan.params`):
+
 - massimizzare `retrievability` media attesa alla `targetDate` (metrica primaria);
 - interleaving: max 2 argomenti nuovi/giorno, alternanza argomenti "duri"/"facili";
 - distanziamento: ogni argomento rivisto ≥3 volte a intervalli crescenti;
-- simulazioni a ~60%, ~85% e ~95% del percorso; la prima *deve* arrivare presto (calibra l'autovalutazione);
+- simulazioni a ~60%, ~85% e ~95% del percorso; la prima _deve_ arrivare presto (calibra l'autovalutazione);
 - carico crescente poi calante (taper degli ultimi giorni, come un atleta prima della gara).
 
 Backtracking greedy + local search; tempo di calcolo target < 500 ms.
 
 ## 5. Fase C — Materializzazione
+
 Genera `tasks` con `kind`, `est_minutes`, `payload` **eseguibile**:
 una task non dice "studia termodinamica", dice
-*"Leggi Appunti cap. 4 pp. 51–68 (35 min) → genera 20 flashcard → ripassale"*, con i deep-link ai documenti
+_"Leggi Appunti cap. 4 pp. 51–68 (35 min) → genera 20 flashcard → ripassale"_, con i deep-link ai documenti
 e il bottone che lancia direttamente il job o la sessione di ripasso. **Ogni task è azionabile in un click.**
 
 ## 6. Adattività (ciò che rende il piano vivo)
+
 Ricalcolo automatico quando:
+
 - salti ≥2 giorni o ≥30% delle task settimanali;
 - una simulazione va sotto la soglia attesa → riallocazione verso gli argomenti deboli;
 - aggiungi materiale nuovo a metà percorso;
@@ -71,14 +78,16 @@ Ricalcolo automatico quando:
 
 Il ricalcolo **non cancella la storia**: il piano vecchio diventa `superseded`, con un diff visibile
 ("+2 sessioni su Elettromagnetismo, −1 su Cinematica, perché: simulazione del 12/01 al 54%").
-La trasparenza del *perché* è ciò che fa accettare un piano.
+La trasparenza del _perché_ è ciò che fa accettare un piano.
 
 ## 7. Multi-materia
+
 Con più esami nella stessa finestra, il Planner gira a livello globale:
 i minuti del giorno sono una risorsa condivisa, allocata proporzionalmente a
 `(peso esame × urgenza × gap di mastery)`. Conflitti mostrati esplicitamente in Calendario.
 
 ## 8. Anti-obiettivi
+
 - Non gamifichiamo (niente streak punitive, badge, coriandoli). Lo strumento non deve competere per la tua attenzione.
 - Non pianifichiamo oltre la sostenibilità: l'intensità `sprint` avvisa quando prevede >6h/giorno per >5 giorni.
 - Nessuna notifica push di default.
@@ -105,7 +114,9 @@ Un task `proposed` non esiste per il resto del sistema: non compare in Dashboard
 del carico giornaliero, non genera notifiche. Esiste solo dentro la schermata di revisione.
 
 ### 9.2 Schermata "Revisione piano"
+
 Lista delle task raggruppate per giorno/settimana, tutte editabili prima del commit:
+
 - modifica titolo, descrizione, durata stimata, tipo, argomento, materiale collegato;
 - sposta di giorno (drag) o di fascia oraria;
 - elimina una task, **aggiungi una task manuale** (non tutto nasce dall'AI);
@@ -117,7 +128,9 @@ carico per giorno vs disponibilità, argomenti coperti, **verdetto di fattibilit
 Se le tue modifiche rendono il piano infattibile, lo vedi mentre lo modifichi, non dopo.
 
 ### 9.3 Commit
+
 Una singola transazione DB, idempotente sulla `planId`:
+
 1. `study_plans.status = active` (l'eventuale piano attivo precedente passa a `superseded`);
 2. `tasks.status: proposed -> todo`, con `starts_at`/`ends_at` calcolati per le task assegnate a una fascia;
 3. scrittura di `plans/<planId>.json` nella cartella della materia (P1: la verità resta su disco);
@@ -126,7 +139,8 @@ Una singola transazione DB, idempotente sulla `planId`:
 Il commit fallisce in blocco o riesce in blocco. Nessuno stato intermedio in cui metà piano è nel calendario.
 
 ### 9.4 Tasks come eventi — decisione architetturale
-**Le task *sono* gli eventi di calendario.** Non esiste una tabella `calendar_events` parallela da tenere
+
+**Le task _sono_ gli eventi di calendario.** Non esiste una tabella `calendar_events` parallela da tenere
 sincronizzata con `tasks`: una task schedulata ha semplicemente `date` e, se assegnata a un orario,
 `starts_at`/`ends_at`.
 
@@ -138,6 +152,7 @@ Motivazione: duplicare task ed eventi in due tabelle da sincronizzare è la prin
 in questo tipo di applicazioni. Una task spostata e un evento rimasto indietro distruggono la fiducia nel calendario.
 
 ### 9.5 Ricalcolo: si approva il diff, non il piano
+
 Un ricalcolo (vedi §6) genera un nuovo `draft` **confrontato con il piano attivo**. La UI mostra solo il delta:
 
 ```
@@ -152,9 +167,30 @@ mai nel diff. Ogni riga porta il **motivo**: senza il perché, dopo tre ricalcol
 chiusi e il piano smette di essere uno strumento.
 
 ### 9.6 Criteri di accettazione aggiuntivi
+
 - [ ] Un piano `draft` non produce alcun effetto visibile fuori dalla schermata di revisione.
 - [ ] Modifico 5 task in bozza, chiudo il browser, riapro: la bozza è intatta.
 - [ ] Il commit di un piano da 40 task crea 40 task e 40 voci ICS in una transazione.
 - [ ] Rilancio lo stesso commit: nessun duplicato (idempotenza su `planId`).
 - [ ] Un ricalcolo mostra un diff leggibile con il motivo per ogni riga e rispetta le task `pin`.
 - [ ] Rifiuto il diff: il piano attivo resta identico, il draft viene scartato.
+
+## 10. Parziali, note sull'esame ed eliminazione
+
+Una materia può avere **più piani attivi**: uno per ogni esame o parziale collegato (`study_plans.exam_id`)
+più, se serve, uno generale (senza esame). Resta **una sola bozza** per materia in revisione.
+
+- **Commit per esame.** Confermare una bozza sostituisce (`superseded`) solo il piano attivo con lo stesso
+  `examId` (o il generale, se la bozza non ha esame): gli altri parziali restano attivi.
+- **Ambito.** La richiesta di generazione può portare `topicIds`: il planner pianifica solo le unità di quegli
+  argomenti (e solo le flashcard in scadenza dei loro argomenti). Senza `topicIds` vale tutta la materia.
+  Un documento senza argomento non può far parte di un ambito scelto.
+- **Note per il motore AI.** `notes` (max 2000 caratteri) descrive l'esame: cosa copre, com'è fatto, su cosa
+  insiste il docente. Va nel prompt di Fase A come blocco `<exam_notes>` (`estimate_topics/v2`) e serve a
+  tarare peso, difficoltà e minuti. Con un esame collegato le note si salvano in `exams.description`; se la
+  richiesta non ne porta, il job usa quelle dell'esame.
+- **Tempo occupato.** Le task dei piani attivi degli altri esami della stessa materia contano come minuti
+  occupati, come quelle delle altre materie; il piano che sta per essere sostituito no. Le task dei piani
+  `superseded` e delle bozze non occupano mai tempo.
+- **Eliminazione.** `DELETE /api/subjects/:slug/plan/:planId` cancella un piano (bozza, attivo o sostituito)
+  con tutte le sue task e lo snapshot `plans/<id>.json`; le sessioni di studio già fatte restano, senza task.

@@ -7,6 +7,7 @@ import {
   exams,
   flashcards,
   heuristicMinutes,
+  filterUnitsByScope,
   loadBusyMinutesByDate,
   loadEligibleDocs,
   loadTimeFactor,
@@ -31,6 +32,7 @@ import {
   ESTIMATE_TOPICS_PROMPT_VERSION,
   type AiProvider,
   type TopicEstimate,
+  resolveModel,
 } from '@studyhub/ai';
 import type { GeneratePlanJobInput } from '@studyhub/contracts';
 import { checkBudget } from '../generation/shared.js';
@@ -63,15 +65,18 @@ export async function processGeneratePlan(
   const [subject] = await db.select().from(subjects).where(eq(subjects.id, input.subjectId));
   if (!subject) throw new Error(`subject not found: ${input.subjectId}`);
 
+  // The student's description of the exam/partial: what they typed in the wizard, else what the exam already says.
+  let notes = input.notes?.trim() || undefined;
   if (input.examId) {
     const [exam] = await db
-      .select({ id: exams.id })
+      .select({ id: exams.id, description: exams.description })
       .from(exams)
       .where(and(eq(exams.id, input.examId), eq(exams.subjectId, input.subjectId)));
     if (!exam) throw new Error(`exam not found for this subject: ${input.examId}`);
+    notes ??= exam.description?.trim() || undefined;
   }
 
-  const model = input.model ?? MODEL_ROUTING_PLAN;
+  const model = input.model ?? resolveModel(MODEL_ROUTING_PLAN);
 
   const eligibleDocs = await loadEligibleDocs(db, input.subjectId);
 
@@ -80,17 +85,22 @@ export async function processGeneratePlan(
   let resultModel = 'none';
   let promptVersion = ESTIMATE_TOPICS_PROMPT_VERSION;
 
-  const units = await buildPlanningUnits(db, input.subjectId, eligibleDocs);
+  const units = filterUnitsByScope(
+    await buildPlanningUnits(db, input.subjectId, eligibleDocs),
+    input.topicIds,
+  );
 
   if (units.length > 0) {
-    const docIds = eligibleDocs.map((d) => d.id);
+    const unitDocIds = new Set(units.flatMap((u) => u.docs.map((d) => d.id)));
+    const scopedDocs = eligibleDocs.filter((d) => unitDocIds.has(d.id));
+    const docIds = scopedDocs.map((d) => d.id);
     const chunkRows: { documentId: string; ord: number; text: string }[] = await db
       .select({ documentId: chunks.documentId, ord: chunks.ord, text: chunks.text })
       .from(chunks)
       .where(and(inArray(chunks.documentId, docIds), lt(chunks.ord, EXCERPT_CHUNK_SAMPLE)));
 
     const excerptByDoc = new Map<string, string>();
-    for (const doc of eligibleDocs) {
+    for (const doc of scopedDocs) {
       const parts = chunkRows
         .filter((c) => c.documentId === doc.id)
         .sort((a, b) => a.ord - b.ord)
@@ -108,6 +118,7 @@ export async function processGeneratePlan(
     const result = await provider.estimateTopics(
       {
         subjectName: subject.name,
+        ...(notes ? { notes } : {}),
         units: units.map((u) => ({
           key: u.key,
           name: u.name,
@@ -147,11 +158,16 @@ export async function processGeneratePlan(
 
   // FSRS reviews due in the plan window — "precedenza assoluta" (docs/04-planner.md §4).
   const dayCount = Math.max(0, diffDays(input.startDate, input.targetDate));
-  const scheduleRows: Pick<Flashcard, 'dueAt' | 'state'>[] = await db
-    .select({ dueAt: flashcards.dueAt, state: flashcards.state })
+  const allScheduleRows: Pick<Flashcard, 'dueAt' | 'state' | 'topicId'>[] = await db
+    .select({ dueAt: flashcards.dueAt, state: flashcards.state, topicId: flashcards.topicId })
     .from(flashcards)
     .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
     .where(and(eq(artifacts.subjectId, input.subjectId), eq(flashcards.suspended, false)));
+  // A partial only reviews the cards of its own topics.
+  const scope = input.topicIds ? new Set(input.topicIds) : null;
+  const scheduleRows = scope
+    ? allScheduleRows.filter((c) => c.topicId !== null && scope.has(c.topicId))
+    : allScheduleRows;
   const forecast = forecastDueCounts(
     scheduleRows,
     dayCount,
@@ -161,7 +177,7 @@ export async function processGeneratePlan(
 
   // Other subjects' active tasks and imported calendar events compete for the same daily
   // minutes (docs/04-planner.md §7, §9.4).
-  const busyMinutesByDate = await loadBusyMinutesByDate(db, input.subjectId);
+  const busyMinutesByDate = await loadBusyMinutesByDate(db, input.subjectId, input.examId);
 
   const plannerInput: PlannerInput = {
     startDate: input.startDate,

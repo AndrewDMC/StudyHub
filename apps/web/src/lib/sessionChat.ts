@@ -13,7 +13,13 @@ import {
   type SessionMessage,
   type StudySession,
 } from '@studyhub/db';
-import { estimateCostEur, type AiProvider, type SessionChatSource, truncate } from '@studyhub/ai';
+import {
+  estimateCostEur,
+  type AiProvider,
+  type SessionChatSource,
+  truncate,
+  resolveModel,
+} from '@studyhub/ai';
 import {
   parseAnswerCitations,
   renderSessionTranscript,
@@ -133,7 +139,7 @@ export async function startChatTurn(
       citations: [],
     })
     .returning();
-  const model = request.model ?? CHAT_DEFAULT_MODEL;
+  const model = request.model ?? resolveModel(CHAT_DEFAULT_MODEL);
 
   async function* run(): AsyncGenerator<SessionChatEvent> {
     try {

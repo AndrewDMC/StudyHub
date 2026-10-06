@@ -8,6 +8,7 @@ import {
   chunks,
   documentTopics,
   documents,
+  exams,
   flashcards,
   studyPlans,
   studySessions,
@@ -267,6 +268,140 @@ describe('processGeneratePlan', () => {
     const taskRows = await db.select().from(tasks).where(eq(tasks.planId, result.planId));
     expect(taskRows.some((t) => t.date === '2026-01-05')).toBe(false);
     expect(taskRows.length).toBeGreaterThan(0);
+  });
+
+  it('plans a partial: only the chosen topics, the notes reach the model and the plan keeps its exam', async () => {
+    const docIn = await addParsedDocument(20);
+    const docOut = await addParsedDocument(20);
+    const topicIn = randomUUID();
+    const topicOut = randomUUID();
+    await db.insert(topics).values([
+      { id: topicIn, subjectId, name: 'Meccanica', slug: 'meccanica', orderIndex: 0 },
+      { id: topicOut, subjectId, name: 'Ottica', slug: 'ottica', orderIndex: 1 },
+    ]);
+    await db.insert(documentTopics).values([
+      { documentId: docIn, topicId: topicIn },
+      { documentId: docOut, topicId: topicOut },
+    ]);
+    const examId = randomUUID();
+    await db.insert(exams).values({
+      id: examId,
+      subjectId,
+      title: 'Primo parziale',
+      kind: 'parziale',
+      date: new Date('2026-02-04T09:00:00Z'),
+      description: 'Solo meccanica, molti esercizi',
+    });
+    const seen: { notes?: string; keys: string[] }[] = [];
+    class SpyProvider extends FakeProvider {
+      override async estimateTopics(
+        ...args: Parameters<FakeProvider['estimateTopics']>
+      ): ReturnType<FakeProvider['estimateTopics']> {
+        seen.push({ notes: args[0].notes, keys: args[0].units.map((u) => u.key) });
+        return super.estimateTopics(...args);
+      }
+    }
+
+    const result = await processGeneratePlan(
+      db,
+      { ...baseInput(), examId, topicIds: [topicIn] },
+      new SpyProvider(),
+    );
+
+    // The exam's own description is used when the request carries no notes of its own.
+    expect(seen).toEqual([{ notes: 'Solo meccanica, molti esercizi', keys: [topicIn] }]);
+    const [plan] = await db.select().from(studyPlans).where(eq(studyPlans.id, result.planId));
+    expect(plan?.examId).toBe(examId);
+    const taskRows = await db.select().from(tasks).where(eq(tasks.planId, result.planId));
+    const readTasks = taskRows.filter((t) => t.kind === 'read');
+    expect(readTasks.length).toBeGreaterThan(0);
+    expect(readTasks.every((t) => t.topicId === topicIn)).toBe(true);
+
+    await processGeneratePlan(
+      db,
+      { ...baseInput(), examId, topicIds: [topicIn], notes: 'Anche gli esercizi' },
+      new SpyProvider(),
+    );
+    expect(seen[1]?.notes).toBe('Anche gli esercizi');
+  });
+
+  it('a partial’s plan makes room for the other exams’ active plans of the same subject, but not for the one it replaces', async () => {
+    await addParsedDocument(10);
+    const mkExam = async (title: string) => {
+      const id = randomUUID();
+      await db.insert(exams).values({
+        id,
+        subjectId,
+        title,
+        kind: 'parziale',
+        date: new Date('2026-02-04T09:00:00Z'),
+      });
+      return id;
+    };
+    const examA = await mkExam('Parziale 1');
+    const examB = await mkExam('Parziale 2');
+    const activePlan = async (examId: string) => {
+      const id = randomUUID();
+      await db.insert(studyPlans).values({
+        id,
+        subjectId,
+        examId,
+        startDate: '2026-01-05',
+        targetDate: '2026-02-04',
+        availability: baseInput().availability,
+        prefs: baseInput().prefs,
+        feasibility: {
+          feasible: true,
+          requiredMinutes: 0,
+          availableMinutes: 0,
+          shortfallMinutes: 0,
+          unscheduledTopicKeys: [],
+          strategies: [],
+        },
+        warnings: [],
+        model: 'fake-v1',
+        promptVersion: 'x',
+        status: 'active',
+      });
+      await db.insert(tasks).values({
+        id: randomUUID(),
+        subjectId,
+        planId: id,
+        taskKey: `read:${id}`,
+        date: '2026-01-05',
+        kind: 'read',
+        minutes: 120,
+        title: 'Già pianificato',
+        description: '',
+        payload: { action: 'read' },
+        status: 'todo',
+      });
+    };
+    await activePlan(examA);
+
+    // Regenerating exam A's own plan: its old task is going away, so the Monday is free again.
+    const own = await processGeneratePlan(
+      db,
+      { ...baseInput(), examId: examA },
+      new FakeProvider(),
+    );
+    expect(
+      (await db.select().from(tasks).where(eq(tasks.planId, own.planId))).some(
+        (t) => t.date === '2026-01-05',
+      ),
+    ).toBe(true);
+
+    // Exam B's plan has to work around exam A's full Monday.
+    const other = await processGeneratePlan(
+      db,
+      { ...baseInput(), examId: examB },
+      new FakeProvider(),
+    );
+    expect(
+      (await db.select().from(tasks).where(eq(tasks.planId, other.planId))).some(
+        (t) => t.date === '2026-01-05',
+      ),
+    ).toBe(false);
   });
 
   it('groups documents tagged to the same topic into one planning unit, and persists the real topic id on tasks', async () => {

@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { attemptItemResults, simulationAttempts, simulationItems } from '@studyhub/db';
-import { estimateCostEur, resolveProvider, type AiProvider } from '@studyhub/ai';
+import { estimateCostEur, resolveProvider, type AiProvider, resolveModel } from '@studyhub/ai';
 import type { GradeItemSecondOpinionJobInput } from '@studyhub/contracts';
 import { checkBudget } from '../generation/shared.js';
 import { reconcileWithRubric } from './gradeAttempt.js';
@@ -57,7 +57,7 @@ export async function processGradeItemSecondOpinion(
     );
   if (!existing) throw new Error(`Nessuna correzione esistente per questo esercizio: ${item.id}`);
 
-  const model = input.model ?? MODEL_ROUTING_SECOND_OPINION;
+  const model = input.model ?? resolveModel(MODEL_ROUTING_SECOND_OPINION);
   const answer = attempt.answers[item.id] ?? '';
   const result = await provider.gradeAnswer(
     {

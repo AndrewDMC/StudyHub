@@ -11,6 +11,7 @@ import type {
   PlanDto,
   PlanPreviewDto,
   TaskDto,
+  TopicDto,
 } from '@studyhub/contracts';
 
 async function getJson<T>(url: string, key: string): Promise<T> {
@@ -67,6 +68,17 @@ function WizardForm({
   const [intensity, setIntensity] = useState<Intensity>('standard');
   const [simulationCount, setSimulationCount] = useState('auto');
   const [blackoutText, setBlackoutText] = useState('');
+  // A partial covers only some topics; `scoped` off = the whole subject.
+  const [scoped, setScoped] = useState(false);
+  const [pickedTopics, setPickedTopics] = useState<string[]>([]);
+  const [notes, setNotes] = useState('');
+  const topicsQuery = useQuery({
+    queryKey: ['topics', slug],
+    queryFn: () => getJson<TopicDto[]>(`/api/subjects/${slug}/topics`, 'topics'),
+  });
+  const topicList = topicsQuery.data ?? [];
+  const togglePicked = (id: string) =>
+    setPickedTopics((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
 
   // Comma/space separated YYYY-MM-DD; anything else is flagged, not silently dropped.
   const blackoutTokens = blackoutText.split(/[\s,;]+/).filter(Boolean);
@@ -78,6 +90,9 @@ function WizardForm({
     startDate,
     targetDate,
     examId: examId || undefined,
+    topicIds: scoped && pickedTopics.length > 0 ? pickedTopics : undefined,
+    // With an exam linked an emptied box clears its description too; without one, empty means "no notes".
+    notes: notes.trim() === '' && !examId ? undefined : notes.trim(),
     availability: { perWeekday, blackoutDates },
     prefs: {
       sessionLength,
@@ -148,13 +163,16 @@ function WizardForm({
 
       {exams.length > 0 && (
         <label className="flex flex-col gap-1 text-xs text-fg-secondary">
-          Esame collegato (opzionale)
+          Esame o parziale collegato (opzionale)
           <select
             value={examId}
             onChange={(e) => {
               setExamId(e.target.value);
               const exam = exams.find((x) => x.id === e.target.value);
-              if (exam) setTargetDate(exam.date.slice(0, 10));
+              if (exam) {
+                setTargetDate(exam.date.slice(0, 10));
+                setNotes(exam.description ?? '');
+              }
             }}
             className="rounded-[var(--radius-control)] border border-border bg-bg-inset px-2 py-1 text-sm text-fg-primary"
           >
@@ -167,6 +185,56 @@ function WizardForm({
           </select>
         </label>
       )}
+
+      <label className="flex flex-col gap-1 text-xs text-fg-secondary">
+        Note sull&apos;esame (le legge l&apos;AI)
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          maxLength={2000}
+          rows={3}
+          placeholder="Es. Primo parziale: capitoli 1–4, scritto con 3 esercizi sugli integrali, niente formulario."
+          className="rounded-[var(--radius-control)] border border-border bg-bg-inset px-2 py-1 text-sm text-fg-primary"
+        />
+        <span className="text-fg-muted">
+          Cosa copre, com&apos;è fatto, su cosa insiste il docente.
+          {examId ? ' Resta salvata sull’esame.' : ' Collega un esame per salvarle.'}
+        </span>
+      </label>
+
+      <div>
+        <label className="flex items-center gap-2 text-xs text-fg-secondary">
+          <input
+            type="checkbox"
+            checked={scoped}
+            onChange={(e) => setScoped(e.target.checked)}
+            disabled={topicList.length === 0}
+          />
+          Solo alcuni argomenti (parziale)
+          {topicList.length === 0 && (
+            <span className="text-fg-muted">— la materia non ha ancora argomenti</span>
+          )}
+        </label>
+        {scoped && (
+          <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto rounded-[var(--radius-control)] border border-border bg-bg-inset p-2">
+            {topicList.map((t) => (
+              <li key={t.id}>
+                <label className="flex items-center gap-2 text-sm text-fg-primary">
+                  <input
+                    type="checkbox"
+                    checked={pickedTopics.includes(t.id)}
+                    onChange={() => togglePicked(t.id)}
+                  />
+                  {t.name}
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
+        {scoped && pickedTopics.length === 0 && (
+          <p className="mt-1 text-xs text-warn">Scegli almeno un argomento.</p>
+        )}
+      </div>
 
       <div>
         <p className="mb-1 text-xs text-fg-secondary">Minuti disponibili per giorno</p>
@@ -249,7 +317,7 @@ function WizardForm({
 
       <button
         type="submit"
-        disabled={generate.isPending}
+        disabled={generate.isPending || (scoped && pickedTopics.length === 0)}
         className="rounded-[var(--radius-control)] bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
       >
         {generate.isPending ? 'Generazione…' : 'Genera piano'}
@@ -549,15 +617,18 @@ export function PlanClient({ slug }: { slug: string }) {
   // fixed-delay-then-refetch convention this follows).
   const [awaitingDraft, setAwaitingDraft] = useState(false);
 
+  // A subject has one plan per exam or partial (plus a general one) and at most one draft under review.
   const planQuery = useQuery({
-    queryKey: ['plan', slug],
-    queryFn: () => getJson<PlanDto | null>(`/api/subjects/${slug}/plan`, 'plan'),
+    queryKey: ['plans', slug],
+    queryFn: () => getJson<PlanDto[]>(`/api/subjects/${slug}/plan/list`, 'plans'),
     refetchInterval: awaitingDraft ? 2000 : false,
   });
+  const plans = planQuery.data ?? [];
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (awaitingDraft && planQuery.data) setAwaitingDraft(false);
-  }, [awaitingDraft, planQuery.data]);
+    if (awaitingDraft && plans.length > 0) setAwaitingDraft(false);
+  }, [awaitingDraft, plans.length]);
 
   useEffect(() => {
     if (!awaitingDraft) return;
@@ -574,7 +645,7 @@ export function PlanClient({ slug }: { slug: string }) {
   });
 
   const invalidatePlan = () => {
-    queryClient.invalidateQueries({ queryKey: ['plan', slug] });
+    queryClient.invalidateQueries({ queryKey: ['plans', slug] });
     queryClient.invalidateQueries({ queryKey: ['plan-diff', slug] });
   };
 
@@ -585,6 +656,13 @@ export function PlanClient({ slug }: { slug: string }) {
   const discard = useMutation({
     mutationFn: () => send(`/api/subjects/${slug}/plan/draft`, 'DELETE'),
     onSuccess: invalidatePlan,
+  });
+  const deletePlan = useMutation({
+    mutationFn: (planId: string) => send(`/api/subjects/${slug}/plan/${planId}`, 'DELETE'),
+    onSuccess: () => {
+      invalidatePlan();
+      queryClient.invalidateQueries({ queryKey: ['calendar'] });
+    },
   });
   const pin = useMutation({
     mutationFn: ({ id, pinned }: { id: string; pinned: boolean }) =>
@@ -601,7 +679,11 @@ export function PlanClient({ slug }: { slug: string }) {
     onSuccess: invalidatePlan,
   });
 
-  const plan = planQuery.data;
+  const plan = plans.find((p) => p.id === selectedId) ?? plans[0] ?? null;
+  const planLabel = (p: PlanDto) => {
+    const exam = p.examId ? (examsQuery.data ?? []).find((x) => x.id === p.examId) : null;
+    return `${exam ? exam.title : 'Generale'}${p.status === 'draft' ? ' (bozza)' : ''}`;
+  };
   const byDay = new Map<string, TaskDto[]>();
   for (const t of plan?.tasks ?? []) byDay.set(t.date, [...(byDay.get(t.date) ?? []), t]);
   const days = [...byDay.keys()].sort();
@@ -625,7 +707,11 @@ export function PlanClient({ slug }: { slug: string }) {
             onClick={() => setWizardOpen((v) => !v)}
             className="rounded-[var(--radius-control)] border border-border px-2.5 py-1 text-xs text-fg-secondary hover:text-fg-primary"
           >
-            {wizardOpen ? 'Annulla' : plan.status === 'draft' ? 'Rigenera bozza' : 'Nuovo piano'}
+            {wizardOpen
+              ? 'Annulla'
+              : plan.status === 'draft'
+                ? 'Rigenera bozza'
+                : 'Nuovo piano / parziale'}
           </button>
         )}
       </div>
@@ -644,10 +730,36 @@ export function PlanClient({ slug }: { slug: string }) {
             exams={examsQuery.data ?? []}
             onGenerated={() => {
               setWizardOpen(false);
+              setSelectedId(null);
               setAwaitingDraft(true);
               invalidatePlan();
             }}
           />
+        </div>
+      )}
+
+      {plans.length > 1 && !wizardOpen && (
+        <div
+          role="tablist"
+          aria-label="Piani della materia"
+          className="mb-4 flex flex-wrap gap-1.5"
+        >
+          {plans.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              role="tab"
+              aria-selected={p.id === plan?.id}
+              onClick={() => setSelectedId(p.id)}
+              className={`rounded-full border px-3 py-1 text-xs ${
+                p.id === plan?.id
+                  ? 'border-accent bg-accent/10 text-fg-primary'
+                  : 'border-border text-fg-secondary hover:text-fg-primary'
+              }`}
+            >
+              {planLabel(p)}
+            </button>
+          ))}
         </div>
       )}
 
@@ -688,6 +800,30 @@ export function PlanClient({ slug }: { slug: string }) {
             </div>
           )}
           {plan.status === 'draft' && <BulkBar slug={slug} plan={plan} onDone={invalidatePlan} />}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                const what = plan.status === 'draft' ? 'questa bozza' : 'il piano attivo';
+                if (
+                  window.confirm(
+                    `Eliminare definitivamente ${what} e tutte le sue ${plan.tasks.length} task? L'operazione non si può annullare.`,
+                  )
+                ) {
+                  deletePlan.mutate(plan.id);
+                }
+              }}
+              disabled={deletePlan.isPending}
+              className="rounded-[var(--radius-control)] border border-danger px-3 py-1.5 text-xs text-danger hover:bg-danger/10 disabled:opacity-50"
+            >
+              {deletePlan.isPending ? 'Elimino…' : 'Elimina piano'}
+            </button>
+            {deletePlan.isError && (
+              <p role="alert" className="text-xs text-danger">
+                {(deletePlan.error as Error).message}
+              </p>
+            )}
+          </div>
           {commit.isError && (
             <p role="alert" className="text-xs text-danger">
               {(commit.error as Error).message}
