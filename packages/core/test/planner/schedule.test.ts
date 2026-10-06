@@ -109,6 +109,50 @@ describe('Fase B — scenario tests', () => {
     ]);
   });
 
+  it('2b. poco tempo: the plan is still produced, compressed so every topic gets a share', () => {
+    const i = input({
+      targetDate: addDays(START, 14),
+      availability: { perWeekday: [0, 60, 60, 60, 60, 60, 0], blackoutDates: [] },
+      topics: [
+        topic('a', { estimatedMinutes: 600 }),
+        topic('b', { estimatedMinutes: 600 }),
+        topic('c', { estimatedMinutes: 600 }),
+      ],
+    });
+    const r = schedulePlan(i);
+    assertHardConstraints(i, r.tasks);
+    // Not enough time is still said out loud, with the real shortfall and the strategies…
+    expect(r.feasibility.feasible).toBe(false);
+    expect(r.feasibility.shortfallMinutes).toBeGreaterThan(0);
+    expect(r.feasibility.requiredMinutes).toBeGreaterThan(r.feasibility.availableMinutes);
+    expect(r.warnings.some((w) => w.includes('compresso'))).toBe(true);
+    // …but the student gets a plan that touches every topic instead of an empty one.
+    const read = r.tasks.filter((t) => t.kind === 'read');
+    expect(read.length).toBeGreaterThan(0);
+    for (const key of ['a', 'b', 'c']) {
+      expect(read.some((t) => t.topicKey === key)).toBe(true);
+    }
+    expect(r.feasibility.unscheduledTopicKeys).toEqual([]);
+  });
+
+  it('2c. no availability at all cannot be planned, and says so', () => {
+    const r = schedulePlan(
+      input({ availability: { perWeekday: [0, 0, 0, 0, 0, 0, 0], blackoutDates: [] } }),
+    );
+    expect(r.tasks.filter((t) => t.kind === 'read')).toHaveLength(0);
+    expect(r.feasibility.feasible).toBe(false);
+  });
+
+  it('2d. days fully taken by other subjects are said out loud, with the right strategy hint', () => {
+    const busy: Record<string, number> = {};
+    for (let d = 0; d <= 30; d++) busy[addDays(START, d)] = 1000;
+    const r = schedulePlan(input({ busyMinutesByDate: busy }));
+    expect(r.tasks.filter((t) => t.kind === 'read')).toHaveLength(0);
+    expect(r.warnings.some((w) => w.includes('occupati da task di altre materie'))).toBe(true);
+    const extend = r.feasibility.strategies.find((s) => s.id === 'estendi_data')!;
+    expect(extend.description).toContain('già occupato da altre materie');
+  });
+
   it('3. prerequisites: a topic never starts before its prerequisite is finished', () => {
     const i = input({ topics: [topic('b', { prerequisites: ['a'] }), topic('a')] });
     const r = schedulePlan(i);
