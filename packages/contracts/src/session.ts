@@ -51,5 +51,60 @@ export const StudySessionDtoSchema = z.object({
   pomodoros: z.number().int(),
   startedAt: z.string().datetime(),
   endedAt: z.string().datetime().nullable(),
+  /** Trascrizione della chat scritta alla chiusura, relativa alla cartella della materia. */
+  transcriptPath: z.string().nullable(),
 });
 export type StudySessionDto = z.infer<typeof StudySessionDtoSchema>;
+
+// ---- Chat (docs/08-sessione-di-studio.md §5.3) ----
+
+/** Il passaggio selezionato nel viewer ("Chiedi all'AI"): entra sempre nel contesto della domanda. */
+export const SessionFocusSchema = z.object({
+  docId: z.string().uuid(),
+  page: z.number().int().positive().nullable().default(null),
+  text: z.string().trim().min(1).max(4000),
+});
+export type SessionFocus = z.infer<typeof SessionFocusSchema>;
+
+export const SendSessionMessageRequestSchema = z.object({
+  content: z.string().trim().min(1, 'Scrivi una domanda').max(4000),
+  focus: SessionFocusSchema.optional(),
+  /** Modello della chat; assente = quello veloce. */
+  model: z.string().min(1).max(100).optional(),
+});
+export type SendSessionMessageRequest = z.infer<typeof SendSessionMessageRequestSchema>;
+
+export const SessionCitationDtoSchema = z.object({
+  /** Il marcatore `[n]` nel testo della risposta. */
+  ref: z.number().int().positive(),
+  chunkId: z.string().uuid(),
+  docId: z.string().uuid(),
+  documentName: z.string(),
+  page: z.number().int().positive(),
+});
+export type SessionCitationDto = z.infer<typeof SessionCitationDtoSchema>;
+
+export const SessionMessageDtoSchema = z.object({
+  id: z.string().uuid(),
+  role: z.enum(['user', 'assistant']),
+  content: z.string(),
+  focus: SessionFocusSchema.nullable(),
+  citations: z.array(SessionCitationDtoSchema),
+  model: z.string().nullable(),
+  createdAt: z.string().datetime(),
+});
+export type SessionMessageDto = z.infer<typeof SessionMessageDtoSchema>;
+
+export const SessionChatDtoSchema = z.object({
+  messages: z.array(SessionMessageDtoSchema),
+  /** Costo cumulativo della chat in questa sessione (visibile nella testata, docs/08 §9.2). */
+  costEur: z.number(),
+});
+export type SessionChatDto = z.infer<typeof SessionChatDtoSchema>;
+
+/** Eventi dello stream SSE di `POST .../messages`, uno per riga `data:`. */
+export type SessionChatEvent =
+  | { type: 'user'; message: SessionMessageDto }
+  | { type: 'delta'; text: string }
+  | { type: 'done'; message: SessionMessageDto; costEur: number }
+  | { type: 'error'; message: string };

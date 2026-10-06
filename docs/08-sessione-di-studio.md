@@ -1,6 +1,6 @@
 # Sessione di studio — piano di implementazione
 
-> Stato: **fase 1 implementata** (2026-09-29); fasi 2–4 da fare. Vedi §10 per lo stato e §9 per le decisioni prese.
+> Stato: **fasi 1 e 2 implementate** (2026-09-29 / 2026-10-05); fasi 3–4 da fare. Vedi §10 per lo stato e §9 per le decisioni prese.
 > Realizza anche il "pannello AI contestuale" rinviato da F2 (`packages/db/src/schema.ts`, commento su `exams`).
 
 ## 1. Cosa vuole l'utente, in una frase
@@ -183,7 +183,7 @@ testata della chat.
 | #   | Fetta                     | Contenuto                                                                                                       | AI?      |
 | --- | ------------------------- | --------------------------------------------------------------------------------------------------------------- | -------- |
 | 1   | **Sessione + materiale**  | tabelle, §3, avvio e chiusura, pagina con pannello Materiale, timer, "Inizia" collegato                         | no       |
-| 2   | **Chat citata**           | retrieval filtrato, `chatStream` su 3 provider, SSE, selezione → chat, costi                                    | sì       |
+| 2   | **Chat citata** ✔         | retrieval filtrato, `chatStream` su 3 provider, SSE, selezione → chat, costi                                    | sì       |
 | 3   | **Briefing**              | job `prepare_session`, punti chiave ed esercizi, checklist, "altri esercizi"                                    | sì       |
 | 4   | **Chiusura intelligente** | correzione esercizi, flashcard dai punti chiave, esercizi sbagliati nei drill (#8), `active_ms` al Planner (#7) | parziale |
 
@@ -263,6 +263,48 @@ Metto la chat prima del briefing perché è il pezzo che dà più valore subito 
 aperta dal vivo (lo stack Docker in esecuzione ha l'immagine precedente e va ricostruito, con la
 migrazione 0016).
 
-### Prossimo: fase 2 (chat con citazioni)
+### Fase 2 — chat con citazioni — fatta
 
-Con la decisione 2, la fase 2 include la scrittura della trascrizione `.md` alla chiusura.
+- **Dati**: tabella `session_messages` e colonna `study_sessions.transcript_path` (migrazione `0018_session_chat.sql`).
+- **Provider**: `AiProvider.chatStream(input, model): AsyncIterable<ChatDelta>` (`text` a pezzi, poi un `done` con i
+  token). `AnthropicProvider` → `messages.create({ stream: true })`; `ClaudeCliProvider` →
+  `claude --print --output-format stream-json --include-partial-messages` senza tool (con ripiego sul messaggio
+  intero se non arrivano i parziali); `FakeProvider` → risposta estrattiva, citata, a pezzi. Prompt
+  `session_chat/v1.md`; fonti, passaggio selezionato, storia e domanda entrano in tag escapati.
+- **Citazioni**: il modello cita con marcatori numerici `[n]` (le fonti sono numerate nel prompt), non con
+  `[doc:pagina]` come ipotizzato in §5.3: è più corto da generare e si valida con una semplice mappa
+  `n → chunk`. Un marcatore verso una fonte mai fornita viene tolto dal testo, mai trasformato in citazione
+  (`parseAnswerCitations`, `packages/core/src/sessionChat.ts`). Una risposta senza citazioni valide si vede
+  marcata come «non ancorata al materiale».
+- **Retrieval ristretto**: `retrieveChunks` in `apps/web/src/lib/search.ts` riusa la ricerca ibrida FTS +
+  vettoriale + RRF con un filtro `documentIds` (top‑k 8; test: un chunk di un documento fuori sessione non
+  compare mai). Per la chat l'FTS usa un **OR** sulle parole significative: con la sintassi `websearch`
+  (AND) una domanda in linguaggio naturale non trovava nulla. Il passaggio selezionato porta sempre con sé i
+  chunk della sua pagina.
+- **Route**: `POST /sessions/[id]/messages` (SSE: `user` → `delta`… → `done` | `error`; gli errori prevedibili
+  — sessione inesistente o terminata, passaggio di un documento fuori sessione — escono come normale errore
+  HTTP prima dello stream), `GET /sessions/[id]/messages` (storia + costo), `GET /sessions/[id]/transcript`.
+- **Costi**: ogni risposta scrive una riga `jobs` di tipo `session_chat` con il costo, quindi compare in
+  `/admin` e nel costo mensile; il totale della sessione è nella testata della chat. Storia limitata a 10
+  messaggi / 6000 caratteri, fonti troncate a 1800 caratteri.
+- **Trascrizione** (decisione 2): `Termina` scrive `data/subjects/<materia>/sessioni/AAAA-MM-GG-<titolo>-<id8>.md`
+  (front matter, turni, passaggio selezionato come citazione, fonti come `[[wikilink#p. N]]`). Se la scrittura
+  fallisce la sessione resta comunque chiusa. A sessione terminata la chat mostra la trascrizione in sola lettura.
+- **UI**: `SessionChat` a destra (sotto `lg` due tab Materiale / Chat); selezionando testo nel viewer compare
+  «Chiedi all'AI» (la pagina si ricava dai titoli `## Pagina N` del `content.md`); i chip di citazione aprono il
+  documento e scorrono alla pagina; selettore modello (`ModelPicker`), invio con Invio, risposta in streaming.
+- **Test**: 10 unit (core) + 9 di integrazione pglite (chat) + 8 sui provider.
+
+**Non fatto / limiti**
+
+- La trascrizione non è ancora indicizzata come documento della materia (quindi non è cercabile come gli altri
+  documenti, come prevede la decisione 2): oggi è un file `.md` sul disco, letto dalla sessione stessa.
+- Interrompere la risposta dal browser ferma il modello ma non salva il parziale né il costo di quel turno.
+- Se una risposta fallisce, la domanda resta nella storia senza risposta (e viene rimandata al modello nei turni
+  successivi); non c'è un «riprova».
+- **Non verificato nel browser** (come la fase 1): Docker non era in esecuzione, quindi la pagina e lo stream SSE
+  non sono stati provati dal vivo. Coperti da test e typecheck: la logica, il retrieval, le route lato libreria e
+  i tre provider contro client simulati; il parsing dello stream di `claude` è basato sul formato `stream-json`
+  documentato, non su un'esecuzione reale. Serve ricostruire lo stack (migrazioni 0016–0018).
+
+### Prossimo: fase 3 (briefing)

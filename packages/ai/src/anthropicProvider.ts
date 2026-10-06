@@ -5,6 +5,7 @@ import type { z } from 'zod';
 import type {
   AiProvider,
   AiUsage,
+  ChatDelta,
   ClassifyDocumentTypePromptInput,
   DistillHandwritingProfilePromptInput,
   EstimateTopicsPromptInput,
@@ -16,6 +17,7 @@ import type {
   OcrTextPromptInput,
   SchemaPromptInput,
   SchemaTranscriptionPromptInput,
+  SessionChatPromptInput,
   SimulationPromptInput,
   SummaryPromptInput,
 } from './provider.js';
@@ -54,6 +56,7 @@ import {
   renderGradeUserPrompt,
   renderSchemaTranscriptionUserPrompt,
   renderSchemaUserPrompt,
+  renderSessionChatUserPrompt,
   renderSimulationUserPrompt,
   renderSummaryUserPrompt,
 } from './promptRender.js';
@@ -298,6 +301,41 @@ export class AnthropicProvider implements AiProvider {
       4096,
     );
     return { data, usage, model, promptVersion };
+  }
+
+  /**
+   * Streams the study-session chat as plain text (no tool-use): raw SSE events from the Messages API,
+   * `text_delta` pieces forwarded as they arrive, usage taken from `message_start` / `message_delta`.
+   */
+  async *chatStream(input: SessionChatPromptInput, model: string): AsyncIterable<ChatDelta> {
+    const { text: system, promptVersion } = loadPrompt('session_chat', 1);
+    const stream = (await this.client.messages.create({
+      model,
+      max_tokens: 2048,
+      system,
+      stream: true,
+      messages: [{ role: 'user', content: renderSessionChatUserPrompt(input) }],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any)) as unknown as AsyncIterable<{
+      type: string;
+      message?: { usage?: { input_tokens?: number; output_tokens?: number } };
+      delta?: { type?: string; text?: string };
+      usage?: { input_tokens?: number; output_tokens?: number };
+    }>;
+
+    const usage: AiUsage = { inputTokens: 0, outputTokens: 0 };
+    for await (const event of stream) {
+      if (event.type === 'message_start') {
+        usage.inputTokens = event.message?.usage?.input_tokens ?? usage.inputTokens;
+        usage.outputTokens = event.message?.usage?.output_tokens ?? usage.outputTokens;
+      } else if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+        if (event.delta.text) yield { type: 'text', text: event.delta.text };
+      } else if (event.type === 'message_delta') {
+        usage.inputTokens = event.usage?.input_tokens ?? usage.inputTokens;
+        usage.outputTokens = event.usage?.output_tokens ?? usage.outputTokens;
+      }
+    }
+    yield { type: 'done', usage, model, promptVersion };
   }
 
   private async callWithTool<T>(

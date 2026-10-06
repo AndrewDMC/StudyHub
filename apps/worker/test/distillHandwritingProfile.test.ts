@@ -13,6 +13,7 @@ import { subjectHandwritingProfilePath } from '../src/processors/handwritingProf
 function fakeDistillProvider(lines: string[]): AiProvider {
   return {
     name: 'fake-distill-test',
+    chatStream: vi.fn(),
     generateFlashcards: vi.fn(),
     generateSummary: vi.fn(),
     generateSchema: vi.fn(),

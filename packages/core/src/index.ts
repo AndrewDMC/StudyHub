@@ -19,3 +19,4 @@ export * from './coverage.js';
 export * from './calibration.js';
 export * from './session.js';
 export * from './pomodoro.js';
+export * from './sessionChat.js';

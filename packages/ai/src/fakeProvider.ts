@@ -1,5 +1,6 @@
 import type {
   AiProvider,
+  ChatDelta,
   ClassifyDocumentTypePromptInput,
   DistillHandwritingProfilePromptInput,
   EstimateTopicsPromptInput,
@@ -11,6 +12,7 @@ import type {
   OcrTextPromptInput,
   SchemaPromptInput,
   SchemaTranscriptionPromptInput,
+  SessionChatPromptInput,
   SimulationPromptInput,
   SummaryPromptInput,
 } from './provider.js';
@@ -33,7 +35,8 @@ import type {
   TopicEstimate,
 } from './schemas.js';
 import { estimateTokens } from './pricing.js';
-import { keywords, splitSentences, truncate } from './text.js';
+import { keywordCoverage, keywords, splitSentences, truncate } from './text.js';
+import { renderSessionChatUserPrompt } from './promptRender.js';
 import { fakeExtractExamProfile, fakeGenerateSimulation, fakeGradeAnswer } from './fakeExam.js';
 import {
   CLASSIFY_DOCUMENT_TYPE_PROMPT_VERSION,
@@ -46,6 +49,7 @@ import {
   OCR_TEXT_PROMPT_VERSION,
   SCHEMA_PROMPT_VERSION,
   SCHEMA_TRANSCRIPTION_PROMPT_VERSION,
+  SESSION_CHAT_PROMPT_VERSION,
   SIMULATION_PROMPT_VERSION,
   SUMMARY_PROMPT_VERSION,
 } from './versions.js';
@@ -387,6 +391,45 @@ export class FakeProvider implements AiProvider {
       usage: { inputTokens, outputTokens },
       model: FAKE_MODEL,
       promptVersion: EXTRACT_TOPICS_PROMPT_VERSION,
+    };
+  }
+
+  /**
+   * Extractive stand-in for the session chat: quotes the best-matching sentences of the provided
+   * sources, each cited with its `[n]` — or says the material doesn't cover the question. It can't
+   * explain anything, but it exercises the whole pipeline (SSE, citation parsing, validation, costs).
+   */
+  async *chatStream(input: SessionChatPromptInput, _model: string): AsyncIterable<ChatDelta> {
+    const query = `${input.focus?.text ?? ''} ${input.question}`;
+    const scored = input.sources
+      .flatMap((source) =>
+        splitSentences(source.text).map((sentence) => ({
+          ref: source.ref,
+          sentence,
+          score: keywordCoverage(query, sentence),
+        })),
+      )
+      .filter((c) => c.score > 0)
+      .sort((a, b) => b.score - a.score || a.ref - b.ref)
+      .slice(0, 2);
+
+    const answer =
+      scored.length === 0
+        ? 'Questo non è nel materiale della sessione: prova a riformulare la domanda o ad aggiungere un argomento.'
+        : `Dal materiale:\n\n${scored.map((c) => `- ${truncate(c.sentence, 400)} [${c.ref}]`).join('\n')}`;
+
+    // Emit in small pieces so the streaming path is exercised for real, not one lump.
+    for (let i = 0; i < answer.length; i += 24) {
+      yield { type: 'text', text: answer.slice(i, i + 24) };
+    }
+    yield {
+      type: 'done',
+      usage: {
+        inputTokens: estimateTokens(renderSessionChatUserPrompt(input)),
+        outputTokens: estimateTokens(answer),
+      },
+      model: FAKE_MODEL,
+      promptVersion: SESSION_CHAT_PROMPT_VERSION,
     };
   }
 }

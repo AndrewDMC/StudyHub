@@ -5,6 +5,7 @@ import type { z } from 'zod';
 import type {
   AiProvider,
   AiUsage,
+  ChatDelta,
   ClassifyDocumentTypePromptInput,
   DistillHandwritingProfilePromptInput,
   EstimateTopicsPromptInput,
@@ -16,6 +17,7 @@ import type {
   OcrTextPromptInput,
   SchemaPromptInput,
   SchemaTranscriptionPromptInput,
+  SessionChatPromptInput,
   SimulationPromptInput,
   SummaryPromptInput,
 } from './provider.js';
@@ -55,6 +57,7 @@ import {
   renderGradeUserPrompt,
   renderSchemaTranscriptionUserPrompt,
   renderSchemaUserPrompt,
+  renderSessionChatUserPrompt,
   renderSimulationUserPrompt,
   renderSummaryUserPrompt,
 } from './promptRender.js';
@@ -96,6 +99,55 @@ function spawnClaudeCli(args: string[], stdin: string): Promise<ClaudeCliResult>
   });
 }
 
+/** Same spawn as `spawnClaudeCli`, but yields stdout line by line as it arrives (`--output-format stream-json`). */
+export type ClaudeCliStreamRunner = (args: string[], stdin: string) => AsyncIterable<string>;
+
+async function* spawnClaudeCliStream(args: string[], stdin: string): AsyncIterable<string> {
+  const child = spawn(resolveClaudeBinary(), args, { stdio: ['pipe', 'pipe', 'pipe'] });
+  let stderr = '';
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk;
+  });
+  const exited = new Promise<number | null>((resolvePromise, reject) => {
+    child.on('error', reject);
+    child.on('close', resolvePromise);
+  });
+  exited.catch(() => undefined);
+  child.stdin.write(stdin);
+  child.stdin.end();
+
+  let buffered = '';
+  try {
+    for await (const chunk of child.stdout) {
+      buffered += chunk;
+      let newline = buffered.indexOf('\n');
+      while (newline >= 0) {
+        const line = buffered.slice(0, newline).trim();
+        buffered = buffered.slice(newline + 1);
+        if (line) yield line;
+        newline = buffered.indexOf('\n');
+      }
+    }
+    if (buffered.trim()) yield buffered.trim();
+    const code = await exited;
+    if (code !== 0 && code !== null) {
+      throw new Error(`chiamata a \`claude\` fallita (exit ${code}): ${stderr || 'nessun output'}`);
+    }
+  } finally {
+    // The consumer stopped early (closed tab / aborted request): don't leave the CLI running.
+    if (child.exitCode === null) child.kill();
+  }
+}
+
+interface ClaudeCliStreamLine {
+  type?: string;
+  is_error?: boolean;
+  result?: string;
+  usage?: { input_tokens?: number; output_tokens?: number };
+  event?: { type?: string; delta?: { type?: string; text?: string } };
+  message?: { content?: { type?: string; text?: string }[] };
+}
+
 interface ClaudeCliEnvelope {
   is_error?: boolean;
   result?: string;
@@ -114,9 +166,11 @@ interface ClaudeCliEnvelope {
 export class ClaudeCliProvider implements AiProvider {
   readonly name = 'claude-cli';
   private readonly run: ClaudeCliRunner;
+  private readonly runStream: ClaudeCliStreamRunner;
 
-  constructor(options: { run?: ClaudeCliRunner } = {}) {
+  constructor(options: { run?: ClaudeCliRunner; runStream?: ClaudeCliStreamRunner } = {}) {
     this.run = options.run ?? spawnClaudeCli;
+    this.runStream = options.runStream ?? spawnClaudeCliStream;
   }
 
   async generateFlashcards(
@@ -333,6 +387,68 @@ export class ClaudeCliProvider implements AiProvider {
       model,
     );
     return { data, usage, model, promptVersion };
+  }
+
+  /**
+   * Streams the study-session chat through `claude --print --output-format stream-json`. Text arrives as
+   * partial `text_delta` events; if the CLI only emits whole assistant messages, those are used instead.
+   * No tools at all (`--tools ""`): the answer must come from the sources in the prompt.
+   */
+  async *chatStream(input: SessionChatPromptInput, model: string): AsyncIterable<ChatDelta> {
+    const { text: system, promptVersion } = loadPrompt('session_chat', 1);
+    const args = [
+      '--print',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--include-partial-messages',
+      '--model',
+      model,
+      '--system-prompt',
+      system,
+      '--strict-mcp-config',
+      '--tools',
+      '',
+    ];
+
+    const usage: AiUsage = { inputTokens: 0, outputTokens: 0 };
+    let sawPartial = false;
+    let assistantText = '';
+    let finalText: string | null = null;
+    for await (const raw of this.runStream(args, renderSessionChatUserPrompt(input))) {
+      let line: ClaudeCliStreamLine;
+      try {
+        line = JSON.parse(raw) as ClaudeCliStreamLine;
+      } catch {
+        continue; // not JSON (a stray log line): ignore
+      }
+      if (line.type === 'stream_event') {
+        const delta = line.event?.delta;
+        if (
+          line.event?.type === 'content_block_delta' &&
+          delta?.type === 'text_delta' &&
+          delta.text
+        ) {
+          sawPartial = true;
+          yield { type: 'text', text: delta.text };
+        }
+      } else if (line.type === 'assistant') {
+        assistantText += (line.message?.content ?? [])
+          .filter((b) => b.type === 'text')
+          .map((b) => b.text ?? '')
+          .join('');
+      } else if (line.type === 'result') {
+        if (line.is_error) throw new Error(line.result ?? 'chiamata a `claude` fallita');
+        finalText = line.result ?? null;
+        usage.inputTokens = line.usage?.input_tokens ?? 0;
+        usage.outputTokens = line.usage?.output_tokens ?? 0;
+      }
+    }
+    if (!sawPartial) {
+      const text = assistantText || finalText || '';
+      if (text) yield { type: 'text', text };
+    }
+    yield { type: 'done', usage, model, promptVersion };
   }
 
   private async callWithSchema<T>(

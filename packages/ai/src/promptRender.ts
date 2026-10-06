@@ -6,6 +6,7 @@ import type {
   GradePromptInput,
   SchemaPromptInput,
   SchemaTranscriptionPromptInput,
+  SessionChatPromptInput,
   SimulationPromptInput,
   SummaryPromptInput,
 } from './provider.js';
@@ -153,4 +154,50 @@ export function renderExamProfileUserPrompt(input: ExamProfilePromptInput): stri
         ]
       : []),
   ].join('\n');
+}
+
+/**
+ * Everything the study-session chat model sees besides its system prompt. Sources, the selected passage,
+ * the history and the question are all student/document-controlled, so each sits in its own escaped tag.
+ */
+export function renderSessionChatUserPrompt(input: SessionChatPromptInput): string {
+  const attr = (value: string) => value.replace(/"/g, "'");
+  const sources =
+    input.sources.length > 0
+      ? input.sources
+          .map(
+            (s) =>
+              `<source n="${s.ref}" documento="${attr(s.documentName)}" pagina="${s.page}">\n${escapeClosingTag(s.text, 'source')}\n</source>`,
+          )
+          .join('\n\n')
+      : '(Nessuna fonte trovata nel materiale della sessione per questa domanda.)';
+
+  const parts = [
+    `Materia: ${input.subjectName}`,
+    ...(input.topicNames.length > 0
+      ? [`Argomenti della sessione: ${input.topicNames.join(', ')}`]
+      : []),
+    '',
+    sources,
+  ];
+  if (input.history.length > 0) {
+    parts.push(
+      '',
+      '<history>',
+      ...input.history.map(
+        (m) =>
+          `${m.role === 'user' ? 'Studente' : 'Tutor'}: ${escapeClosingTag(m.content, 'history')}`,
+      ),
+      '</history>',
+    );
+  }
+  if (input.focus) {
+    const page = input.focus.page ? ` pagina="${input.focus.page}"` : '';
+    parts.push(
+      '',
+      `<focus documento="${attr(input.focus.documentName)}"${page}>\n${escapeClosingTag(input.focus.text, 'focus')}\n</focus>`,
+    );
+  }
+  parts.push('', `<question>\n${escapeClosingTag(input.question, 'question')}\n</question>`);
+  return parts.join('\n');
 }

@@ -744,10 +744,51 @@ export const studySessions = pgTable(
     activeMs: integer('active_ms').notNull().default(0),
     // Completed Pomodoro focus phases (docs/08-sessione-di-studio.md); `activeMs` then counts focus time only.
     pomodoros: integer('pomodoros').notNull().default(0),
+    // Chat transcript written on "Termina" (relative to the subject folder), docs/08 decision 2.
+    transcriptPath: text('transcript_path'),
     startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
     endedAt: timestamp('ended_at', { withTimezone: true }),
   },
   (table) => [index('study_sessions_subject_idx').on(table.subjectId, table.status)],
+);
+
+/** A source the assistant cited in a session chat message; `ref` is the `[n]` marker in the text. */
+export interface SessionCitation {
+  ref: number;
+  chunkId: string;
+  docId: string;
+  documentName: string;
+  page: number;
+}
+
+/** The passage the student selected ("Chiedi all'AI"): sent along as context, always. */
+export interface SessionMessageFocus {
+  docId: string;
+  page: number | null;
+  text: string;
+}
+
+/**
+ * The chat of a study session (docs/08-sessione-di-studio.md §4, phase 2). Interactive only while the
+ * session is active; on "Termina" it is written to a Markdown transcript and stays here as the index.
+ */
+export const sessionMessages = pgTable(
+  'session_messages',
+  {
+    id: uuid('id').primaryKey(),
+    sessionId: uuid('session_id')
+      .notNull()
+      .references(() => studySessions.id, { onDelete: 'cascade' }),
+    role: text('role').$type<'user' | 'assistant'>().notNull(),
+    content: text('content').notNull(),
+    focus: jsonb('focus').$type<SessionMessageFocus>(),
+    citations: jsonb('citations').$type<SessionCitation[]>().notNull().default([]),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    model: text('model'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('session_messages_session_idx').on(table.sessionId, table.createdAt)],
 );
 
 /**
@@ -822,3 +863,5 @@ export type NewTranscriptionCorrection = typeof transcriptionCorrections.$inferI
 
 export type StudySession = typeof studySessions.$inferSelect;
 export type NewStudySession = typeof studySessions.$inferInsert;
+export type SessionMessage = typeof sessionMessages.$inferSelect;
+export type NewSessionMessage = typeof sessionMessages.$inferInsert;
