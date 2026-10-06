@@ -1,6 +1,6 @@
 import { desc, eq } from 'drizzle-orm';
 import { transcriptionCorrections } from '@studyhub/db';
-import { estimateCostEur, resolveProvider, type AiProvider } from '@studyhub/ai';
+import { estimateCostEur, resolveProvider, type AiProvider, resolveModel } from '@studyhub/ai';
 import type { DistillHandwritingProfileJobInput } from '@studyhub/contracts';
 import {
   appendHandwritingProfileLines,
@@ -29,7 +29,7 @@ export async function processDistillHandwritingProfile(
   input: DistillHandwritingProfileJobInput,
   provider: AiProvider = resolveProvider(),
 ): Promise<DistillHandwritingProfileResult> {
-  const model = input.model ?? MODEL_ROUTING_DISTILL;
+  const model = input.model ?? resolveModel(MODEL_ROUTING_DISTILL);
 
   const corrections: { before: string | null; after: string | null; kind: string | null }[] =
     await db

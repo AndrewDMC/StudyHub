@@ -8,7 +8,7 @@ import {
   type GradedCriterionData,
   type SimulationItemRow,
 } from '@studyhub/db';
-import { estimateCostEur, resolveProvider, type AiProvider } from '@studyhub/ai';
+import { estimateCostEur, resolveProvider, type AiProvider, resolveModel } from '@studyhub/ai';
 import type { GradeAttemptJobInput } from '@studyhub/contracts';
 import { checkBudget } from '../generation/shared.js';
 
@@ -93,7 +93,7 @@ export async function processGradeAttempt(
     .where(eq(simulationItems.simulationId, attempt.simulationId))
     .orderBy(simulationItems.ord);
 
-  const model = input.model ?? MODEL_ROUTING_GRADE;
+  const model = input.model ?? resolveModel(MODEL_ROUTING_GRADE);
   const usage = { inputTokens: 0, outputTokens: 0 };
   let costEur = 0;
   const graded = [];

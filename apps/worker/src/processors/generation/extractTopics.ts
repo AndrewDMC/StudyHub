@@ -8,6 +8,7 @@ import {
   truncate,
   EXTRACT_TOPICS_PROMPT_VERSION,
   type AiProvider,
+  resolveModel,
 } from '@studyhub/ai';
 import type { ExtractTopicsJobInput } from '@studyhub/contracts';
 import { checkBudget, computeJobKey } from './shared.js';
@@ -61,7 +62,7 @@ export async function processExtractTopics(
     );
   }
 
-  const model = input.model ?? MODEL_ROUTING_TOPIC_EXTRACTION;
+  const model = input.model ?? resolveModel(MODEL_ROUTING_TOPIC_EXTRACTION);
   const jobKey = computeJobKey({
     type: 'extract_topics',
     subjectId: input.subjectId,

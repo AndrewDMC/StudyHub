@@ -22,6 +22,7 @@ import {
   resolveProvider,
   type AiProvider,
   type SessionBriefingOutput,
+  resolveModel,
 } from '@studyhub/ai';
 import type { PrepareSessionJobInput } from '@studyhub/contracts';
 import { checkBudget, resolveScopeChunks } from './shared.js';
@@ -104,7 +105,7 @@ export async function processPrepareSession(
     .where(eq(examProfiles.subjectId, input.subjectId));
 
   const exerciseCount = input.mode === 'all' ? BRIEFING_EXERCISES : BRIEFING_MORE_EXERCISES;
-  const model = input.model ?? MODEL_ROUTING_SESSION_BRIEFING;
+  const model = input.model ?? resolveModel(MODEL_ROUTING_SESSION_BRIEFING);
   const result = await provider.generateSessionBriefing(
     {
       subjectName: subject.name,

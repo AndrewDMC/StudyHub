@@ -8,6 +8,7 @@ import {
   renderSchemaUserPrompt,
   renderSummaryUserPrompt,
   type FlashcardType,
+  resolveModel,
 } from '@studyhub/ai';
 import { resolveScopeChunks } from '@studyhub/worker/lib';
 import type { GenerationScope } from '@studyhub/contracts';
@@ -96,7 +97,7 @@ export async function buildGenerationDryRun(
     throw new Error('Specifica almeno un documento (--docs) o un argomento (--topics)');
   }
 
-  const model = input.model ?? MODEL_ROUTING[input.kind];
+  const model = input.model ?? resolveModel(MODEL_ROUTING[input.kind]);
   const scopeChunks = await resolveScopeChunks(db, subject.id, input.scope);
   const docCount = new Set(scopeChunks.map((c) => c.docId)).size;
 

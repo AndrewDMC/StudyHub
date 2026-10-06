@@ -32,6 +32,7 @@ import {
   ESTIMATE_TOPICS_PROMPT_VERSION,
   type AiProvider,
   type TopicEstimate,
+  resolveModel,
 } from '@studyhub/ai';
 import type { GeneratePlanJobInput } from '@studyhub/contracts';
 import { checkBudget } from '../generation/shared.js';
@@ -75,7 +76,7 @@ export async function processGeneratePlan(
     notes ??= exam.description?.trim() || undefined;
   }
 
-  const model = input.model ?? MODEL_ROUTING_PLAN;
+  const model = input.model ?? resolveModel(MODEL_ROUTING_PLAN);
 
   const eligibleDocs = await loadEligibleDocs(db, input.subjectId);
 

@@ -18,7 +18,7 @@ import {
   EXERCISE_PASS_RATIO,
   selectBriefingChunks,
 } from '@studyhub/core';
-import { estimateCostEur, estimateTokens, type AiProvider } from '@studyhub/ai';
+import { estimateCostEur, estimateTokens, type AiProvider, resolveModel } from '@studyhub/ai';
 import type {
   BriefingJobDto,
   EstimateBriefingRequest,
@@ -250,7 +250,7 @@ export async function gradeSessionItem(
   const citation = item.citations[0];
   if (!citation) throw new ConflictError('L’esercizio non ha una fonte citata.');
 
-  const model = request.model ?? GRADE_DEFAULT_MODEL;
+  const model = request.model ?? resolveModel(GRADE_DEFAULT_MODEL);
   const result = await provider.gradeAnswer(
     {
       item: {

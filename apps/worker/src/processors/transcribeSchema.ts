@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { documents, schemaEdges, schemaGroups, schemaNodes, subjects } from '@studyhub/db';
-import { estimateCostEur, resolveProvider, type AiProvider } from '@studyhub/ai';
+import { estimateCostEur, resolveProvider, type AiProvider, resolveModel } from '@studyhub/ai';
 import { resolveDocumentDerivedDir } from '@studyhub/core';
 import type { TranscribeSchemaJobInput } from '@studyhub/contracts';
 import { buildContextVocabulary } from './contextVocabulary.js';
@@ -42,7 +42,7 @@ export async function processTranscribeSchema(
   const [subject] = await db.select().from(subjects).where(eq(subjects.id, doc.subjectId));
   if (!subject) throw new Error(`subject not found for document ${input.documentId}`);
 
-  const model = input.model ?? MODEL_ROUTING_SCHEMA_TRANSCRIPTION;
+  const model = input.model ?? resolveModel(MODEL_ROUTING_SCHEMA_TRANSCRIPTION);
 
   await db.update(documents).set({ status: 'parsing' }).where(eq(documents.id, doc.id));
 

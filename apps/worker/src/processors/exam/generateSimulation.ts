@@ -20,6 +20,7 @@ import {
   type AiProvider,
   type ExamProfile,
   type SimulationItem,
+  resolveModel,
 } from '@studyhub/ai';
 import type { GenerateSimulationJobInput } from '@studyhub/contracts';
 import { checkBudget, resolveScopeChunks } from '../generation/shared.js';
@@ -134,7 +135,7 @@ export async function processGenerateSimulation(
 
   const itemCount =
     input.itemCount ?? (input.mode === 'esame_completo' ? profile.itemCount : DEFAULT_DRILL_ITEMS);
-  const model = input.model ?? MODEL_ROUTING_SIMULATION;
+  const model = input.model ?? resolveModel(MODEL_ROUTING_SIMULATION);
   const result = await provider.generateSimulation(
     {
       subjectName: subject.name,

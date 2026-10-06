@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { chunks, documents, subjects } from '@studyhub/db';
 import { resolveDocumentDerivedDir } from '@studyhub/core';
-import { resolveProvider, type AiProvider } from '@studyhub/ai';
+import { resolveProvider, type AiProvider, resolveModel } from '@studyhub/ai';
 import type { ExtractTextJobInput } from '@studyhub/contracts';
 import { processEmbedChunks } from './embedChunks.js';
 import { renderPdfPageToPng } from './renderPdfPage.js';
@@ -180,12 +180,12 @@ export async function processExtractText(
         new Uint8Array(pdfBytes),
         extracted,
         provider,
-        MODEL_ROUTING_OCR,
+        resolveModel(MODEL_ROUTING_OCR),
       );
     } else if (IMAGE_MIMES.has(doc.mime)) {
       const result = await provider.ocrText(
         { imagePath: doc.storedPath, mime: doc.mime },
-        MODEL_ROUTING_OCR,
+        resolveModel(MODEL_ROUTING_OCR),
       );
       pages = [{ pageNumber: 1, text: result.data.text, ocr: true }];
     } else {

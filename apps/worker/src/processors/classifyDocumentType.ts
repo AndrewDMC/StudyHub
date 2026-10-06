@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import { eq } from 'drizzle-orm';
 import { chunks, documents } from '@studyhub/db';
-import { estimateCostEur, resolveProvider, type AiProvider } from '@studyhub/ai';
+import { estimateCostEur, resolveProvider, type AiProvider, resolveModel } from '@studyhub/ai';
 import type { ClassifyDocumentTypeJobInput } from '@studyhub/contracts';
 
 const MODEL_ROUTING_CLASSIFY_DOCUMENT_TYPE = 'claude-haiku-4-5-20251001'; // cheap, low-stakes suggestion
@@ -31,7 +31,7 @@ export async function processClassifyDocumentType(
   const [doc] = await db.select().from(documents).where(eq(documents.id, input.documentId));
   if (!doc) throw new Error(`document not found: ${input.documentId}`);
 
-  const model = input.model ?? MODEL_ROUTING_CLASSIFY_DOCUMENT_TYPE;
+  const model = input.model ?? resolveModel(MODEL_ROUTING_CLASSIFY_DOCUMENT_TYPE);
 
   const isImage = doc.mime.startsWith('image/');
   let textSample: string | undefined;
