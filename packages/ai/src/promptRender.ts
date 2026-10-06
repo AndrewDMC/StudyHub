@@ -6,6 +6,7 @@ import type {
   GradePromptInput,
   SchemaPromptInput,
   SchemaTranscriptionPromptInput,
+  SessionBriefingPromptInput,
   SessionChatPromptInput,
   SimulationPromptInput,
   SummaryPromptInput,
@@ -199,5 +200,30 @@ export function renderSessionChatUserPrompt(input: SessionChatPromptInput): stri
     );
   }
   parts.push('', `<question>\n${escapeClosingTag(input.question, 'question')}\n</question>`);
+  return parts.join('\n');
+}
+
+/** Material, counts and (when known) the exam style for the study-session briefing. */
+export function renderSessionBriefingUserPrompt(input: SessionBriefingPromptInput): string {
+  const parts = [
+    `Materia: ${input.subjectName}`,
+    ...(input.topicNames.length > 0
+      ? [`Argomenti della sessione: ${input.topicNames.join(', ')}`]
+      : []),
+    `Punti chiave richiesti: ${input.keyPointCount}. Esercizi richiesti: ${input.exerciseCount}.`,
+  ];
+  if (input.examStyle) {
+    parts.push(`Stile d'esame del corso: ${input.examStyle}`);
+  }
+  if (input.existingExercises.length > 0) {
+    parts.push(
+      '',
+      'Esercizi che lo studente ha già (non ripeterli):',
+      '<existing>',
+      ...input.existingExercises.map((e) => `- ${escapeClosingTag(e, 'existing')}`),
+      '</existing>',
+    );
+  }
+  parts.push('', documentsBlock(input.chunks));
   return parts.join('\n');
 }

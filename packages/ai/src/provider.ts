@@ -10,6 +10,7 @@ import type {
   OcrTextOutput,
   SchemaGraphOutput,
   SchemaOutput,
+  SessionBriefingOutput,
   SimulationItem,
   SimulationOutput,
   SummaryOutput,
@@ -152,6 +153,21 @@ export interface ExtractTopicsPromptInput {
   existingTopics?: { name: string }[];
 }
 
+/** docs/08-sessione-di-studio.md §5.2: key points + exercises on the session's material. */
+export interface SessionBriefingPromptInput {
+  subjectName: string;
+  /** The session's topic names, for orientation only. */
+  topicNames: string[];
+  chunks: ChunkRef[];
+  /** How many key points to produce (0 when only more exercises are wanted). */
+  keyPointCount: number;
+  exerciseCount: number;
+  /** Prompts of the exercises the student already has, so new ones don't repeat them. */
+  existingExercises: string[];
+  /** One-line summary of how the course's exams are written, when an exam profile exists. */
+  examStyle?: string | undefined;
+}
+
 /** One numbered source block of the study-session chat; the model cites it as `[n]`. */
 export interface SessionChatSource {
   /** 1-based number the model must cite. */
@@ -229,6 +245,10 @@ export interface AiProvider {
     input: ExtractTopicsPromptInput,
     model: string,
   ): Promise<GeneratedWithMeta<ExtractTopicsOutput>>;
+  generateSessionBriefing(
+    input: SessionBriefingPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<SessionBriefingOutput>>;
   /** Streaming, free-text answer for the study-session chat (docs/08-sessione-di-studio.md §5.3). */
   chatStream(input: SessionChatPromptInput, model: string): AsyncIterable<ChatDelta>;
 }

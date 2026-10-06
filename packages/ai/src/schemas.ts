@@ -78,6 +78,32 @@ export const SummaryOutputSchema = z.object({
 });
 export type SummaryOutput = z.infer<typeof SummaryOutputSchema>;
 
+/**
+ * `prepare_session` (docs/08-sessione-di-studio.md §5.2): the key points to understand and the
+ * exercises to practise on the session's material. Each item carries a `sourceRef` whose `quote`
+ * is validated verbatim against the cited chunk in the worker, never trusted from the model.
+ */
+export const SessionKeyPointSchema = z.object({
+  title: z.string().min(1),
+  explanation: z.string().min(1),
+  sourceRef: AiSourceRefSchema,
+});
+export type SessionKeyPoint = z.infer<typeof SessionKeyPointSchema>;
+
+export const SessionExerciseSchema = z.object({
+  prompt: z.string().min(1),
+  solution: z.string().min(1),
+  difficulty: z.number().int().min(1).max(3),
+  sourceRef: AiSourceRefSchema,
+});
+export type SessionExercise = z.infer<typeof SessionExerciseSchema>;
+
+export const SessionBriefingOutputSchema = z.object({
+  keyPoints: z.array(SessionKeyPointSchema),
+  exercises: z.array(SessionExerciseSchema),
+});
+export type SessionBriefingOutput = z.infer<typeof SessionBriefingOutputSchema>;
+
 /** docs/03-ai-e-worker.md §2 "esami" + §3.4: `kind` is a closed taxonomy. */
 export const SimulationItemKindSchema = z.enum(['open', 'mcq', 'numeric', 'proof']);
 export type SimulationItemKind = z.infer<typeof SimulationItemKindSchema>;

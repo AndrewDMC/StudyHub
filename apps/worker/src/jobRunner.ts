@@ -17,6 +17,7 @@ import {
   GradeItemSecondOpinionJobInputSchema,
   JobTypeSchema,
   PingJobInputSchema,
+  PrepareSessionJobInputSchema,
   ReconcileJobInputSchema,
   TranscribeSchemaJobInputSchema,
   type JobType,
@@ -31,6 +32,7 @@ import { processDistillHandwritingProfile } from './processors/distillHandwritin
 import { processExtractTopics } from './processors/generation/extractTopics.js';
 import { processGenerateFlashcards } from './processors/generation/generateFlashcards.js';
 import { processGenerateSchema } from './processors/generation/generateSchema.js';
+import { processPrepareSession } from './processors/generation/prepareSession.js';
 import { processGenerateSummary } from './processors/generation/generateSummary.js';
 import { processExtractExamProfile } from './processors/exam/extractExamProfile.js';
 import { processGenerateSimulation } from './processors/exam/generateSimulation.js';
@@ -151,6 +153,8 @@ async function dispatch(
       return processGeneratePlan(db, GeneratePlanJobInputSchema.parse(data));
     case 'extract_topics':
       return processExtractTopics(db, dataRoot, ExtractTopicsJobInputSchema.parse(data));
+    case 'prepare_session':
+      return processPrepareSession(db, PrepareSessionJobInputSchema.parse(data));
     default: {
       const exhaustive: never = type;
       throw new Error(`unhandled job type: ${exhaustive}`);

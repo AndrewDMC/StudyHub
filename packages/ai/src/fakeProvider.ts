@@ -12,6 +12,7 @@ import type {
   OcrTextPromptInput,
   SchemaPromptInput,
   SchemaTranscriptionPromptInput,
+  SessionBriefingPromptInput,
   SessionChatPromptInput,
   SimulationPromptInput,
   SummaryPromptInput,
@@ -30,6 +31,7 @@ import type {
   SchemaGraphOutput,
   SchemaNode,
   SchemaOutput,
+  SessionBriefingOutput,
   SimulationOutput,
   SummaryOutput,
   TopicEstimate,
@@ -49,6 +51,7 @@ import {
   OCR_TEXT_PROMPT_VERSION,
   SCHEMA_PROMPT_VERSION,
   SCHEMA_TRANSCRIPTION_PROMPT_VERSION,
+  SESSION_BRIEFING_PROMPT_VERSION,
   SESSION_CHAT_PROMPT_VERSION,
   SIMULATION_PROMPT_VERSION,
   SUMMARY_PROMPT_VERSION,
@@ -131,6 +134,65 @@ export class FakeProvider implements AiProvider {
       usage: { inputTokens, outputTokens },
       model: FAKE_MODEL,
       promptVersion: SUMMARY_PROMPT_VERSION,
+    };
+  }
+
+  /**
+   * Extractive stand-in: key points are the first substantial sentence of spread-out chunks, exercises
+   * are cloze blanks on a long word of such a sentence. Every quote is a verbatim sentence of its chunk.
+   */
+  async generateSessionBriefing(
+    input: SessionBriefingPromptInput,
+    _model: string,
+  ): Promise<GeneratedWithMeta<SessionBriefingOutput>> {
+    const candidates = input.chunks.flatMap((chunk) => {
+      const sentence = splitSentences(chunk.text).find((s) => s.length >= 30);
+      return sentence ? [{ chunk, sentence }] : [];
+    });
+    const spread = <T>(items: T[], count: number): T[] => {
+      if (count <= 0 || items.length === 0) return [];
+      if (items.length <= count) return items;
+      return Array.from(
+        { length: count },
+        (_, i) => items[Math.floor((i * items.length) / count)]!,
+      );
+    };
+
+    const keyPoints = spread(candidates, input.keyPointCount).map(({ chunk, sentence }) => ({
+      title: truncate(sentence, 80),
+      explanation: sentence,
+      sourceRef: { docId: chunk.docId, page: chunk.page, quote: sentence },
+    }));
+
+    const existing = new Set(input.existingExercises);
+    const blanks = candidates.flatMap(({ chunk, sentence }) => {
+      const word = sentence
+        .split(/\s+/)
+        .map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ''))
+        .filter((w) => w.length >= 6)
+        .sort((a, b) => b.length - a.length)[0];
+      if (!word) return [];
+      const prompt = `Completa la frase: "${sentence.replace(word, '____')}"`;
+      return existing.has(prompt) ? [] : [{ chunk, sentence, word, prompt }];
+    });
+    const exercises = spread(blanks, input.exerciseCount).map(
+      ({ chunk, sentence, word, prompt }, i) => ({
+        prompt,
+        solution: `${word} — «${sentence}»`,
+        difficulty: Math.min(3, 1 + Math.floor((i * 3) / Math.max(1, input.exerciseCount))),
+        sourceRef: { docId: chunk.docId, page: chunk.page, quote: sentence },
+      }),
+    );
+
+    const data: SessionBriefingOutput = { keyPoints, exercises };
+    return {
+      data,
+      usage: {
+        inputTokens: input.chunks.reduce((sum, c) => sum + estimateTokens(c.text), 0),
+        outputTokens: estimateTokens(JSON.stringify(data)),
+      },
+      model: FAKE_MODEL,
+      promptVersion: SESSION_BRIEFING_PROMPT_VERSION,
     };
   }
 

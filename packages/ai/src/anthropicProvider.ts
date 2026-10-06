@@ -17,6 +17,7 @@ import type {
   OcrTextPromptInput,
   SchemaPromptInput,
   SchemaTranscriptionPromptInput,
+  SessionBriefingPromptInput,
   SessionChatPromptInput,
   SimulationPromptInput,
   SummaryPromptInput,
@@ -32,6 +33,7 @@ import {
   OcrTextOutputSchema,
   SchemaGraphOutputSchema,
   SchemaOutputSchema,
+  SessionBriefingOutputSchema,
   SimulationOutputSchema,
   SummaryOutputSchema,
   type ClassifyDocumentTypeOutput,
@@ -44,6 +46,7 @@ import {
   type OcrTextOutput,
   type SchemaGraphOutput,
   type SchemaOutput,
+  type SessionBriefingOutput,
   type SimulationOutput,
   type SummaryOutput,
 } from './schemas.js';
@@ -57,6 +60,7 @@ import {
   renderSchemaTranscriptionUserPrompt,
   renderSchemaUserPrompt,
   renderSessionChatUserPrompt,
+  renderSessionBriefingUserPrompt,
   renderSimulationUserPrompt,
   renderSummaryUserPrompt,
 } from './promptRender.js';
@@ -106,6 +110,22 @@ export class AnthropicProvider implements AiProvider {
       system,
       renderSummaryUserPrompt(input),
       SummaryOutputSchema,
+      model,
+      4096,
+    );
+    return { data, usage, model, promptVersion };
+  }
+
+  async generateSessionBriefing(
+    input: SessionBriefingPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<SessionBriefingOutput>> {
+    const { text: system, promptVersion } = loadPrompt('session_briefing', 1);
+    const { data, usage } = await this.callWithTool(
+      'emit_session_briefing',
+      system,
+      renderSessionBriefingUserPrompt(input),
+      SessionBriefingOutputSchema,
       model,
       4096,
     );

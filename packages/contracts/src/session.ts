@@ -108,3 +108,94 @@ export type SessionChatEvent =
   | { type: 'delta'; text: string }
   | { type: 'done'; message: SessionMessageDto; costEur: number }
   | { type: 'error'; message: string };
+
+// ---- Briefing: punti chiave ed esercizi (docs/08-sessione-di-studio.md §5.2, fase 3) ----
+
+/** `all` = punti chiave + esercizi (una sola volta per sessione); `exercises` = "altri esercizi". */
+export const SessionBriefingModeSchema = z.enum(['all', 'exercises']);
+export type SessionBriefingMode = z.infer<typeof SessionBriefingModeSchema>;
+
+export const PrepareSessionJobInputSchema = z.object({
+  subjectId: z.string().uuid(),
+  sessionId: z.string().uuid(),
+  mode: SessionBriefingModeSchema.default('all'),
+  model: z.string().optional(),
+  /** Bypasses the daily budget cap once, with an explicit ack. */
+  force: z.boolean().default(false),
+});
+export type PrepareSessionJobInput = z.infer<typeof PrepareSessionJobInputSchema>;
+
+export const StartBriefingRequestSchema = z.object({
+  mode: SessionBriefingModeSchema.default('all'),
+  model: z.string().min(1).max(100).optional(),
+  force: z.boolean().default(false),
+});
+export type StartBriefingRequest = z.infer<typeof StartBriefingRequestSchema>;
+
+export const EstimateBriefingRequestSchema = z.object({
+  mode: SessionBriefingModeSchema.default('all'),
+  model: z.string().min(1).max(100),
+});
+export type EstimateBriefingRequest = z.infer<typeof EstimateBriefingRequestSchema>;
+
+export const EstimateBriefingResponseSchema = z.object({
+  model: z.string(),
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  costEur: z.number().nonnegative(),
+});
+export type EstimateBriefingResponse = z.infer<typeof EstimateBriefingResponseSchema>;
+
+/** Stato di un punto chiave (`open`/`done`) o di un esercizio (`open`/`correct`/`wrong`, autovalutato). */
+export const SessionItemStateSchema = z.enum(['open', 'done', 'correct', 'wrong']);
+
+export const UpdateSessionItemRequestSchema = z
+  .object({
+    state: SessionItemStateSchema.optional(),
+    answer: z.string().max(8000).nullable().optional(),
+  })
+  .refine((v) => v.state !== undefined || v.answer !== undefined, {
+    message: 'Niente da aggiornare',
+  });
+export type UpdateSessionItemRequest = z.infer<typeof UpdateSessionItemRequestSchema>;
+
+export const SessionItemCitationDtoSchema = z.object({
+  docId: z.string().uuid(),
+  documentName: z.string(),
+  page: z.number().int().positive(),
+  quote: z.string(),
+});
+export type SessionItemCitationDto = z.infer<typeof SessionItemCitationDtoSchema>;
+
+export const SessionItemDtoSchema = z.object({
+  id: z.string().uuid(),
+  kind: z.enum(['key_point', 'exercise']),
+  orderIndex: z.number().int(),
+  /** Il punto chiave, oppure il testo dell'esercizio. */
+  title: z.string(),
+  /** La spiegazione, oppure la soluzione attesa. */
+  body: z.string(),
+  difficulty: z.number().int().min(1).max(3).nullable(),
+  citations: z.array(SessionItemCitationDtoSchema),
+  topicId: z.string().uuid().nullable(),
+  state: SessionItemStateSchema,
+  answer: z.string().nullable(),
+});
+export type SessionItemDto = z.infer<typeof SessionItemDtoSchema>;
+
+export const BriefingJobDtoSchema = z.object({
+  id: z.string().uuid(),
+  mode: SessionBriefingModeSchema,
+  status: z.enum(['queued', 'running', 'succeeded', 'failed', 'cancelled']),
+  error: z.string().nullable(),
+});
+export type BriefingJobDto = z.infer<typeof BriefingJobDtoSchema>;
+
+export const SessionBriefingDtoSchema = z.object({
+  items: z.array(SessionItemDtoSchema),
+  /** L'ultimo job di preparazione, per mostrare "in corso" o l'errore con "riprova". */
+  job: BriefingJobDtoSchema.nullable(),
+  /** Costo cumulativo dei job di briefing di questa sessione. */
+  costEur: z.number(),
+});
+export type SessionBriefingDto = z.infer<typeof SessionBriefingDtoSchema>;

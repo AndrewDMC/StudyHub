@@ -8,6 +8,7 @@ import type {
   SessionCitationDto,
   SessionDocumentDto,
   SessionFocus,
+  SessionItemCitationDto,
   StudySessionDto,
   TopicDto,
   UpdateSessionRequest,
@@ -15,6 +16,7 @@ import type {
 import { Button } from '@/components/ui/button';
 import { ObsidianMarkdown } from '@/components/ObsidianMarkdown';
 import { formatClock, PomodoroPanel, usePomodoro } from '@/components/PomodoroTimer';
+import { SessionBriefing } from '@/components/SessionBriefing';
 import { SessionChat } from '@/components/SessionChat';
 
 async function readJson<T>(res: Response, fallback: string): Promise<T> {
@@ -340,8 +342,8 @@ function TopicPicker({
 /**
  * The work page opened by "Inizia" on a task (docs/08-sessione-di-studio.md):
  * the material of the task's topics at a glance, a real-time timer, "Termina"
- * and (phase 2) a tutor chat that answers only from that material and cites
- * it. The AI briefing lands in a later phase.
+ * (phase 2) a tutor chat that answers only from that material and cites it and
+ * (phase 3) key points and exercises generated on request.
  */
 export function SessionClient({ slug, sessionId }: { slug: string; sessionId: string }) {
   const queryClient = useQueryClient();
@@ -351,6 +353,8 @@ export function SessionClient({ slug, sessionId }: { slug: string; sessionId: st
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Below `lg` the columns become two tabs; on desktop everything is side by side.
   const [tab, setTab] = useState<'material' | 'chat'>('material');
+  // The middle column shows either the document or the key points / exercises.
+  const [center, setCenter] = useState<'document' | 'study'>('document');
   const [focus, setFocus] = useState<SessionFocus | null>(null);
   const [target, setTarget] = useState<{ docId: string; page: number; nonce: number } | null>(null);
 
@@ -396,9 +400,12 @@ export function SessionClient({ slug, sessionId }: { slug: string; sessionId: st
   const shownMs = active ? timer.studyMs : (session?.activeMs ?? 0);
   const documentNames = new Map(docs.map((d) => [d.id, d.name]));
 
-  const openCitation = (citation: SessionCitationDto) => {
+  const openCitation = (
+    citation: Pick<SessionCitationDto | SessionItemCitationDto, 'docId' | 'page'>,
+  ) => {
     setSelectedId(citation.docId);
     setTarget({ docId: citation.docId, page: citation.page, nonce: Date.now() });
+    setCenter('document');
     setTab('material');
   };
   const askAboutSelection = (next: SessionFocus) => {
@@ -505,14 +512,50 @@ export function SessionClient({ slug, sessionId }: { slug: string; sessionId: st
                 <MaterialList
                   session={session}
                   selectedId={selected?.id ?? null}
-                  onSelect={setSelectedId}
+                  onSelect={(id) => {
+                    setSelectedId(id);
+                    setCenter('document');
+                  }}
                   topicsById={topicsById}
                 />
               )}
             </aside>
 
-            <main className={`min-w-0 ${tab === 'chat' ? 'hidden lg:block' : ''}`}>
-              {selected ? (
+            <main className={`min-w-0 space-y-3 ${tab === 'chat' ? 'hidden lg:block' : ''}`}>
+              <div role="tablist" aria-label="Centro della pagina" className="flex gap-1">
+                {(
+                  [
+                    ['document', 'Documento'],
+                    ['study', 'Punti chiave ed esercizi'],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="tab"
+                    aria-selected={center === id}
+                    onClick={() => setCenter(id)}
+                    className={`rounded-[var(--radius-control)] border px-3 py-1 text-sm ${
+                      center === id
+                        ? 'border-accent bg-bg-raised text-fg-primary'
+                        : 'border-border text-fg-secondary'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {center === 'study' ? (
+                <SessionBriefing
+                  slug={slug}
+                  sessionId={sessionId}
+                  active={active}
+                  hasDocuments={docs.length > 0}
+                  onOpenCitation={openCitation}
+                  onAsk={askAboutSelection}
+                />
+              ) : selected ? (
                 <DocumentViewer
                   key={selected.id}
                   slug={slug}

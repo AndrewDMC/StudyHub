@@ -9,6 +9,7 @@ import {
   pgTable,
   primaryKey,
   real,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
@@ -746,6 +747,8 @@ export const studySessions = pgTable(
     pomodoros: integer('pomodoros').notNull().default(0),
     // Chat transcript written on "Termina" (relative to the subject folder), docs/08 decision 2.
     transcriptPath: text('transcript_path'),
+    // Latest `prepare_session` job (key points + exercises, phase 3); no FK: the row exists only once the worker picks it up.
+    briefingJobId: uuid('briefing_job_id'),
     startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
     endedAt: timestamp('ended_at', { withTimezone: true }),
   },
@@ -789,6 +792,44 @@ export const sessionMessages = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index('session_messages_session_idx').on(table.sessionId, table.createdAt)],
+);
+
+/** A source the briefing cites for a key point or an exercise: a verbatim quote of the material. */
+export interface SessionItemCitation {
+  docId: string;
+  page: number;
+  quote: string;
+}
+
+export type SessionItemKind = 'key_point' | 'exercise';
+/** Key points: `open` | `done` (checked). Exercises: `open` | `correct` | `wrong` (self-assessed). */
+export type SessionItemState = 'open' | 'done' | 'correct' | 'wrong';
+
+/**
+ * The AI briefing of a study session (docs/08-sessione-di-studio.md §4, phase 3): the key points
+ * to understand and the exercises to practise, generated only on request (decision 3). `title` is
+ * the key point or the exercise text; `body` the explanation or the expected solution.
+ */
+export const sessionItems = pgTable(
+  'session_items',
+  {
+    id: uuid('id').primaryKey(),
+    sessionId: uuid('session_id')
+      .notNull()
+      .references(() => studySessions.id, { onDelete: 'cascade' }),
+    kind: text('kind').$type<SessionItemKind>().notNull(),
+    orderIndex: integer('order_index').notNull(),
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    // Exercises only (1 easy – 3 hard).
+    difficulty: smallint('difficulty'),
+    citations: jsonb('citations').$type<SessionItemCitation[]>().notNull().default([]),
+    topicId: uuid('topic_id').references(() => topics.id, { onDelete: 'set null' }),
+    state: text('state').$type<SessionItemState>().notNull().default('open'),
+    answer: text('answer'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('session_items_session_idx').on(table.sessionId, table.kind, table.orderIndex)],
 );
 
 /**
@@ -865,3 +906,5 @@ export type StudySession = typeof studySessions.$inferSelect;
 export type NewStudySession = typeof studySessions.$inferInsert;
 export type SessionMessage = typeof sessionMessages.$inferSelect;
 export type NewSessionMessage = typeof sessionMessages.$inferInsert;
+export type SessionItem = typeof sessionItems.$inferSelect;
+export type NewSessionItem = typeof sessionItems.$inferInsert;

@@ -1,6 +1,6 @@
 # Sessione di studio — piano di implementazione
 
-> Stato: **fasi 1 e 2 implementate** (2026-09-29 / 2026-10-05); fasi 3–4 da fare. Vedi §10 per lo stato e §9 per le decisioni prese.
+> Stato: **fasi 1, 2 e 3 implementate** (2026-09-29 / 2026-10-05 / 2026-10-06); fase 4 da fare. Vedi §10 per lo stato e §9 per le decisioni prese.
 > Realizza anche il "pannello AI contestuale" rinviato da F2 (`packages/db/src/schema.ts`, commento su `exams`).
 
 ## 1. Cosa vuole l'utente, in una frase
@@ -184,7 +184,7 @@ testata della chat.
 | --- | ------------------------- | --------------------------------------------------------------------------------------------------------------- | -------- |
 | 1   | **Sessione + materiale**  | tabelle, §3, avvio e chiusura, pagina con pannello Materiale, timer, "Inizia" collegato                         | no       |
 | 2   | **Chat citata** ✔         | retrieval filtrato, `chatStream` su 3 provider, SSE, selezione → chat, costi                                    | sì       |
-| 3   | **Briefing**              | job `prepare_session`, punti chiave ed esercizi, checklist, "altri esercizi"                                    | sì       |
+| 3   | **Briefing** ✔            | job `prepare_session`, punti chiave ed esercizi, checklist, "altri esercizi"                                    | sì       |
 | 4   | **Chiusura intelligente** | correzione esercizi, flashcard dai punti chiave, esercizi sbagliati nei drill (#8), `active_ms` al Planner (#7) | parziale |
 
 Metto la chat prima del briefing perché è il pezzo che dà più valore subito e riusa di più
@@ -307,4 +307,42 @@ migrazione 0016).
   i tre provider contro client simulati; il parsing dello stream di `claude` è basato sul formato `stream-json`
   documentato, non su un'esecuzione reale. Serve ricostruire lo stack (migrazioni 0016–0018).
 
-### Prossimo: fase 3 (briefing)
+### Fase 3 — briefing (punti chiave ed esercizi) — fatta
+
+- **Dati**: tabella `session_items` e colonna `study_sessions.briefing_job_id` (migrazione `0019_session_items.sql`).
+  Niente stato `preparing` sulla sessione (decisione 3: il briefing parte solo su richiesta): lo stato è quello
+  dell'ultimo job, letto da `jobs`; finché il worker non lo prende non c'è la riga e la UI mostra «in coda».
+- **AI**: `AiProvider.generateSessionBriefing(input, model)` su Anthropic (tool `emit_session_briefing`), claude CLI e
+  `FakeProvider` (estrattivo: punti chiave = frasi dei chunk, esercizi = cloze su una parola lunga). Prompt
+  `session_briefing/v1.md`, schema `SessionBriefingOutputSchema`.
+- **Worker**: job `prepare_session` (`processors/generation/prepareSession.ts`). I chunk sono quelli dei documenti
+  della sessione, con priorità alle pagine pianificate dalla task e un tetto di ~48k caratteri
+  (`selectBriefingChunks`, core). 6 punti chiave + 4 esercizi; «altri esercizi» = 3, senza ripetere quelli
+  esistenti. Un elemento sopravvive solo se la `quote` è **verbatim** nel chunk citato (come le flashcard). Se non
+  sopravvive nulla il job fallisce con un messaggio chiaro. Lo stile degli esercizi segue `exam_profiles`, se c'è.
+  Budget giornaliero rispettato (`prepare_session` è fra i tipi AI conteggiati).
+- **Route**: `GET|POST /sessions/[id]/briefing` (elementi + stato job + costo; avvio del job),
+  `POST /sessions/[id]/briefing/estimate` (stima costo pre-flight), `PATCH /sessions/[id]/items/[itemId]`
+  (spunta di un punto chiave; risposta e autovalutazione di un esercizio). «Tutto» si può generare una volta sola;
+  mai due generazioni insieme; solo a sessione attiva.
+- **UI**: al centro della pagina una scheda «Punti chiave ed esercizi» (accanto a «Documento»): `ModelPicker` e costo
+  stimato sul pulsante, scheletro mentre il job gira (polling ogni 2 s), errore reale con «riprova»; checklist con
+  chip di citazione `↗` che apre il documento alla pagina e «Spiegami meglio» che manda la citazione alla chat;
+  esercizi con risposta libera, «Mostra la soluzione» e autovalutazione «Ho risposto bene / Ho sbagliato»
+  (decisione 1, via gratuita). Costo cumulativo del briefing in testata.
+- **Test**: 5 unit (core), 3 (provider fake + prompt), 6 worker (pglite: citazioni, "altri esercizi", validazione,
+  runJob) e 11 web (avvio, conflitti, stato job, stima, aggiornamento item).
+
+**Non fatto / limiti**
+
+- «Correggi con l'AI» (job `gradeAnswer`), flashcard dai punti chiave, esercizi sbagliati nei drill e `active_ms`
+  al Planner restano alla fase 4. Per ora gli esercizi si autovalutano e lo stato `wrong` non alimenta nulla.
+- `topic_id` di un elemento è l'argomento della sessione a cui è taggato il documento citato (il primo, se più d'uno).
+- «Altri esercizi» con materiale piccolo può non trovarne di nuovi: il job fallisce con «Nessun nuovo esercizio».
+- Un job rimasto in coda (worker spento) mostra «in preparazione» senza limite di tempo.
+- **Non verificato nel browser** (come le fasi 1–2): serve ricostruire lo stack Docker (migrazioni 0016–0019) e
+  provare pagina, worker e job reali. Coperti da test e typecheck: logica, validazione delle citazioni, route lato
+  libreria e provider; i provider reali (Anthropic, claude CLI) per `generateSessionBriefing` non sono stati
+  provati contro il servizio vero.
+
+### Prossimo: fase 4 (chiusura intelligente)

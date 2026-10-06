@@ -24,4 +24,5 @@ export const SIMULATION_PROMPT_VERSION = loadPrompt('simulation', 2).promptVersi
 export const GRADING_PROMPT_VERSION = loadPrompt('grading', 1).promptVersion;
 export const ESTIMATE_TOPICS_PROMPT_VERSION = loadPrompt('estimate_topics', 1).promptVersion;
 export const EXTRACT_TOPICS_PROMPT_VERSION = loadPrompt('extract_topics', 2).promptVersion;
+export const SESSION_BRIEFING_PROMPT_VERSION = loadPrompt('session_briefing', 1).promptVersion;
 export const SESSION_CHAT_PROMPT_VERSION = loadPrompt('session_chat', 1).promptVersion;
