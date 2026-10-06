@@ -218,6 +218,13 @@ export const PlanPreviewDtoSchema = z.object({
   loadPerWeek: z.array(WeekLoadDtoSchema),
   /** Minutes taken out of the window by other subjects' tasks and imported events. */
   busyMinutes: z.number(),
+  /** The student's personal estimate-vs-real factor applied to the estimates (1 = not enough data). */
+  timeFactor: z.object({
+    factor: z.number(),
+    sampleCount: z.number().int(),
+    /** "sottostimi del 40%", or null when there is nothing worth saying. */
+    note: z.string().nullable(),
+  }),
 });
 export type PlanPreviewDto = z.infer<typeof PlanPreviewDtoSchema>;
 

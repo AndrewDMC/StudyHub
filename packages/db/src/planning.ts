@@ -1,7 +1,12 @@
-import { and, eq, inArray, ne } from 'drizzle-orm';
-import type { PlannerTopic } from '@studyhub/core';
+import { and, desc, eq, gt, inArray, ne } from 'drizzle-orm';
+import {
+  computeTimeFactor,
+  TIME_FACTOR_MAX_SAMPLES,
+  type PlannerTopic,
+  type TimeFactor,
+} from '@studyhub/core';
 import { resolvePrimaryTopics } from './documentTopics.js';
-import { calendarEvents, documents, tasks } from './schema.js';
+import { calendarEvents, documents, studyPlans, studySessions, tasks } from './schema.js';
 
 /**
  * Minutes an imported calendar event takes out of a day. An imported event
@@ -129,4 +134,35 @@ export async function loadBusyMinutesByDate(
     .from(calendarEvents);
   for (const row of eventRows) busy[row.date] = (busy[row.date] ?? 0) + IMPORTED_EVENT_MINUTES;
   return busy;
+}
+
+/**
+ * The student's personal estimate-vs-real factor (docs/06-miglioramenti.md #7), across every subject:
+ * how long they take is a trait of the person, not of the course. Built from the ended study sessions that
+ * came from a planned task, newest first; each carries the factor its plan had already applied.
+ */
+export async function loadTimeFactor(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+): Promise<TimeFactor> {
+  const rows: { activeMs: number; minutes: number; planFactor: number }[] = await db
+    .select({
+      activeMs: studySessions.activeMs,
+      minutes: tasks.minutes,
+      planFactor: studyPlans.timeFactor,
+    })
+    .from(studySessions)
+    .innerJoin(tasks, eq(tasks.id, studySessions.taskId))
+    .innerJoin(studyPlans, eq(studyPlans.id, tasks.planId))
+    .where(and(eq(studySessions.status, 'ended'), gt(studySessions.activeMs, 0)))
+    .orderBy(desc(studySessions.endedAt))
+    // A few more than the window: sessions too short to count are dropped after the fetch.
+    .limit(TIME_FACTOR_MAX_SAMPLES * 3);
+  return computeTimeFactor(
+    rows.map((r) => ({
+      plannedMin: r.minutes,
+      actualMin: r.activeMs / 60_000,
+      appliedFactor: r.planFactor,
+    })),
+  );
 }

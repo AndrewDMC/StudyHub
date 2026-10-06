@@ -19,9 +19,11 @@ import { endSession, startSession } from '../src/lib/sessions';
 import {
   estimateBriefing,
   getBriefing,
+  gradeSessionItem,
   startBriefing,
   updateSessionItem,
 } from '../src/lib/sessionBriefing';
+import { FakeProvider, type AiProvider } from '@studyhub/ai';
 import { ConflictError, NotFoundError } from '../src/lib/examPrep';
 
 describe('session briefing (key points + exercises)', () => {
@@ -276,6 +278,87 @@ describe('session briefing (key points + exercises)', () => {
       await expect(updateSessionItem(db, slug, sessionId, kp, { state: 'done' })).rejects.toThrow(
         /già terminata/,
       );
+    });
+  });
+
+  describe('gradeSessionItem', () => {
+    const grader = (awarded: number): AiProvider =>
+      Object.assign(Object.create(new FakeProvider()), {
+        async gradeAnswer() {
+          return {
+            data: {
+              criteria: [
+                { criterion: 'Risposta corretta e completa', awarded, max: 1, feedback: 'Ok.' },
+              ],
+              missing: awarded < 1 ? ['il passaggio finale'] : [],
+            },
+            usage: { inputTokens: 100, outputTokens: 20 },
+            model: 'claude-sonnet-5-5',
+            promptVersion: 'grading/v1',
+          };
+        },
+      });
+
+    async function answered(text: string | null = 'Scambio l’ordine di integrazione') {
+      const ex = await addItem('exercise', 0, 'Calcola con Fubini');
+      if (text !== null) await updateSessionItem(db, slug, sessionId, ex, { answer: text });
+      return ex;
+    }
+
+    it('stores the AI feedback, sets the state from the score and logs the cost', async () => {
+      const ex = await answered();
+      const graded = await gradeSessionItem(db, grader(0.9), slug, sessionId, ex, {});
+      expect(graded.state).toBe('correct');
+      expect(graded.feedback).toMatchObject({
+        score: 0.9,
+        feedback: 'Ok.',
+        missing: ['il passaggio finale'],
+        model: 'claude-sonnet-5-5',
+      });
+      const ledger = await db.select().from(jobs).where(eq(jobs.type, 'session_grade'));
+      expect(ledger).toHaveLength(1);
+      expect((await getBriefing(db, slug, sessionId)).costEur).toBeGreaterThan(0);
+
+      const weak = await gradeSessionItem(db, grader(0.2), slug, sessionId, ex, {});
+      expect(weak.state).toBe('wrong');
+    });
+
+    it('never trusts a score above the rubric maximum', async () => {
+      const ex = await answered();
+      const graded = await gradeSessionItem(db, grader(7), slug, sessionId, ex, {});
+      expect(graded.feedback?.score).toBe(1);
+    });
+
+    it('needs an answer, an exercise and an open session', async () => {
+      const empty = await answered(null);
+      await expect(gradeSessionItem(db, grader(1), slug, sessionId, empty, {})).rejects.toThrow(
+        /Scrivi prima/,
+      );
+      const kp = await addItem('key_point', 0, 'Fubini');
+      await expect(gradeSessionItem(db, grader(1), slug, sessionId, kp, {})).rejects.toThrow(
+        /solo gli esercizi/,
+      );
+      await expect(
+        gradeSessionItem(db, grader(1), slug, sessionId, randomUUID(), {}),
+      ).rejects.toThrow(NotFoundError);
+      await endSession(db, slug, sessionId);
+      await expect(gradeSessionItem(db, grader(1), slug, sessionId, empty, {})).rejects.toThrow(
+        /già terminata/,
+      );
+    });
+
+    it('drops a correction when the answer it graded is edited', async () => {
+      const ex = await answered();
+      await gradeSessionItem(db, grader(1), slug, sessionId, ex, {});
+      const edited = await updateSessionItem(db, slug, sessionId, ex, { answer: 'Un’altra idea' });
+      expect(edited.feedback).toBeNull();
+    });
+
+    it('grades with the offline provider too (keyword coverage of the expected solution)', async () => {
+      const ex = await answered('Spiegazione');
+      const graded = await gradeSessionItem(db, new FakeProvider(), slug, sessionId, ex, {});
+      expect(graded.feedback).not.toBeNull();
+      expect(['correct', 'wrong']).toContain(graded.state);
     });
   });
 });

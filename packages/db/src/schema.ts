@@ -662,6 +662,9 @@ export const studyPlans = pgTable('study_plans', {
   model: text('model').notNull(),
   promptVersion: text('prompt_version').notNull(),
   jobKey: text('job_key'),
+  // The student's personal time factor applied to the estimates when this plan was made (1 = none),
+  // kept so later sessions are measured against the raw estimate (`loadTimeFactor`).
+  timeFactor: real('time_factor').notNull().default(1),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   committedAt: timestamp('committed_at', { withTimezone: true }),
 });
@@ -749,6 +752,12 @@ export const studySessions = pgTable(
     transcriptPath: text('transcript_path'),
     // Latest `prepare_session` job (key points + exercises, phase 3); no FK: the row exists only once the worker picks it up.
     briefingJobId: uuid('briefing_job_id'),
+    // Closing actions of phase 4 (docs/08): the deck of key-point cards and the drill of wrong exercises
+    // made from this session — set once, so asking again returns them instead of duplicating.
+    flashcardDeckId: uuid('flashcard_deck_id').references(() => artifacts.id, {
+      onDelete: 'set null',
+    }),
+    drillId: uuid('drill_id').references(() => artifacts.id, { onDelete: 'set null' }),
     startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
     endedAt: timestamp('ended_at', { withTimezone: true }),
   },
@@ -801,6 +810,15 @@ export interface SessionItemCitation {
   quote: string;
 }
 
+/** The AI's grade of an exercise answer ("Correggi con l'AI", docs/08 decision 1): score 0..1. */
+export interface SessionItemFeedback {
+  score: number;
+  feedback: string;
+  missing: string[];
+  model: string;
+  gradedAt: string;
+}
+
 export type SessionItemKind = 'key_point' | 'exercise';
 /** Key points: `open` | `done` (checked). Exercises: `open` | `correct` | `wrong` (self-assessed). */
 export type SessionItemState = 'open' | 'done' | 'correct' | 'wrong';
@@ -827,6 +845,8 @@ export const sessionItems = pgTable(
     topicId: uuid('topic_id').references(() => topics.id, { onDelete: 'set null' }),
     state: text('state').$type<SessionItemState>().notNull().default('open'),
     answer: text('answer'),
+    // Null until the student asks for the AI correction; self-assessment never writes it.
+    feedback: jsonb('feedback').$type<SessionItemFeedback>(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index('session_items_session_idx').on(table.sessionId, table.kind, table.orderIndex)],

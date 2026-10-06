@@ -21,3 +21,4 @@ export * from './session.js';
 export * from './pomodoro.js';
 export * from './sessionChat.js';
 export * from './sessionBriefing.js';
+export * from './timeFactor.js';

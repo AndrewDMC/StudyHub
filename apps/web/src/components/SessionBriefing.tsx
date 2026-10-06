@@ -84,6 +84,18 @@ async function patchItem(
   return body.item;
 }
 
+async function postGrade(slug: string, sessionId: string, itemId: string): Promise<SessionItemDto> {
+  const body = await readJson<{ item: SessionItemDto }>(
+    await fetch(`${base(slug, sessionId)}/items/${itemId}/grade`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    }),
+    'Correzione non riuscita',
+  );
+  return body.item;
+}
+
 /** €0 → "gratis" (FakeProvider, nessuna chiave configurata). */
 function formatCost(costEur: number): string {
   return costEur === 0 ? 'gratis' : `~€${costEur.toFixed(4)}`;
@@ -181,13 +193,20 @@ function ExerciseCard({
   item,
   index,
   active,
+  grading,
+  gradeError,
   onPatch,
+  onGrade,
   onOpenCitation,
 }: {
   item: SessionItemDto;
   index: number;
   active: boolean;
+  grading: boolean;
+  gradeError: string | null;
   onPatch: (patch: UpdateSessionItemRequest) => void;
+  /** Receives the answer as typed, so it is saved before it is graded. */
+  onGrade: (answer: string) => void;
   onOpenCitation: (citation: SessionItemCitationDto) => void;
 }) {
   const [answer, setAnswer] = useState(item.answer ?? '');
@@ -218,7 +237,47 @@ function ExerciseCard({
         className="w-full resize-y rounded-[var(--radius-control)] border border-border bg-bg-inset px-2 py-1.5 text-sm text-fg-primary outline-none focus:border-accent disabled:opacity-60"
       />
 
-      {showSolution ? (
+      {active && !showSolution && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={grading || !answer.trim()}
+            onClick={() => onGrade(answer)}
+          >
+            {grading ? 'Correggo…' : 'Correggi con l’AI'}
+          </Button>
+          {!answer.trim() && (
+            <span className="text-xs text-fg-muted">Scrivi prima una risposta.</span>
+          )}
+        </div>
+      )}
+      {gradeError && (
+        <p role="alert" className="text-xs text-danger">
+          {gradeError}
+        </p>
+      )}
+      {item.feedback && (
+        <div
+          role="status"
+          className="space-y-1 rounded-[var(--radius-control)] border border-border bg-bg-inset p-2 text-sm"
+        >
+          <p className="text-xs font-medium uppercase tracking-wide text-fg-muted">
+            Correzione dell&apos;AI · {Math.round(item.feedback.score * 100)}%
+          </p>
+          <Markdown source={item.feedback.feedback} />
+          {item.feedback.missing.length > 0 && (
+            <ul className="list-disc pl-5 text-fg-secondary">
+              {item.feedback.missing.map((m) => (
+                <li key={m}>Manca: {m}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {showSolution || item.feedback ? (
         <div className="space-y-2 rounded-[var(--radius-control)] border border-border bg-bg-inset p-2">
           <p className="text-xs font-medium uppercase tracking-wide text-fg-muted">Soluzione</p>
           <Markdown source={item.body} />
@@ -259,7 +318,7 @@ function ExerciseCard({
 /**
  * Key points and exercises of a study session (docs/08-sessione-di-studio.md §5.2, decision 3):
  * nothing is generated until the student asks, with the model and the estimated cost in plain sight.
- * Exercises are self-assessed here — "Correggi con l'AI" comes with the next phase.
+ * An exercise is either self-assessed after "Mostra la soluzione" (free) or graded by the AI (paid).
  */
 export function SessionBriefing({
   slug,
@@ -315,6 +374,22 @@ export function SessionBriefing({
       queryClient.setQueryData<SessionBriefingDto>(key, (prev) =>
         prev ? { ...prev, items: prev.items.map((i) => (i.id === item.id ? item : i)) } : prev,
       ),
+  });
+
+  const grade = useMutation({
+    mutationFn: async ({ id, answer }: { id: string; answer: string }) => {
+      // The textarea saves on blur; the correction must see what is on screen, so save it first.
+      const current = query.data?.items.find((i) => i.id === id);
+      if (current && answer !== (current.answer ?? ''))
+        await patchItem(slug, sessionId, id, { answer });
+      return postGrade(slug, sessionId, id);
+    },
+    onSuccess: (item) =>
+      queryClient.setQueryData<SessionBriefingDto>(key, (prev) =>
+        prev ? { ...prev, items: prev.items.map((i) => (i.id === item.id ? item : i)) } : prev,
+      ),
+    // The paid call also moved the costs: refetch so the header total follows.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: key }),
   });
 
   if (query.isLoading) return <p className="text-sm text-fg-muted">Caricamento…</p>;
@@ -419,7 +494,7 @@ export function SessionBriefing({
         ))}
         {data && data.costEur > 0 && (
           <span className="ml-auto text-xs text-fg-muted">
-            Costo generazione: €{data.costEur.toFixed(4)}
+            Costo AI: €{data.costEur.toFixed(4)}
           </span>
         )}
       </div>
@@ -454,7 +529,14 @@ export function SessionBriefing({
                 item={item}
                 index={i}
                 active={active}
+                grading={grade.isPending && grade.variables?.id === item.id}
+                gradeError={
+                  grade.isError && grade.variables?.id === item.id
+                    ? (grade.error as Error).message
+                    : null
+                }
                 onPatch={(body) => patch.mutate({ id: item.id, ...body })}
+                onGrade={(answer) => grade.mutate({ id: item.id, answer })}
                 onOpenCitation={onOpenCitation}
               />
             ),

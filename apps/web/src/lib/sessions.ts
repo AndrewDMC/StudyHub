@@ -290,5 +290,7 @@ async function toDto(db: AnyDb, row: StudySession, task: TaskRow | null): Promis
     startedAt: row.startedAt.toISOString(),
     endedAt: row.endedAt ? row.endedAt.toISOString() : null,
     transcriptPath: row.transcriptPath,
+    flashcardDeckId: row.flashcardDeckId,
+    drillId: row.drillId,
   };
 }

@@ -141,6 +141,13 @@
       "when": 1790700300000,
       "tag": "0019_session_items",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790700400000,
+      "tag": "0020_session_closing",
+      "breakpoints": true
     }
   ]
 }

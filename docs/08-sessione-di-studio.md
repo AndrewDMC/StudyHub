@@ -1,6 +1,6 @@
 # Sessione di studio — piano di implementazione
 
-> Stato: **fasi 1, 2 e 3 implementate** (2026-09-29 / 2026-10-05 / 2026-10-06); fase 4 da fare. Vedi §10 per lo stato e §9 per le decisioni prese.
+> Stato: **fasi 1, 2, 3 e 4 implementate** (2026-09-29 / 2026-10-05 / 2026-10-06 / 2026-10-06). Vedi §10 per lo stato e §9 per le decisioni prese.
 > Realizza anche il "pannello AI contestuale" rinviato da F2 (`packages/db/src/schema.ts`, commento su `exams`).
 
 ## 1. Cosa vuole l'utente, in una frase
@@ -180,12 +180,12 @@ testata della chat.
 
 ## 7. Fette di consegna (ognuna usabile da sola)
 
-| #   | Fetta                     | Contenuto                                                                                                       | AI?      |
-| --- | ------------------------- | --------------------------------------------------------------------------------------------------------------- | -------- |
-| 1   | **Sessione + materiale**  | tabelle, §3, avvio e chiusura, pagina con pannello Materiale, timer, "Inizia" collegato                         | no       |
-| 2   | **Chat citata** ✔         | retrieval filtrato, `chatStream` su 3 provider, SSE, selezione → chat, costi                                    | sì       |
-| 3   | **Briefing** ✔            | job `prepare_session`, punti chiave ed esercizi, checklist, "altri esercizi"                                    | sì       |
-| 4   | **Chiusura intelligente** | correzione esercizi, flashcard dai punti chiave, esercizi sbagliati nei drill (#8), `active_ms` al Planner (#7) | parziale |
+| #   | Fetta                       | Contenuto                                                                                                       | AI?      |
+| --- | --------------------------- | --------------------------------------------------------------------------------------------------------------- | -------- |
+| 1   | **Sessione + materiale**    | tabelle, §3, avvio e chiusura, pagina con pannello Materiale, timer, "Inizia" collegato                         | no       |
+| 2   | **Chat citata** ✔           | retrieval filtrato, `chatStream` su 3 provider, SSE, selezione → chat, costi                                    | sì       |
+| 3   | **Briefing** ✔              | job `prepare_session`, punti chiave ed esercizi, checklist, "altri esercizi"                                    | sì       |
+| 4   | **Chiusura intelligente** ✔ | correzione esercizi, flashcard dai punti chiave, esercizi sbagliati nei drill (#8), `active_ms` al Planner (#7) | parziale |
 
 Metto la chat prima del briefing perché è il pezzo che dà più valore subito e riusa di più
 (ricerca ibrida già pronta). Il briefing ha senso una volta che la pagina esiste già.
@@ -345,4 +345,45 @@ migrazione 0016).
   libreria e provider; i provider reali (Anthropic, claude CLI) per `generateSessionBriefing` non sono stati
   provati contro il servizio vero.
 
-### Prossimo: fase 4 (chiusura intelligente)
+### Fase 4 — chiusura intelligente — fatta
+
+- **«Correggi con l'AI»** (decisione 1, via a pagamento accanto a «Mostra la soluzione»): `POST .../items/[itemId]/grade`
+  chiama direttamente `gradeAnswer` (una chiamata breve, come la chat: niente coda). L'esercizio è corretto come un item
+  a un solo criterio contro la sua soluzione attesa; il punteggio è limitato a 0–1 (il correttore non può dare più
+  della rubrica) e da 0,6 in su lo stato diventa `correct`, altrimenti `wrong` (soglia `EXERCISE_PASS_RATIO`, la stessa
+  degli item deboli delle simulazioni). Restano modificabili a mano con l'autovalutazione. Il feedback (`session_items.feedback`:
+  punteggio, commento, cosa manca) si cancella se la risposta cambia, perché appartiene a quella risposta. Ogni correzione
+  scrive una riga `jobs` di tipo `session_grade` (compare in `/admin` e nel costo della sessione, ora «Costo AI»).
+  Modello predefinito: sonnet (routing «grade» di docs/03 §4).
+- **Alla chiusura** (`SessionClosing`, solo a sessione terminata, così l'insieme è definitivo) due azioni gratuite e
+  idempotenti (una seconda richiesta restituisce lo stesso oggetto; `study_sessions.flashcard_deck_id` e `drill_id`):
+  - **Flashcard dai punti chiave** (`POST .../flashcards`): una carta `basic` per punto (fronte = punto, retro = spiegazione,
+    stessa citazione, stesso argomento). **Nessuna chiamata AI**: i punti sono già generati e validati. Il mazzo nasce in
+    **bozza** come ogni mazzo generato, da approvare.
+  - **Esercizi sbagliati nei drill** (`POST .../drill`): una simulazione `drill_argomento` con gli esercizi `wrong`
+    (1 punto ciascuno, 5 min a esercizio, rubrica a un criterio, soluzione = quella attesa). È un normale drill: si
+    tenta e si corregge come gli altri. Gratis da creare.
+- **Tempo reale al Planner** (#7, `packages/core/src/timeFactor.ts`): `computeTimeFactor` = **mediana** di
+  `minuti studiati / minuti pianificati` sulle ultime 20 sessioni terminate nate da una task (scarta quelle sotto i 5 min
+  e le task senza stima), limitata a 0,5–2 e **applicata solo da 3 sessioni in su**. Il fattore è personale (tutte le
+  materie). `generate_plan` scala le stime degli argomenti e lo salva sul piano (`study_plans.time_factor`); le sessioni
+  successive si misurano dividendo per il fattore già applicato dal loro piano, altrimenti una correzione giusta
+  leggerebbe «nessun errore» e il fattore oscillerebbe. L'anteprima del wizard mostra «Tempi corretti sui tuoi dati:
+  sottostimi del 40% (×1.4, da N sessioni)». Nella chiusura si vedono «minuti studiati su previsti».
+- **Migrazione** `0020_session_closing.sql`: `session_items.feedback`, `study_sessions.{flashcard_deck_id,drill_id}`,
+  `study_plans.time_factor`.
+- **Test**: 8 unit (core, fattore), 4 db (`loadTimeFactor`), 1 worker (piano sul ritmo dello studente), 5 web chiusura
+  (mazzo, drill, idempotenza, tentabile) e 5 web correzione.
+
+**Non fatto / limiti**
+
+- **Non verificato nel browser né sul servizio vero** (come le fasi 1–3): serve ricostruire lo stack Docker
+  (migrazioni 0016–0020). La correzione con Anthropic / claude CLI riusa `gradeAnswer`, già provato per gli esami, ma non
+  con questo input.
+- La correzione fa una chiamata sincrona: nessun controllo del budget giornaliero (come la chat), costo minimo per
+  chiamata ma non nullo.
+- I mazzi creati dai punti chiave non passano per il dedup semantico degli altri mazzi (nessun embedding): un punto
+  uguale a una carta già esistente produce un duplicato.
+- Il fattore tempo non distingue il tipo di task (lettura, schemi…) né la materia: è un solo numero per persona. Le
+  task `review`/`simulation` non aprono sessioni, quindi non lo alimentano.
+- Un esercizio `wrong` dopo la chiusura non può più cambiare stato; il drill si crea una volta sola per sessione.

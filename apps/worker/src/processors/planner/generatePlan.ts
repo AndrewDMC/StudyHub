@@ -9,6 +9,7 @@ import {
   heuristicMinutes,
   loadBusyMinutesByDate,
   loadEligibleDocs,
+  loadTimeFactor,
   studyPlans,
   subjects,
   tasks,
@@ -16,6 +17,7 @@ import {
   type NewTask,
 } from '@studyhub/db';
 import {
+  applyTimeFactor,
   diffDays,
   forecastDueCounts,
   schedulePlan,
@@ -136,6 +138,10 @@ export async function processGeneratePlan(
     });
   }
 
+  // The student's own estimate-vs-real bias (docs/06-miglioramenti.md #7): 1 until enough sessions say otherwise.
+  const timeFactor = await loadTimeFactor(db);
+  plannerTopics = applyTimeFactor(plannerTopics, timeFactor.factor);
+
   const costEur = estimateCostEur(resultModel, usage.inputTokens, usage.outputTokens);
   await checkBudget(db, costEur, input.force);
 
@@ -189,6 +195,7 @@ export async function processGeneratePlan(
     warnings: result.warnings,
     model: resultModel,
     promptVersion,
+    timeFactor: timeFactor.factor,
   });
 
   if (result.tasks.length > 0) {

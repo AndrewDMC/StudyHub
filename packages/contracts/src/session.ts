@@ -53,6 +53,10 @@ export const StudySessionDtoSchema = z.object({
   endedAt: z.string().datetime().nullable(),
   /** Trascrizione della chat scritta alla chiusura, relativa alla cartella della materia. */
   transcriptPath: z.string().nullable(),
+  /** Mazzo di flashcard creato dai punti chiave alla chiusura (fase 4), se c'è. */
+  flashcardDeckId: z.string().uuid().nullable(),
+  /** Drill creato dagli esercizi sbagliati alla chiusura (fase 4), se c'è. */
+  drillId: z.string().uuid().nullable(),
 });
 export type StudySessionDto = z.infer<typeof StudySessionDtoSchema>;
 
@@ -167,6 +171,21 @@ export const SessionItemCitationDtoSchema = z.object({
 });
 export type SessionItemCitationDto = z.infer<typeof SessionItemCitationDtoSchema>;
 
+/** La correzione dell'AI di una risposta (docs/08 decisione 1): `score` da 0 a 1. */
+export const SessionItemFeedbackDtoSchema = z.object({
+  score: z.number().min(0).max(1),
+  feedback: z.string(),
+  missing: z.array(z.string()),
+  model: z.string(),
+  gradedAt: z.string().datetime(),
+});
+export type SessionItemFeedbackDto = z.infer<typeof SessionItemFeedbackDtoSchema>;
+
+export const GradeSessionItemRequestSchema = z.object({
+  model: z.string().min(1).max(100).optional(),
+});
+export type GradeSessionItemRequest = z.infer<typeof GradeSessionItemRequestSchema>;
+
 export const SessionItemDtoSchema = z.object({
   id: z.string().uuid(),
   kind: z.enum(['key_point', 'exercise']),
@@ -180,6 +199,7 @@ export const SessionItemDtoSchema = z.object({
   topicId: z.string().uuid().nullable(),
   state: SessionItemStateSchema,
   answer: z.string().nullable(),
+  feedback: SessionItemFeedbackDtoSchema.nullable(),
 });
 export type SessionItemDto = z.infer<typeof SessionItemDtoSchema>;
 
@@ -195,7 +215,26 @@ export const SessionBriefingDtoSchema = z.object({
   items: z.array(SessionItemDtoSchema),
   /** L'ultimo job di preparazione, per mostrare "in corso" o l'errore con "riprova". */
   job: BriefingJobDtoSchema.nullable(),
-  /** Costo cumulativo dei job di briefing di questa sessione. */
+  /** Costo cumulativo di briefing e correzioni AI di questa sessione. */
   costEur: z.number(),
 });
 export type SessionBriefingDto = z.infer<typeof SessionBriefingDtoSchema>;
+
+// ---- Chiusura: flashcard dai punti chiave e drill dagli esercizi sbagliati (fase 4) ----
+
+export const SessionDeckResultSchema = z.object({
+  deckId: z.string().uuid(),
+  title: z.string(),
+  cardCount: z.number().int().nonnegative(),
+  /** false = esisteva già: la richiesta ripetuta restituisce lo stesso mazzo. */
+  created: z.boolean(),
+});
+export type SessionDeckResult = z.infer<typeof SessionDeckResultSchema>;
+
+export const SessionDrillResultSchema = z.object({
+  simulationId: z.string().uuid(),
+  title: z.string(),
+  itemCount: z.number().int().nonnegative(),
+  created: z.boolean(),
+});
+export type SessionDrillResult = z.infer<typeof SessionDrillResultSchema>;

@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { ObsidianMarkdown } from '@/components/ObsidianMarkdown';
 import { formatClock, PomodoroPanel, usePomodoro } from '@/components/PomodoroTimer';
 import { SessionBriefing } from '@/components/SessionBriefing';
+import { SessionClosing } from '@/components/SessionClosing';
 import { SessionChat } from '@/components/SessionChat';
 
 async function readJson<T>(res: Response, fallback: string): Promise<T> {
@@ -465,6 +466,14 @@ export function SessionClient({ slug, sessionId }: { slug: string; sessionId: st
               </span>
             )}
           </header>
+          {!active && (
+            <SessionClosing
+              slug={slug}
+              sessionId={sessionId}
+              session={session}
+              sessionKey={sessionKey}
+            />
+          )}
           {(endMutation.isError || patchMutation.isError) && (
             <p role="alert" className="text-sm text-danger">
               {((endMutation.error ?? patchMutation.error) as Error).message}

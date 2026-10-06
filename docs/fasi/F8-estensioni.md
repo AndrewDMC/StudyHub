@@ -80,9 +80,10 @@ segnale verso il Planner (un argomento in cui ti illudi non fa aumentare le sue 
 Ordine suggerito per la prossima fetta, sempre con il criterio sopra:
 
 1. **#8 Question Bank incrementale** — gli esercizi sbagliati in simulazione rientrano nei drill
-   (dati già presenti in `attempt_item_results`; costo AI zero).
-2. **#7 Timer e telemetria di sessione** — stimato vs reale sulle task, per dare al Planner il
-   fattore di correzione personale.
+   (dati già presenti in `attempt_item_results`; costo AI zero). _Fatto solo per gli esercizi della sessione di studio_
+   (docs/08 fase 4); per le simulazioni d'esame resta da fare.
+2. **#7 Timer e telemetria di sessione** — _fatto_ con la sessione di studio (docs/08, fase 4): mediana reale/pianificato
+   applicata a `generate_plan` e all'anteprima. Resta un solo numero per persona, non per tipo di task.
 3. **#9 Ricerca semantica con risposta citata** — l'infrastruttura c'è (F1); serve la parte RAG e la UI.
 4. **#6, #10, #5, #3, #11–#14**: costo medio/alto o nuove superfici (audio, rete, mobile, multi-utente).
 
