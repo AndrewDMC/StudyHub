@@ -383,7 +383,7 @@ export class ClaudeCliProvider implements AiProvider {
     input: EstimateTopicsPromptInput,
     model: string,
   ): Promise<GeneratedWithMeta<EstimateTopicsOutput>> {
-    const { text: system, promptVersion } = loadPrompt('estimate_topics', 1);
+    const { text: system, promptVersion } = loadPrompt('estimate_topics', 2);
     const { data, usage } = await this.callWithSchema(
       system,
       renderEstimateTopicsUserPrompt(input),

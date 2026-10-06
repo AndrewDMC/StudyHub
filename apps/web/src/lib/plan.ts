@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import {
   buildPlanningUnits,
   exams,
+  filterUnitsByScope,
   heuristicPlannerTopics,
   loadBusyMinutesByDate,
   loadEligibleDocs,
@@ -13,6 +14,7 @@ import {
   studyPlans,
   subjects,
   tasks,
+  topics,
   type StudyPlan,
   type Task,
 } from '@studyhub/db';
@@ -74,6 +76,13 @@ export class MoveRefusedError extends Error {
   constructor(reason: string) {
     super(reason);
     this.name = 'MoveRefusedError';
+  }
+}
+
+export class InvalidScopeError extends Error {
+  constructor() {
+    super('Alcuni argomenti scelti non appartengono a questa materia.');
+    this.name = 'InvalidScopeError';
   }
 }
 
@@ -150,6 +159,31 @@ async function loadPlanByStatus(
   return toPlanDto(plan, taskRows);
 }
 
+/**
+ * Every plan the student is working with: the draft under review (there is one per subject) and the active
+ * plans — one per exam or partial, plus the general one. Draft first, then actives by creation.
+ */
+export async function listPlans(db: AnyDb, subjectSlug: string): Promise<PlanDto[]> {
+  const subject = await requireSubject(db, subjectSlug);
+  const plans: StudyPlan[] = await db
+    .select()
+    .from(studyPlans)
+    .where(
+      and(eq(studyPlans.subjectId, subject.id), inArray(studyPlans.status, ['draft', 'active'])),
+    );
+  plans.sort(
+    (a, b) =>
+      Number(b.status === 'draft') - Number(a.status === 'draft') ||
+      a.createdAt.getTime() - b.createdAt.getTime(),
+  );
+  const result: PlanDto[] = [];
+  for (const plan of plans) {
+    const taskRows: Task[] = await db.select().from(tasks).where(eq(tasks.planId, plan.id));
+    result.push(toPlanDto(plan, taskRows));
+  }
+  return result;
+}
+
 /** Draft if one exists (wizard/review flow), otherwise the active plan — what the review/calendar screens ask for by default. */
 export async function getCurrentPlan(db: AnyDb, subjectSlug: string): Promise<PlanDto | null> {
   const subject = await requireSubject(db, subjectSlug);
@@ -162,6 +196,20 @@ export async function getCurrentPlan(db: AnyDb, subjectSlug: string): Promise<Pl
 export async function getActivePlan(db: AnyDb, subjectSlug: string): Promise<PlanDto | null> {
   const subject = await requireSubject(db, subjectSlug);
   return loadPlanByStatus(db, subject.id, 'active');
+}
+
+async function requireTopicsOfSubject(
+  db: AnyDb,
+  subjectId: string,
+  topicIds: readonly string[] | undefined,
+): Promise<void> {
+  if (!topicIds) return;
+  const wanted = [...new Set(topicIds)];
+  const rows: { id: string }[] = await db
+    .select({ id: topics.id })
+    .from(topics)
+    .where(and(eq(topics.subjectId, subjectId), inArray(topics.id, wanted)));
+  if (rows.length !== wanted.length) throw new InvalidScopeError();
 }
 
 /** Enqueues `generate_plan` (Fase A+B); returns the BullMQ job id the caller polls via `jobs`. */
@@ -178,6 +226,14 @@ export async function enqueueGeneratePlan(
       .from(exams)
       .where(and(eq(exams.id, input.examId), eq(exams.subjectId, subject.id)));
     if (!exam) throw new ExamNotFoundError(input.examId);
+  }
+  await requireTopicsOfSubject(db, subject.id, input.topicIds);
+  // The notes describe the exam: keep them there so the next plan (and the simulations) start from them.
+  if (input.examId && input.notes !== undefined) {
+    await db
+      .update(exams)
+      .set({ description: input.notes || null })
+      .where(eq(exams.id, input.examId));
   }
   const jobId = randomUUID();
   await queue.add('generate_plan', { ...input, subjectId: subject.id }, { jobId });
@@ -196,8 +252,12 @@ export async function getPlanPreview(
   input: GeneratePlanRequest,
 ): Promise<PlanPreviewDto> {
   const subject = await requireSubject(db, subjectSlug);
-  const units = await buildPlanningUnits(db, subject.id, await loadEligibleDocs(db, subject.id));
-  const busyMinutesByDate = await loadBusyMinutesByDate(db, subject.id);
+  await requireTopicsOfSubject(db, subject.id, input.topicIds);
+  const units = filterUnitsByScope(
+    await buildPlanningUnits(db, subject.id, await loadEligibleDocs(db, subject.id)),
+    input.topicIds,
+  );
+  const busyMinutesByDate = await loadBusyMinutesByDate(db, subject.id, input.examId);
   const timeFactor = await loadTimeFactor(db);
 
   const plannerInput: PlannerInput = {
@@ -278,7 +338,14 @@ export async function commitPlan(
     await tx
       .update(studyPlans)
       .set({ status: 'superseded' })
-      .where(and(eq(studyPlans.subjectId, subject.id), eq(studyPlans.status, 'active')));
+      .where(
+        and(
+          eq(studyPlans.subjectId, subject.id),
+          eq(studyPlans.status, 'active'),
+          // A partial and the final exam live side by side: only the plan for the same exam is replaced.
+          plan.examId ? eq(studyPlans.examId, plan.examId) : isNull(studyPlans.examId),
+        ),
+      );
     await tx
       .update(studyPlans)
       .set({ status: 'active', committedAt: new Date() })
@@ -486,7 +553,7 @@ export async function applyBulkToDraft(
     availability: plan.availability,
     topics: [],
     prefs: plan.prefs,
-    busyMinutesByDate: await loadBusyMinutesByDate(db, subject.id),
+    busyMinutesByDate: await loadBusyMinutesByDate(db, subject.id, plan.examId),
   } as PlannerInput);
   const result = applyBulkAction(
     planTasks.map((t) => ({
@@ -560,15 +627,23 @@ export async function getDailyTasks(
   today: string,
 ): Promise<TaskDto[]> {
   const subject = await requireSubject(db, subjectSlug);
-  const [plan] = await db
-    .select()
+  const actives: { id: string }[] = await db
+    .select({ id: studyPlans.id })
     .from(studyPlans)
     .where(and(eq(studyPlans.subjectId, subject.id), eq(studyPlans.status, 'active')));
-  if (!plan) return [];
+  if (actives.length === 0) return [];
   const rows: Task[] = await db
     .select()
     .from(tasks)
-    .where(and(eq(tasks.planId, plan.id), inArray(tasks.status, ['todo', 'doing'])));
+    .where(
+      and(
+        inArray(
+          tasks.planId,
+          actives.map((p) => p.id),
+        ),
+        inArray(tasks.status, ['todo', 'doing']),
+      ),
+    );
   return rows.filter((r) => r.date <= today).map(toTaskDto);
 }
 
@@ -609,9 +684,12 @@ export async function getPlanDiff(
   reason = 'Piano rigenerato',
 ): Promise<PlanDiffDto | null> {
   const subject = await requireSubject(db, subjectSlug);
-  const active = await loadPlanByStatus(db, subject.id, 'active');
   const draft = await loadPlanByStatus(db, subject.id, 'draft');
   if (!draft) return null;
+  // The draft replaces the active plan of its own exam (or the general one), not the other partials.
+  const active = (await listPlans(db, subjectSlug)).find(
+    (p) => p.status === 'active' && p.examId === draft.examId,
+  );
   const topicNames = new Map<string, string>();
   const toTaskLike = (t: TaskDto) => ({
     key: t.taskKey,
@@ -642,12 +720,38 @@ export async function getPlanDrift(
   today: string,
 ): Promise<DriftReportDto | null> {
   const subject = await requireSubject(db, subjectSlug);
-  const active = await loadPlanByStatus(db, subject.id, 'active');
-  if (!active) return null;
+  const actives = (await listPlans(db, subjectSlug)).filter((p) => p.status === 'active');
+  if (actives.length === 0) return null;
   return detectDrift(
-    active.tasks.map((t) => ({ key: t.taskKey, date: t.date, status: t.status })),
+    actives.flatMap((p) =>
+      p.tasks.map((t) => ({ key: t.taskKey, date: t.date, status: t.status })),
+    ),
     today,
   );
+}
+
+/**
+ * Deletes a plan for good — draft, active or superseded — with all its tasks (cascade). Study sessions
+ * that came from those tasks stay (their `taskId` is nulled) so the time already studied is not lost.
+ * The committed snapshot `plans/<planId>.json` goes too; a missing file is not an error.
+ */
+export async function deletePlan(
+  db: AnyDb,
+  dataRoot: string,
+  subjectSlug: string,
+  planId: string,
+): Promise<void> {
+  const subject = await requireSubject(db, subjectSlug);
+  const [plan] = await db
+    .select({ id: studyPlans.id })
+    .from(studyPlans)
+    .where(and(eq(studyPlans.id, planId), eq(studyPlans.subjectId, subject.id)));
+  if (!plan) throw new PlanNotFoundError(planId);
+
+  await db.delete(studyPlans).where(eq(studyPlans.id, planId));
+
+  const snapshot = join(resolveSubjectSubpath(subject.slug, ['plans'], dataRoot), `${planId}.json`);
+  await fs.rm(snapshot, { force: true });
 }
 
 /** Discards the current draft without committing (docs/04-planner.md §9.6: "rifiuto il diff, il piano attivo resta identico"). */

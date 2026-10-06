@@ -5,17 +5,30 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { createTestDb } from '@studyhub/db/testDb';
-import { calendarEvents, documentTopics, documents, studyPlans, tasks, topics } from '@studyhub/db';
+import {
+  calendarEvents,
+  documentTopics,
+  documents,
+  exams,
+  loadBusyMinutesByDate,
+  studyPlans,
+  studySessions,
+  tasks,
+  topics,
+} from '@studyhub/db';
 import { createSubject } from '../src/lib/subjects';
 import {
   commitPlan,
   createManualTask,
   deleteDraftTask,
+  deletePlan,
   discardDraft,
   enqueueGeneratePlan,
   applyBulkToDraft,
   ExamNotFoundError,
   getCurrentPlan,
+  InvalidScopeError,
+  listPlans,
   getPlanPreview,
   getDailyTasks,
   getPlanDiff,
@@ -215,6 +228,181 @@ describe('plan draft/commit lifecycle', () => {
     const planId = await insertDraftPlan();
     await db.update(studyPlans).set({ status: 'superseded' }).where(eq(studyPlans.id, planId));
     await expect(commitPlan(db, dataRoot, subjectSlug, planId)).rejects.toThrow(PlanNotFoundError);
+  });
+
+  it('plans of different exams live side by side: committing one replaces only the plan of its own exam', async () => {
+    const mkExam = async (title: string) => {
+      const id = randomUUID();
+      await db.insert(exams).values({
+        id,
+        subjectId,
+        title,
+        kind: 'parziale',
+        date: new Date('2026-02-04T09:00:00Z'),
+      });
+      return id;
+    };
+    const examA = await mkExam('Parziale 1');
+    const examB = await mkExam('Parziale 2');
+    const draftFor = async (examId: string | null) => {
+      const id = await insertDraftPlan();
+      await db.update(studyPlans).set({ examId }).where(eq(studyPlans.id, id));
+      await insertTask(id);
+      return id;
+    };
+    const status = async (id: string) =>
+      (await db.select().from(studyPlans).where(eq(studyPlans.id, id)))[0]?.status;
+
+    const a1 = await draftFor(examA);
+    await commitPlan(db, dataRoot, subjectSlug, a1);
+    const b1 = await draftFor(examB);
+    await commitPlan(db, dataRoot, subjectSlug, b1);
+    const general = await draftFor(null);
+    await commitPlan(db, dataRoot, subjectSlug, general);
+    expect([await status(a1), await status(b1), await status(general)]).toEqual([
+      'active',
+      'active',
+      'active',
+    ]);
+
+    const a2 = await draftFor(examA);
+    await commitPlan(db, dataRoot, subjectSlug, a2);
+    expect([await status(a1), await status(a2), await status(b1), await status(general)]).toEqual([
+      'superseded',
+      'active',
+      'active',
+      'active',
+    ]);
+
+    const draft = await draftFor(examB);
+    const plans = await listPlans(db, subjectSlug);
+    expect(plans.map((p) => p.status)).toEqual(['draft', 'active', 'active', 'active']);
+    expect(plans[0]?.id).toBe(draft);
+    // The diff compares the draft with the active plan of the same exam only.
+    const diff = await getPlanDiff(db, subjectSlug);
+    // Only exam B's own active task (not the 3 others) is compared and shown as replaced.
+    expect(diff?.rows.filter((r) => r.change === 'removed')).toHaveLength(1);
+  });
+
+  it('enqueueGeneratePlan keeps the notes on the exam and refuses topics of another subject', async () => {
+    const examId = randomUUID();
+    await db.insert(exams).values({
+      id: examId,
+      subjectId,
+      title: 'Parziale',
+      kind: 'parziale',
+      date: new Date('2026-02-04T09:00:00Z'),
+    });
+    const topicId = randomUUID();
+    await db
+      .insert(topics)
+      .values({ id: topicId, subjectId, name: 'Meccanica', slug: 'meccanica' });
+    const other = await createSubject(db, dataRoot, { name: 'Chimica', color: 'rose' });
+    const foreign = randomUUID();
+    await db
+      .insert(topics)
+      .values({ id: foreign, subjectId: other.id, name: 'Acidi', slug: 'acidi' });
+    const request = {
+      startDate: '2026-01-05',
+      targetDate: '2026-02-04',
+      availability: AVAILABILITY,
+      prefs: PREFS,
+      force: false,
+      examId,
+    };
+    const queue = fakeQueue();
+
+    await enqueueGeneratePlan(db, queue, subjectSlug, {
+      ...request,
+      topicIds: [topicId],
+      notes: 'Capitoli 1-4, scritto',
+    });
+    const [exam] = await db.select().from(exams).where(eq(exams.id, examId));
+    expect(exam?.description).toBe('Capitoli 1-4, scritto');
+    expect(queue.add).toHaveBeenCalledWith(
+      'generate_plan',
+      expect.objectContaining({ topicIds: [topicId], notes: 'Capitoli 1-4, scritto' }),
+      expect.anything(),
+    );
+
+    await expect(
+      enqueueGeneratePlan(db, queue, subjectSlug, { ...request, topicIds: [foreign] }),
+    ).rejects.toThrow(InvalidScopeError);
+    expect(queue.add).toHaveBeenCalledTimes(1);
+
+    // An emptied box clears the description.
+    await enqueueGeneratePlan(db, queue, subjectSlug, { ...request, notes: '' });
+    const [cleared] = await db.select().from(exams).where(eq(exams.id, examId));
+    expect(cleared?.description).toBeNull();
+  });
+
+  it('deletePlan removes an active plan with its tasks and snapshot, and keeps the studied time', async () => {
+    const planId = await insertDraftPlan();
+    const taskId = await insertTask(planId);
+    await commitPlan(db, dataRoot, subjectSlug, planId);
+    const snapshot = join(dataRoot, 'subjects', subjectSlug, 'plans', `${planId}.json`);
+    await readFile(snapshot, 'utf-8');
+    const sessionId = randomUUID();
+    await db
+      .insert(studySessions)
+      .values({ id: sessionId, subjectId, taskId, topicIds: [], documentIds: [], status: 'ended' });
+
+    await deletePlan(db, dataRoot, subjectSlug, planId);
+
+    expect(await db.select().from(studyPlans).where(eq(studyPlans.id, planId))).toHaveLength(0);
+    expect(await db.select().from(tasks).where(eq(tasks.planId, planId))).toHaveLength(0);
+    await expect(readFile(snapshot, 'utf-8')).rejects.toThrow();
+    const [session] = await db.select().from(studySessions).where(eq(studySessions.id, sessionId));
+    expect(session?.taskId).toBeNull();
+    expect(await getCurrentPlan(db, subjectSlug)).toBeNull();
+  });
+
+  it('deletePlan refuses an unknown plan and one of another subject', async () => {
+    const other = await createSubject(db, dataRoot, { name: 'Chimica', color: 'rose' });
+    const planId = await insertDraftPlan();
+    await expect(deletePlan(db, dataRoot, other.slug, planId)).rejects.toThrow(PlanNotFoundError);
+    await expect(deletePlan(db, dataRoot, subjectSlug, randomUUID())).rejects.toThrow(
+      PlanNotFoundError,
+    );
+    expect(await db.select().from(studyPlans).where(eq(studyPlans.id, planId))).toHaveLength(1);
+  });
+
+  it('only the active plans of other subjects take time away: superseded and draft ones do not', async () => {
+    const other = await createSubject(db, dataRoot, { name: 'Chimica', color: 'rose' });
+    const mk = async (status: 'draft' | 'active' | 'superseded') => {
+      const id = randomUUID();
+      await db.insert(studyPlans).values({
+        id,
+        subjectId: other.id,
+        startDate: '2026-01-05',
+        targetDate: '2026-02-04',
+        availability: AVAILABILITY,
+        prefs: PREFS,
+        feasibility: FEASIBILITY,
+        warnings: [],
+        model: 'fake-v1',
+        promptVersion: 'x',
+        status,
+      });
+      await db.insert(tasks).values({
+        id: randomUUID(),
+        subjectId: other.id,
+        planId: id,
+        taskKey: `read:${id}`,
+        date: '2026-01-06',
+        kind: 'read',
+        minutes: 40,
+        title: 'Altra materia',
+        description: '',
+        payload: { action: 'read' },
+        status: status === 'draft' ? 'proposed' : 'todo',
+      });
+    };
+    await mk('superseded');
+    await mk('draft');
+    expect(await loadBusyMinutesByDate(db, subjectId)).toEqual({});
+    await mk('active');
+    expect(await loadBusyMinutesByDate(db, subjectId)).toEqual({ '2026-01-06': 40 });
   });
 
   it('updateDraftTask edits a proposed task but refuses an already-committed one', async () => {

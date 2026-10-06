@@ -2,7 +2,12 @@ import { NextResponse } from 'next/server';
 import { GeneratePlanRequestSchema } from '@studyhub/contracts';
 import { getDb } from '@/lib/db';
 import { getJobQueue } from '@/lib/queue';
-import { enqueueGeneratePlan, ExamNotFoundError, getCurrentPlan } from '@/lib/plan';
+import {
+  enqueueGeneratePlan,
+  ExamNotFoundError,
+  getCurrentPlan,
+  InvalidScopeError,
+} from '@/lib/plan';
 import { formatError, SubjectNotFoundError } from '@/lib/errors';
 
 export const dynamic = 'force-dynamic';
@@ -52,6 +57,12 @@ export async function POST(request: Request, { params }: RouteParams) {
       return NextResponse.json(
         { error: { code: 'subject_not_found', message: err.message } },
         { status: 404 },
+      );
+    }
+    if (err instanceof InvalidScopeError) {
+      return NextResponse.json(
+        { error: { code: 'invalid_request', message: err.message } },
+        { status: 400 },
       );
     }
     if (err instanceof ExamNotFoundError) {

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { GeneratePlanRequestSchema } from '@studyhub/contracts';
 import { getDb } from '@/lib/db';
-import { getPlanPreview } from '@/lib/plan';
+import { getPlanPreview, InvalidScopeError } from '@/lib/plan';
 import { formatError, SubjectNotFoundError } from '@/lib/errors';
 
 export const dynamic = 'force-dynamic';
@@ -30,6 +30,12 @@ export async function POST(request: Request, { params }: RouteParams) {
       return NextResponse.json(
         { error: { code: 'subject_not_found', message: err.message } },
         { status: 404 },
+      );
+    }
+    if (err instanceof InvalidScopeError) {
+      return NextResponse.json(
+        { error: { code: 'invalid_request', message: err.message } },
+        { status: 400 },
       );
     }
     return NextResponse.json(

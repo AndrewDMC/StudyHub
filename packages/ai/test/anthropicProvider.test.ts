@@ -261,7 +261,7 @@ describe('AnthropicProvider — F5 capabilities against a mocked client', () => 
     );
 
     expect(result.data.topics).toHaveLength(1);
-    expect(result.promptVersion).toBe('estimate_topics/v1');
+    expect(result.promptVersion).toBe('estimate_topics/v2');
     const call = create.mock.calls[0][0];
     expect(call.tool_choice).toEqual({ type: 'tool', name: 'emit_topic_estimates' });
     const prompt: string = call.messages[0].content;
