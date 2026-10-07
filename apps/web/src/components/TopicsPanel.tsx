@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { DocumentDto, EstimateGenerationCostResponse, TopicDto } from '@studyhub/contracts';
 import { ModelPicker, MODEL_OPTIONS } from './ModelPicker';
@@ -216,6 +216,7 @@ export function TopicsPanel({
 }) {
   const [name, setName] = useState('');
   const [mergingId, setMergingId] = useState<string | null>(null);
+  const [extractJobId, setExtractJobId] = useState<string | null>(null);
   const [model, setModel] = useState<string>(MODEL_OPTIONS[0].id); // haiku: default routing per extract_topics (docs/03 §4)
   const queryClient = useQueryClient();
   const query = useQuery({
@@ -250,10 +251,33 @@ export function TopicsPanel({
       if (!res.ok) throw new Error(body.error?.message ?? 'Suggerimento argomenti fallito');
       return body as { jobId: string };
     },
-    onSuccess: () => {
-      setTimeout(invalidate, 3000); // runs in the worker — give it a moment then refresh
-    },
+    onSuccess: (data) => setExtractJobId(data.jobId),
   });
+
+  // The extraction runs in the worker and can take well over a few seconds (a model call): poll the job
+  // until it ends, then refresh the list and say what happened — including a failure, which was invisible.
+  const jobQuery = useQuery({
+    queryKey: ['extract-topics-job', subjectSlug, extractJobId],
+    queryFn: async () => {
+      const res = await fetch(`/api/subjects/${subjectSlug}/topics/extract/${extractJobId}`);
+      return (await res.json()) as {
+        status: string;
+        output: { topicsCreated?: number; linksCreated?: number; idempotent?: boolean } | null;
+        error: string | null;
+      };
+    },
+    enabled: extractJobId !== null,
+    refetchInterval: (q) =>
+      q.state.data && ['succeeded', 'failed', 'cancelled'].includes(q.state.data.status)
+        ? false
+        : 2000,
+  });
+  const jobStatus = jobQuery.data?.status;
+  const jobRunning = extractJobId !== null && jobStatus !== 'succeeded' && jobStatus !== 'failed';
+  useEffect(() => {
+    if (jobStatus === 'succeeded') invalidate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobStatus]);
 
   const createMutation = useMutation({
     mutationFn: async (topicName: string) => {
@@ -383,7 +407,7 @@ export function TopicsPanel({
       )}
       <button
         type="button"
-        disabled={readyDocIds.length === 0 || extractMutation.isPending}
+        disabled={readyDocIds.length === 0 || extractMutation.isPending || jobRunning}
         onClick={() => extractMutation.mutate()}
         className="mt-2 w-full rounded-[var(--radius-control)] border border-dashed border-border px-2 py-1 text-xs text-fg-secondary hover:text-fg-primary disabled:opacity-50"
       >
@@ -394,9 +418,19 @@ export function TopicsPanel({
           {(extractMutation.error as Error).message}
         </p>
       )}
-      {extractMutation.isSuccess && (
+      {jobRunning && <p className="mt-1 px-1 text-[11px] text-fg-muted">Estrazione in corso…</p>}
+      {jobStatus === 'failed' && (
+        <p role="alert" className="mt-1 px-1 text-xs text-danger">
+          Estrazione fallita{jobQuery.data?.error ? `: ${jobQuery.data.error}` : '.'}
+        </p>
+      )}
+      {jobStatus === 'succeeded' && (
         <p className="mt-1 px-1 text-[11px] text-ok">
-          Job avviato — l&apos;elenco si aggiorna a breve.
+          {jobQuery.data?.output?.idempotent
+            ? 'Già estratti con questi documenti e questo modello: nessun nuovo argomento.'
+            : (jobQuery.data?.output?.topicsCreated ?? 0) > 0
+              ? `${jobQuery.data?.output?.topicsCreated} nuovi argomenti.`
+              : 'Nessun nuovo argomento proposto (quelli trovati esistono già).'}
         </p>
       )}
     </div>

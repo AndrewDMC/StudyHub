@@ -76,7 +76,18 @@ export async function processExtractTopics(
     .from(jobs)
     .where(and(eq(jobs.jobKey, jobKey), eq(jobs.status, 'succeeded')))
     .limit(1);
-  if (priorJob) {
+  // A prior success only short-circuits while its topics still exist: if the student deleted or merged
+  // them all since, re-running must extract again instead of silently returning "0 created".
+  const [stillLinked] = priorJob
+    ? await db
+        .select({ topicId: documentTopics.topicId })
+        .from(documentTopics)
+        .where(
+          and(inArray(documentTopics.documentId, requestedDocIds), eq(documentTopics.source, 'ai')),
+        )
+        .limit(1)
+    : [];
+  if (priorJob && stillLinked) {
     return {
       idempotent: true,
       jobKey,
