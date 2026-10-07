@@ -415,7 +415,7 @@ export function SessionClient({ slug, sessionId }: { slug: string; sessionId: st
   };
 
   return (
-    <div className="mx-auto flex max-w-[100rem] flex-col gap-4 p-6">
+    <div className="mx-auto flex max-w-[100rem] flex-col gap-4 p-4 md:p-6">
       <Link
         href={`/materie/${slug}`}
         className="text-xs text-fg-muted underline-offset-2 hover:text-fg-primary hover:underline"
@@ -438,7 +438,7 @@ export function SessionClient({ slug, sessionId }: { slug: string; sessionId: st
                 Sessione di studio
                 {session.taskMinutes ? ` · ${session.taskMinutes} min previsti` : ''}
               </p>
-              <h1 className="truncate text-lg font-semibold text-fg-primary">
+              <h1 className="line-clamp-2 text-lg font-semibold text-fg-primary md:truncate">
                 {session.taskTitle ??
                   (session.topics.map((t) => t.name).join(', ') || 'Studio libero')}
               </h1>
@@ -488,7 +488,7 @@ export function SessionClient({ slug, sessionId }: { slug: string; sessionId: st
                 role="tab"
                 aria-selected={tab === id}
                 onClick={() => setTab(id)}
-                className={`rounded-[var(--radius-control)] border px-3 py-1 text-sm ${
+                className={`rounded-[var(--radius-control)] border px-3 py-1 text-sm max-md:min-h-11 max-md:flex-1 ${
                   tab === id
                     ? 'border-accent bg-bg-raised text-fg-primary'
                     : 'border-border text-fg-secondary'
@@ -544,7 +544,7 @@ export function SessionClient({ slug, sessionId }: { slug: string; sessionId: st
                     role="tab"
                     aria-selected={center === id}
                     onClick={() => setCenter(id)}
-                    className={`rounded-[var(--radius-control)] border px-3 py-1 text-sm ${
+                    className={`rounded-[var(--radius-control)] border px-3 py-1 text-sm max-md:min-h-11 max-md:flex-1 ${
                       center === id
                         ? 'border-accent bg-bg-raised text-fg-primary'
                         : 'border-border text-fg-secondary'
@@ -581,7 +581,7 @@ export function SessionClient({ slug, sessionId }: { slug: string; sessionId: st
             </main>
 
             <div
-              className={`h-[75vh] min-h-0 flex-col lg:sticky lg:top-4 lg:flex lg:h-[calc(100vh-2rem)] ${
+              className={`h-[75dvh] min-h-0 flex-col lg:sticky lg:top-4 lg:flex lg:h-[calc(100vh-2rem)] ${
                 tab === 'material' ? 'hidden' : 'flex'
               }`}
             >

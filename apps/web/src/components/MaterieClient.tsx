@@ -80,18 +80,18 @@ export function MaterieClient() {
   };
 
   return (
-    <div className="mx-auto max-w-[1440px] p-6">
+    <div className="mx-auto max-w-[1440px] p-4 md:p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold tracking-[-0.02em]">Materie</h1>
-        <div className="flex flex-wrap items-center gap-4">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 max-md:w-full">
           <Input
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Cerca per nome o docente…"
-            className="w-56"
+            className="md:w-56"
           />
-          <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-fg-secondary">
+          <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-fg-secondary max-md:min-h-11">
             <input
               type="checkbox"
               checked={examSoonOnly}
@@ -99,7 +99,7 @@ export function MaterieClient() {
             />
             Esame entro 30 giorni
           </label>
-          <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-fg-secondary">
+          <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-fg-secondary max-md:min-h-11">
             <input
               type="checkbox"
               checked={showArchived}

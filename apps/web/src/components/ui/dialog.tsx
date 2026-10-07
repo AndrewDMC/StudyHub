@@ -28,13 +28,14 @@ export const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[var(--radius-modal)] border border-border bg-bg-surface p-5 text-fg-primary shadow-lg outline-none',
+        // 16px gutter and a scroll cap on phones: a long form never runs under the screen edge.
+        'fixed left-1/2 top-1/2 z-50 max-h-[90dvh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[var(--radius-modal)] border border-border bg-bg-surface p-5 text-fg-primary shadow-lg outline-none',
         className,
       )}
       {...props}
     >
       {children}
-      <DialogPrimitive.Close className="absolute right-4 top-4 text-fg-muted outline-none hover:text-fg-primary">
+      <DialogPrimitive.Close className="absolute right-4 top-4 text-fg-muted outline-none hover:text-fg-primary max-md:right-1 max-md:top-1 max-md:p-3">
         <X className="h-4 w-4" />
         <span className="sr-only">Chiudi</span>
       </DialogPrimitive.Close>

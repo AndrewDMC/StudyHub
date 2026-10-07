@@ -18,10 +18,11 @@ const buttonVariants = cva(
         ghost: 'text-fg-secondary hover:bg-bg-raised hover:text-fg-primary',
         danger: 'bg-danger text-white hover:opacity-90',
       },
+      // Below md every size grows to the 44px touch target.
       size: {
-        sm: 'h-7 px-2.5 text-xs',
-        md: 'h-8 px-3 py-1.5',
-        lg: 'h-10 px-4',
+        sm: 'h-7 px-2.5 text-xs max-md:h-11',
+        md: 'h-8 px-3 py-1.5 max-md:h-11',
+        lg: 'h-10 px-4 max-md:h-11',
       },
     },
     defaultVariants: {
@@ -32,8 +33,7 @@ const buttonVariants = cva(
 );
 
 export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
-    VariantProps<typeof buttonVariants> {
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
   asChild?: boolean;
 }
 

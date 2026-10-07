@@ -43,8 +43,8 @@ function StatTile({
   sub?: string | undefined;
 }) {
   return (
-    <div className="rounded-[var(--radius-card)] border border-border bg-bg-surface p-4">
-      <p className="text-xs uppercase tracking-wide text-fg-muted">{label}</p>
+    <div className="min-w-0 rounded-[var(--radius-card)] border border-border bg-bg-surface p-3 md:p-4">
+      <p className="truncate text-xs uppercase tracking-wide text-fg-muted">{label}</p>
       <p className="mt-1 text-2xl font-semibold tracking-[-0.02em] text-fg-primary">{value}</p>
       {sub && <p className="mt-0.5 text-xs text-fg-muted">{sub}</p>}
     </div>
@@ -147,7 +147,7 @@ function TodaySection({
           {first.description && (
             <p className="mt-1 text-sm text-fg-secondary">{first.description}</p>
           )}
-          <div className="mt-3 flex gap-2">
+          <div className="mt-3 flex flex-wrap gap-2 max-md:[&>button]:min-h-11">
             <StartTaskButton subjectSlug={first.subjectSlug} taskId={first.id} kind={first.kind} />
             <button
               type="button"
@@ -340,11 +340,13 @@ export function DashboardClient() {
   });
 
   if (query.isLoading) {
-    return <div className="mx-auto max-w-[1440px] p-6 text-sm text-fg-muted">Caricamento…</div>;
+    return (
+      <div className="mx-auto max-w-[1440px] p-4 md:p-6 text-sm text-fg-muted">Caricamento…</div>
+    );
   }
   if (query.isError || !query.data) {
     return (
-      <div className="mx-auto max-w-[1440px] p-6">
+      <div className="mx-auto max-w-[1440px] p-4 md:p-6">
         <div
           role="alert"
           className="rounded-[var(--radius-card)] border border-border bg-bg-surface p-6 text-sm text-danger"
@@ -358,12 +360,12 @@ export function DashboardClient() {
   const summary = query.data;
 
   return (
-    <div className="mx-auto max-w-[1440px] space-y-4 p-6">
+    <div className="mx-auto max-w-[1440px] space-y-4 p-4 md:p-6">
       <h1 className="text-xl font-semibold tracking-[-0.02em]">Dashboard</h1>
 
       {!summary.onboarding.completed && <OnboardingCard onboarding={summary.onboarding} />}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile
           label="Prossimo esame"
           value={summary.daysToNextExam === null ? '—' : `${summary.daysToNextExam}g`}

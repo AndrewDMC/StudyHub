@@ -11,7 +11,7 @@ type TaskKind = TaskDto['kind'];
 const SESSION_KINDS: ReadonlySet<TaskKind> = new Set(['read', 'schema', 'drill']);
 
 const CLASSNAME =
-  'rounded-[var(--radius-control)] bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-60';
+  'rounded-[var(--radius-control)] bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-60 max-md:inline-flex max-md:min-h-11 max-md:items-center';
 
 async function startSession(subjectSlug: string, taskId: string): Promise<StudySessionDto> {
   const res = await fetch(`/api/subjects/${subjectSlug}/sessions`, {

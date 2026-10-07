@@ -77,7 +77,8 @@ export function DailyTasksPanel({ subjectSlug }: { subjectSlug: string }) {
     queryFn: () => fetchDrift(subjectSlug),
   });
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['daily-tasks', subjectSlug] });
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: ['daily-tasks', subjectSlug] });
   const mutate = useMutation({
     mutationFn: ({ taskId, status }: { taskId: string; status: 'done' | 'skipped' }) =>
       setStatus(subjectSlug, taskId, status),
@@ -195,7 +196,7 @@ export function DailyTasksPanel({ subjectSlug }: { subjectSlug: string }) {
                 {task.date} · {task.minutes} min
               </p>
               <p className="text-sm text-fg-primary">{task.title}</p>
-              <div className="mt-1 flex gap-1.5">
+              <div className="mt-1 flex gap-1.5 max-md:[&>button]:min-h-11 max-md:[&>button]:px-3">
                 <button
                   type="button"
                   onClick={() => mutate.mutate({ taskId: task.id, status: 'done' })}

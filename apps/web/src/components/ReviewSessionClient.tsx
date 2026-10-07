@@ -217,7 +217,7 @@ export function ReviewSessionClient({ subjectSlug }: { subjectSlug: string }) {
 
   if (query.isLoading) {
     return (
-      <div className="flex h-dvh items-center justify-center text-sm text-fg-muted">
+      <div className="flex h-full items-center justify-center text-sm text-fg-muted">
         Caricamento…
       </div>
     );
@@ -225,7 +225,7 @@ export function ReviewSessionClient({ subjectSlug }: { subjectSlug: string }) {
 
   if (query.isError) {
     return (
-      <div className="flex h-dvh flex-col items-center justify-center gap-2 text-sm">
+      <div className="flex h-full flex-col items-center justify-center gap-2 text-sm">
         <p role="alert" className="text-danger">
           {(query.error as Error).message}
         </p>
@@ -238,7 +238,7 @@ export function ReviewSessionClient({ subjectSlug }: { subjectSlug: string }) {
 
   if (!current) {
     return (
-      <div className="flex h-dvh flex-col items-center justify-center gap-3 text-center">
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
         <p className="text-lg text-fg-primary">
           {queue.length === 0 ? 'Nessuna card da ripassare oggi.' : 'Sessione completata.'}
         </p>
@@ -270,9 +270,12 @@ export function ReviewSessionClient({ subjectSlug }: { subjectSlug: string }) {
   const mutationError = (rateMutation.error ?? removeMutation.error) as Error | null;
 
   return (
-    <div className="flex h-dvh flex-col bg-bg-base text-fg-primary">
-      <div className="flex items-center justify-between px-6 py-3 text-xs text-fg-muted">
-        <Link href={`/materie/${subjectSlug}`} className="hover:text-fg-secondary">
+    <div className="flex h-full flex-col bg-bg-base text-fg-primary">
+      <div className="flex items-center justify-between px-4 py-3 text-xs text-fg-muted md:px-6">
+        <Link
+          href={`/materie/${subjectSlug}`}
+          className="hover:text-fg-secondary max-md:-m-3 max-md:p-3"
+        >
           Esci
         </Link>
         <span className="font-mono tabular-nums">
@@ -334,9 +337,13 @@ export function ReviewSessionClient({ subjectSlug }: { subjectSlug: string }) {
           )}
         </form>
       ) : (
-        <div className="flex flex-1 flex-col items-center justify-center gap-6 overflow-y-auto px-6 text-center">
+        <div className="flex flex-1 flex-col items-center justify-center gap-6 overflow-y-auto px-4 text-center md:px-6">
           <p className="text-[11px] uppercase tracking-wide text-fg-muted">{current.type}</p>
-          <CardText text={current.front} side={plan.frontSide} className="max-w-2xl text-2xl" />
+          <CardText
+            text={current.front}
+            side={plan.frontSide}
+            className="max-w-2xl text-xl md:text-2xl"
+          />
 
           {revealed ? (
             <>
@@ -346,7 +353,7 @@ export function ReviewSessionClient({ subjectSlug }: { subjectSlug: string }) {
                   <CardText
                     text={current.back}
                     side="back"
-                    className="max-w-2xl text-xl text-fg-secondary"
+                    className="max-w-2xl text-lg text-fg-secondary md:text-xl"
                   />
                 </>
               )}
@@ -358,14 +365,14 @@ export function ReviewSessionClient({ subjectSlug }: { subjectSlug: string }) {
                   pag. {current.sourceRef.page} — &quot;{current.sourceRef.quote}&quot;
                 </p>
               )}
-              <div className="mt-2 flex gap-2">
+              <div className="mt-2 grid w-full grid-cols-4 gap-2 md:flex md:w-auto">
                 {([1, 2, 3, 4] as const).map((rating) => (
                   <button
                     key={rating}
                     type="button"
                     onClick={() => rateMutation.mutate({ cardId: current.id, rating })}
                     disabled={busy}
-                    className="rounded-[var(--radius-control)] border border-border px-4 py-2 text-sm text-fg-secondary hover:border-accent hover:text-fg-primary"
+                    className="rounded-[var(--radius-control)] border border-border px-2 py-2 text-sm text-fg-secondary hover:border-accent hover:text-fg-primary max-md:min-h-11 md:px-4"
                   >
                     {rating} · {RATING_LABELS[rating]}
                   </button>
@@ -374,8 +381,12 @@ export function ReviewSessionClient({ subjectSlug }: { subjectSlug: string }) {
             </>
           ) : (
             <div className="flex flex-col items-center gap-3">
-              <div role="group" aria-label="Quanto sei sicuro?" className="flex items-center gap-2">
-                <span className="text-xs text-fg-muted">Quanto sei sicuro?</span>
+              <div
+                role="group"
+                aria-label="Quanto sei sicuro?"
+                className="flex flex-wrap items-center justify-center gap-2"
+              >
+                <span className="text-xs text-fg-muted max-md:w-full">Quanto sei sicuro?</span>
                 {([1, 2, 3] as const).map((level) => (
                   <button
                     key={level}
@@ -384,7 +395,7 @@ export function ReviewSessionClient({ subjectSlug }: { subjectSlug: string }) {
                       setConfidence(level);
                       setRevealed(true);
                     }}
-                    className="rounded-[var(--radius-control)] border border-border px-3 py-1.5 text-xs text-fg-secondary hover:border-accent hover:text-fg-primary"
+                    className="rounded-[var(--radius-control)] border border-border px-3 py-1.5 text-xs text-fg-secondary hover:border-accent hover:text-fg-primary max-md:min-h-11"
                   >
                     {level} · {CONFIDENCE_LABELS[level]}
                   </button>
@@ -393,18 +404,18 @@ export function ReviewSessionClient({ subjectSlug }: { subjectSlug: string }) {
               <button
                 type="button"
                 onClick={() => setRevealed(true)}
-                className="rounded-[var(--radius-control)] bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
+                className="rounded-[var(--radius-control)] bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover max-md:min-h-11"
               >
-                Mostra risposta (Space)
+                Mostra risposta <span className="max-md:hidden">(Space)</span>
               </button>
             </div>
           )}
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-center gap-4 px-6 py-3 text-[11px] text-fg-muted">
-        <span>Space rivela</span>
-        <span>1-4 valuta</span>
+      <div className="flex flex-wrap items-center justify-center gap-x-4 px-4 py-1 text-[11px] text-fg-muted md:gap-y-4 md:px-6 md:py-3 max-md:[&>*]:py-3">
+        <span className="max-md:hidden">Space rivela</span>
+        <span className="max-md:hidden">1-4 valuta</span>
         <button
           type="button"
           onClick={() => setEditing({ front: current.front, back: current.back })}
