@@ -481,7 +481,21 @@ export const reviews = pgTable('reviews', {
   confidence: integer('confidence'),
   prevStability: real('prev_stability'),
   newStability: real('new_stability').notNull(),
+  // The card's full FSRS state just before this review, so the review can be undone
+  // (docs/09-ripasso-mobile.md §B3). null on reviews recorded before 0021: not undoable.
+  prevSchedule: jsonb('prev_schedule').$type<ReviewPrevSchedule>(),
 });
+
+/** `FlashcardSchedule` (packages/core/src/fsrs.ts) as stored in JSON: dates as ISO strings. */
+export interface ReviewPrevSchedule {
+  stability: number | null;
+  difficulty: number | null;
+  dueAt: string | null;
+  lastReviewAt: string | null;
+  reps: number;
+  lapses: number;
+  state: FlashcardState;
+}
 
 /**
  * F5 scope (docs/fasi/F5-esami-simulazioni.md): exam profile, simulations,

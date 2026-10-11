@@ -27,8 +27,8 @@ export async function POST(
   }
 
   try {
-    const flashcard = await submitReview(getDb(), slug, cardId, parsed.data);
-    return NextResponse.json({ flashcard });
+    const result = await submitReview(getDb(), slug, cardId, parsed.data);
+    return NextResponse.json(result);
   } catch (err) {
     if (err instanceof SubjectNotFoundError) {
       return NextResponse.json(

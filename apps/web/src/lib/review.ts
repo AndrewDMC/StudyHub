@@ -1,22 +1,49 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, ilike, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
+import {
+  and,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  not,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import {
   artifacts,
+  exams,
   flashcards,
   recomputeTopicMastery,
   reviews,
   subjects,
+  topics,
   type Flashcard,
+  type ReviewPrevSchedule,
 } from '@studyhub/db';
 import {
-  isDue,
   newCardSchedule,
+  previewIntervals,
   scheduleReview,
   type FlashcardSchedule,
   type FsrsCardState,
   type FsrsRating,
+  type SubjectColor,
 } from '@studyhub/core';
-import type { FlashcardDto, FlashcardPageDto } from '@studyhub/contracts';
+import type {
+  FlashcardDto,
+  FlashcardPageDto,
+  RatingIntervals,
+  ReviewOverviewDto,
+  ReviewOverviewTopicDto,
+  ReviewQueueItemDto,
+  SubmitReviewResponse,
+} from '@studyhub/contracts';
 import { SubjectNotFoundError } from './errors';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -65,10 +92,129 @@ async function requireSubject(db: AnyDb, subjectSlug: string) {
   return subject;
 }
 
+/** Default number of never-seen cards per queue, per subject (docs/fasi/F4-flashcard.md "mix new/review"). */
+export const DEFAULT_NEW_LIMIT = 20;
+
+/** End of the UTC day `now` falls in: the same day boundary as the Dashboard (`/api/dashboard`). */
+export function endOfDay(now: Date): Date {
+  return new Date(`${now.toISOString().slice(0, 10)}T23:59:59.999Z`);
+}
+
+/**
+ * Cards that can be reviewed at all: not suspended and not flagged as low quality (flagged cards
+ * stay in the deck but never reach the queue, F4 "Rischi"). The caller joins `artifacts`.
+ */
+export function reviewableConditions(): SQL[] {
+  return [eq(flashcards.suspended, false), isNull(flashcards.flaggedAt)];
+}
+
+/**
+ * The one "due" rule (docs/09-ripasso-mobile.md §B1), shared by the review queues, the Ripasso
+ * overview and the Dashboard counts: a new card; a review card due by the end of today, since its
+ * intervals are whole days; a (re)learning card due by `now`, since its steps are minutes and must
+ * not come straight back in the same session.
+ */
+export function dueCardConditions(now: Date): SQL {
+  return or(
+    eq(flashcards.state, 'new'),
+    and(eq(flashcards.state, 'review'), lte(flashcards.dueAt, endOfDay(now))),
+    and(inArray(flashcards.state, ['learning', 'relearning']), lte(flashcards.dueAt, now)),
+  )!;
+}
+
+export interface ReviewScope {
+  /** Omitted = every active (non-archived) subject. */
+  subjectSlug?: string | undefined;
+  /** Omitted = every topic; null = only cards without a topic. */
+  topicId?: string | null | undefined;
+}
+
+interface QueueRow {
+  f: Flashcard;
+  subjectId: string;
+  subjectSlug: string;
+  subjectName: string;
+  subjectColor: string;
+  topicName: string | null;
+}
+
+/**
+ * Picks one subject's queue out of its due cards: (re)learning and review cards by due date, most
+ * overdue first, then at most `newLimit` new cards, oldest first.
+ */
+function pickForSubject<T extends { f: Flashcard }>(rows: T[], newLimit: number): T[] {
+  const seen = rows.filter((r) => r.f.state !== 'new');
+  seen.sort((a, b) => (a.f.dueAt?.getTime() ?? 0) - (b.f.dueAt?.getTime() ?? 0));
+  const fresh = rows.filter((r) => r.f.state === 'new');
+  return [...seen, ...fresh.slice(0, newLimit)];
+}
+
+function groupBySubject<T extends { subjectId: string }>(rows: T[]): T[][] {
+  const groups = new Map<string, T[]>();
+  for (const r of rows) {
+    const list = groups.get(r.subjectId);
+    if (list) list.push(r);
+    else groups.set(r.subjectId, [r]);
+  }
+  return [...groups.values()];
+}
+
+/** Round-robin across subjects, so ten cards from "all subjects" are not ten from the first one. */
+function interleave<T>(lists: T[][]): T[] {
+  const total = lists.reduce((s, l) => s + l.length, 0);
+  const out: T[] = [];
+  for (let i = 0; out.length < total; i += 1) {
+    for (const list of lists) if (i < list.length) out.push(list[i]!);
+  }
+  return out;
+}
+
+async function loadDueRows(db: AnyDb, scope: ReviewScope, now: Date): Promise<QueueRow[]> {
+  const conditions = [...reviewableConditions(), dueCardConditions(now)];
+  if (scope.subjectSlug) {
+    // An explicit subject is reviewable even when archived (the per-subject page still works).
+    const subject = await requireSubject(db, scope.subjectSlug);
+    conditions.push(eq(artifacts.subjectId, subject.id));
+  } else {
+    conditions.push(isNull(subjects.archivedAt));
+  }
+  if (scope.topicId === null) conditions.push(isNull(flashcards.topicId));
+  else if (scope.topicId) conditions.push(eq(flashcards.topicId, scope.topicId));
+
+  return db
+    .select({
+      f: flashcards,
+      subjectId: subjects.id,
+      subjectSlug: subjects.slug,
+      subjectName: subjects.name,
+      subjectColor: subjects.color,
+      topicName: topics.name,
+    })
+    .from(flashcards)
+    .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
+    .innerJoin(subjects, eq(artifacts.subjectId, subjects.id))
+    .leftJoin(topics, eq(flashcards.topicId, topics.id))
+    .where(and(...conditions))
+    .orderBy(subjects.sortOrder, subjects.name, flashcards.createdAt, flashcards.id);
+}
+
+async function buildQueue(
+  db: AnyDb,
+  scope: ReviewScope,
+  cap: number,
+  newLimit: number,
+  now: Date,
+): Promise<QueueRow[]> {
+  const rows = await loadDueRows(db, scope, now);
+  const perSubject = groupBySubject(rows).map((list) => pickForSubject(list, newLimit));
+  return interleave(perSubject).slice(0, cap);
+}
+
 export interface ReviewQueueOptions {
   cap?: number | undefined;
   newLimit?: number | undefined;
   topicId?: string | undefined;
+  now?: Date | undefined;
 }
 
 /**
@@ -82,32 +228,158 @@ export async function getReviewQueue(
   subjectSlug: string,
   options: ReviewQueueOptions = {},
 ): Promise<FlashcardDto[]> {
-  const subject = await requireSubject(db, subjectSlug);
-  const cap = options.cap ?? 50;
-  const newLimit = options.newLimit ?? 20;
+  const queue = await buildQueue(
+    db,
+    { subjectSlug, topicId: options.topicId },
+    options.cap ?? 50,
+    options.newLimit ?? DEFAULT_NEW_LIMIT,
+    options.now ?? new Date(),
+  );
+  return queue.map((r) => toDto(r.f));
+}
 
-  // Flagged ("scadente") cards stay in the deck but never reach the queue (F4 "Rischi").
-  const conditions = [
-    eq(artifacts.subjectId, subject.id),
-    eq(flashcards.suspended, false),
-    isNull(flashcards.flaggedAt),
-  ];
-  if (options.topicId) conditions.push(eq(flashcards.topicId, options.topicId));
+function toIntervals(schedule: FlashcardSchedule, now: Date): RatingIntervals {
+  const p = previewIntervals(schedule, now);
+  return { 1: p[1], 2: p[2], 3: p[3], 4: p[4] };
+}
 
-  const joined: { f: Flashcard }[] = await db
-    .select({ f: flashcards })
-    .from(flashcards)
-    .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
-    .where(and(...conditions));
-  const rows = joined.map((r) => r.f);
+/**
+ * Ripasso rapido queue (docs/09-ripasso-mobile.md §B2): one subject, one topic, or every active
+ * subject interleaved. Each item carries its subject and topic for the card header, and the
+ * interval each rating would give, for the buttons.
+ */
+export async function getQuickReviewQueue(
+  db: AnyDb,
+  scope: ReviewScope,
+  options: { n?: number | undefined; now?: Date | undefined } = {},
+): Promise<ReviewQueueItemDto[]> {
+  const now = options.now ?? new Date();
+  const queue = await buildQueue(db, scope, options.n ?? 500, DEFAULT_NEW_LIMIT, now);
+  return queue.map((r) => ({
+    ...toDto(r.f),
+    subjectSlug: r.subjectSlug,
+    subjectName: r.subjectName,
+    subjectColor: r.subjectColor as SubjectColor,
+    topicName: r.topicName,
+    intervals: toIntervals(toSchedule(r.f), now),
+  }));
+}
 
-  const now = new Date();
-  const due = rows.filter((r) => r.state !== 'new' && isDue(toSchedule(r), now));
-  due.sort((a, b) => (a.dueAt?.getTime() ?? 0) - (b.dueAt?.getTime() ?? 0));
-  const fresh = rows.filter((r) => r.state === 'new');
+/**
+ * Home of the Ripasso rapido (docs/09-ripasso-mobile.md §B2): every active subject with its due
+ * count, next exam and topics. Each count is exactly what starting that row returns with "Tutte":
+ * a subject or topic queue applies `newLimit` on its own, so topic counts can add up to more than
+ * their subject's when it has many new cards.
+ */
+export async function getReviewOverview(
+  db: AnyDb,
+  now: Date = new Date(),
+): Promise<ReviewOverviewDto> {
+  const live = isNull(subjects.archivedAt);
+  const [subjectRows, topicRows, dueRows, countRows, examRows, [next]] = await Promise.all([
+    db
+      .select({ id: subjects.id, slug: subjects.slug, name: subjects.name, color: subjects.color })
+      .from(subjects)
+      .where(live)
+      .orderBy(subjects.sortOrder, subjects.name),
+    db
+      .select({
+        id: topics.id,
+        subjectId: topics.subjectId,
+        name: topics.name,
+        mastery: topics.mastery,
+      })
+      .from(topics)
+      .innerJoin(subjects, eq(topics.subjectId, subjects.id))
+      .where(live)
+      .orderBy(topics.orderIndex, topics.name),
+    loadDueRows(db, {}, now),
+    db
+      .select({
+        subjectId: artifacts.subjectId,
+        topicId: flashcards.topicId,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(flashcards)
+      .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
+      .innerJoin(subjects, eq(artifacts.subjectId, subjects.id))
+      .where(and(...reviewableConditions(), live))
+      .groupBy(artifacts.subjectId, flashcards.topicId),
+    db
+      .select({ subjectId: exams.subjectId, title: exams.title, date: exams.date })
+      .from(exams)
+      .where(and(eq(exams.status, 'scheduled'), gte(exams.date, startOfDay(now))))
+      .orderBy(exams.date),
+    db
+      .select({ at: sql<Date | string | null>`min(${flashcards.dueAt})` })
+      .from(flashcards)
+      .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
+      .innerJoin(subjects, eq(artifacts.subjectId, subjects.id))
+      .where(and(...reviewableConditions(), live, not(dueCardConditions(now)))),
+  ]);
 
-  const queue = [...due, ...fresh.slice(0, newLimit)].slice(0, cap);
-  return queue.map(toDto);
+  const key = (subjectId: string, topicId: string | null) => `${subjectId}|${topicId ?? ''}`;
+  const cardCounts = new Map<string, number>();
+  for (const r of countRows as { subjectId: string; topicId: string | null; count: number }[]) {
+    cardCounts.set(key(r.subjectId, r.topicId), Number(r.count));
+  }
+  const dueBySubject = new Map(groupBySubject(dueRows).map((l) => [l[0]!.subjectId, l]));
+  const firstExam = new Map<string, { title: string; date: Date }>();
+  for (const e of examRows as { subjectId: string; title: string; date: Date }[]) {
+    if (!firstExam.has(e.subjectId)) firstExam.set(e.subjectId, e);
+  }
+
+  const subjectsOut = (
+    subjectRows as { id: string; slug: string; name: string; color: string }[]
+  ).map((s) => {
+    const due = dueBySubject.get(s.id) ?? [];
+    const dueInTopic = (topicId: string | null) =>
+      pickForSubject(
+        due.filter((r) => r.f.topicId === topicId),
+        DEFAULT_NEW_LIMIT,
+      ).length;
+    const ownTopics = (
+      topicRows as { id: string; subjectId: string; name: string; mastery: number | null }[]
+    ).filter((t) => t.subjectId === s.id);
+    const topicsOut: ReviewOverviewTopicDto[] = ownTopics.map((t) => ({
+      id: t.id,
+      name: t.name,
+      mastery: t.mastery,
+      due: dueInTopic(t.id),
+      cardCount: cardCounts.get(key(s.id, t.id)) ?? 0,
+    }));
+    const untagged = cardCounts.get(key(s.id, null)) ?? 0;
+    if (untagged > 0) {
+      topicsOut.push({
+        id: null,
+        name: 'Senza argomento',
+        mastery: null,
+        due: dueInTopic(null),
+        cardCount: untagged,
+      });
+    }
+    const exam = firstExam.get(s.id);
+    return {
+      slug: s.slug,
+      name: s.name,
+      color: s.color as SubjectColor,
+      nextExam: exam ? { title: exam.title, date: exam.date.toISOString() } : null,
+      due: pickForSubject(due, DEFAULT_NEW_LIMIT).length,
+      cardCount: topicsOut.reduce((sum, t) => sum + t.cardCount, 0),
+      topics: topicsOut,
+    };
+  });
+
+  return {
+    totalDue: subjectsOut.reduce((sum, s) => sum + s.due, 0),
+    totalCards: subjectsOut.reduce((sum, s) => sum + s.cardCount, 0),
+    nextDueAt: next?.at ? new Date(next.at).toISOString() : null,
+    subjects: subjectsOut,
+  };
+}
+
+function startOfDay(now: Date): Date {
+  return new Date(`${now.toISOString().slice(0, 10)}T00:00:00.000Z`);
 }
 
 export interface SubmitReviewInput {
@@ -127,7 +399,8 @@ export async function submitReview(
   subjectSlug: string,
   cardId: string,
   input: SubmitReviewInput,
-): Promise<FlashcardDto> {
+  now: Date = new Date(),
+): Promise<SubmitReviewResponse> {
   const subject = await requireSubject(db, subjectSlug);
   const [row] = await db
     .select({ f: flashcards })
@@ -139,30 +412,25 @@ export async function submitReview(
 
   const currentSchedule =
     card.reps === 0 && card.state === 'new' ? newCardSchedule() : toSchedule(card);
-  const result = scheduleReview(currentSchedule, input.rating, new Date());
+  const result = scheduleReview(currentSchedule, input.rating, now);
 
   const [updated] = await db
     .update(flashcards)
-    .set({
-      stability: result.schedule.stability,
-      difficulty: result.schedule.difficulty,
-      dueAt: result.schedule.dueAt,
-      lastReviewAt: result.schedule.lastReviewAt,
-      reps: result.schedule.reps,
-      lapses: result.schedule.lapses,
-      state: result.schedule.state,
-    })
+    .set(scheduleColumns(result.schedule))
     .where(eq(flashcards.id, cardId))
     .returning();
 
+  const reviewId = randomUUID();
   await db.insert(reviews).values({
-    id: randomUUID(),
+    id: reviewId,
     flashcardId: cardId,
     rating: input.rating,
     elapsedMs: input.elapsedMs,
+    reviewedAt: now,
     confidence: input.confidence ?? null,
     prevStability: result.prevStability,
     newStability: result.newStability,
+    prevSchedule: toStoredSchedule(toSchedule(card)),
   });
 
   // Every review shifts this card's retrievability, and the topic's mastery
@@ -170,7 +438,89 @@ export async function submitReview(
   // simulation grading (docs/fasi/F5-esami-simulazioni.md "Stato").
   if (card.topicId) await recomputeTopicMastery(db, card.topicId);
 
-  return toDto(updated);
+  return {
+    flashcard: toDto(updated),
+    reviewId,
+    dueAt: result.schedule.dueAt!.toISOString(),
+    intervals: toIntervals(result.schedule, now),
+  };
+}
+
+function scheduleColumns(s: FlashcardSchedule) {
+  return {
+    stability: s.stability,
+    difficulty: s.difficulty,
+    dueAt: s.dueAt,
+    lastReviewAt: s.lastReviewAt,
+    reps: s.reps,
+    lapses: s.lapses,
+    state: s.state,
+  };
+}
+
+function toStoredSchedule(s: FlashcardSchedule): ReviewPrevSchedule {
+  return {
+    ...s,
+    dueAt: s.dueAt ? s.dueAt.toISOString() : null,
+    lastReviewAt: s.lastReviewAt ? s.lastReviewAt.toISOString() : null,
+  };
+}
+
+function fromStoredSchedule(s: ReviewPrevSchedule): FlashcardSchedule {
+  return {
+    ...s,
+    dueAt: s.dueAt ? new Date(s.dueAt) : null,
+    lastReviewAt: s.lastReviewAt ? new Date(s.lastReviewAt) : null,
+  };
+}
+
+export class ReviewNotFoundError extends Error {
+  constructor(id: string) {
+    super(`Valutazione non trovata: ${id}`);
+    this.name = 'ReviewNotFoundError';
+  }
+}
+
+export class ReviewNotUndoableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ReviewNotUndoableError';
+  }
+}
+
+/**
+ * Undoes a rating (docs/09-ripasso-mobile.md §B3): puts the card back exactly as it was before
+ * it and deletes the `reviews` row, so stats and calibration forget it too. Only the card's
+ * latest review can be undone — restoring an older snapshot would silently drop the newer ones.
+ */
+export async function undoReview(db: AnyDb, reviewId: string): Promise<FlashcardDto> {
+  return db.transaction(async (tx: AnyDb) => {
+    const [review] = await tx.select().from(reviews).where(eq(reviews.id, reviewId));
+    if (!review) throw new ReviewNotFoundError(reviewId);
+    if (!review.prevSchedule) {
+      throw new ReviewNotUndoableError(
+        'Questa valutazione è precedente all’annulla e non si può annullare',
+      );
+    }
+    const [latest] = await tx
+      .select({ id: reviews.id })
+      .from(reviews)
+      .where(eq(reviews.flashcardId, review.flashcardId))
+      .orderBy(desc(reviews.reviewedAt), desc(reviews.id))
+      .limit(1);
+    if (latest?.id !== reviewId) {
+      throw new ReviewNotUndoableError('Si può annullare solo l’ultima valutazione della card');
+    }
+
+    const [restored] = await tx
+      .update(flashcards)
+      .set(scheduleColumns(fromStoredSchedule(review.prevSchedule)))
+      .where(eq(flashcards.id, review.flashcardId))
+      .returning();
+    await tx.delete(reviews).where(eq(reviews.id, reviewId));
+    if (restored.topicId) await recomputeTopicMastery(tx, restored.topicId);
+    return toDto(restored);
+  });
 }
 
 export interface ListFlashcardsOptions {

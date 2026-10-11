@@ -113,9 +113,11 @@ describe('review queue + submitReview + suspend', () => {
 
   it('submitReview updates the schedule and records a reviews row', async () => {
     const { cardId } = await seedDeckAndCard(db, subjectId);
-    const updated = await submitReview(db, subjectSlug, cardId, { rating: 3, elapsedMs: 2500 });
+    const result = await submitReview(db, subjectSlug, cardId, { rating: 3, elapsedMs: 2500 });
 
-    expect(updated.state).not.toBe('new');
+    expect(result.flashcard.state).not.toBe('new');
+    expect(result.dueAt).toBeTruthy();
+    expect(result.intervals[1]).toBeLessThan(result.intervals[4]);
 
     const [row] = await db.select().from(flashcards).where(eq(flashcards.id, cardId));
     expect(row?.dueAt).not.toBeNull();
@@ -124,6 +126,8 @@ describe('review queue + submitReview + suspend', () => {
     const reviewRows = await db.select().from(reviews).where(eq(reviews.flashcardId, cardId));
     expect(reviewRows).toHaveLength(1);
     expect(reviewRows[0]?.rating).toBe(3);
+    expect(reviewRows[0]?.id).toBe(result.reviewId);
+    expect(reviewRows[0]?.prevSchedule).toMatchObject({ state: 'new', reps: 0 });
     expect(reviewRows[0]?.elapsedMs).toBe(2500);
     expect(reviewRows[0]?.prevStability).toBeNull();
   });

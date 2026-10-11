@@ -138,6 +138,30 @@ tutta larghezza con `max-h-[90dvh]`.
 `ReviewOverviewDtoSchema`, `ReviewQueueItemDtoSchema`, `SubmitReviewResponseSchema` (`reviewId`, `dueAt`),
 esportati dal barrel.
 
+### Fatto (PR 3)
+
+Differenze rispetto a quanto scritto sopra, decise in implementazione:
+
+- **Regola "in scadenza"** (`dueCardConditions` in `lib/review.ts`): card nuova; card in `review` con `dueAt`
+  entro fine giornata (UTC, come la Dashboard); card in `learning`/`relearning` solo con `dueAt ≤ adesso`. I passi
+  di apprendimento sono di minuti: con "fine giornata" una card valutata "Bene" tornerebbe subito nella stessa
+  sessione.
+- **`newLimit` (20) per coda e per materia**: nella coda "tutte le materie" ogni materia porta al massimo 20 card
+  nuove, poi round-robin. Nell'overview ogni contatore (materia o argomento) è esattamente quello che avvia
+  quella riga con "Tutte", quindi i contatori degli argomenti possono sommare più di quello della materia.
+- **La Dashboard** prende i conteggi dall'overview: ora esclude le card segnalate e applica `newLimit`.
+- **Overview**: in più `cardCount` (per materia e argomento), `totalCards` e `nextDueAt`, per distinguere
+  "niente da ripassare oggi" da "nessuna flashcard". Riga "Senza argomento" con `id: null`, solo se ha card.
+- **Coda**: `GET /api/review/queue?materia=&argomento=&n=`, `argomento=none` = card senza argomento, `n` ≤ 500
+  (assente = tutte). Risposta `{ queue }` come la coda per materia.
+- **Intervalli in ms**, non stringhe: `intervals: { 1..4: number }`. `formatInterval` in `lib/format.ts` li
+  formatta lato client. La risposta del rating include anche `intervals` della card aggiornata, per una
+  card ri-accodata dopo "Di nuovo".
+- **Annulla**: `DELETE /api/review/[reviewId]` → `{ flashcard }`; 404 se non esiste, 409 se non è l'ultima
+  valutazione della card o se è precedente alla migrazione 0021 (`prev_schedule` null).
+- **Card viste ma senza stabilità/difficoltà** (import Anki o di mazzi senza stato FSRS): FSRS le tratta come
+  nuove. Prima davano intervalli e schedule `NaN`.
+
 ---
 
 ## 4. Fase C — UI della sezione (solo mobile)
