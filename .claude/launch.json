@@ -6,6 +6,17 @@
       "runtimeExecutable": "C:\\Users\\andre\\Documents\\GitHub\\StudyHub\\scripts\\run-web-dev.cmd",
       "runtimeArgs": [],
       "port": 3000
+    },
+    {
+      "name": "web-node",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["apps/web/node_modules/next/dist/bin/next", "dev", "apps/web"],
+      "env": {
+        "DATABASE_URL": "postgres://studyhub:studyhub@localhost:5432/studyhub_audit",
+        "REDIS_URL": "redis://localhost:6379",
+        "STUDYHUB_DATA_DIR": "C:\\Users\\andre\\AppData\\Local\\Temp\\claude\\C--Users-andre-Documents-GitHub-StudyHub\\8cf7001a-2d60-4f7c-9f44-c126377ffef7\\scratchpad\\data"
+      },
+      "port": 3000
     }
   ]
 }
