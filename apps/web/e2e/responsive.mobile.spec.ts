@@ -39,6 +39,7 @@ test.describe('Mobile — layout a larghezza telefono', () => {
       '/',
       '/materie',
       '/calendario',
+      '/ripasso',
       '/admin',
       base,
       ...['appunti', 'esami', 'flashcard', 'simulazioni', 'lacune'].map((t) => `${base}?tab=${t}`),
