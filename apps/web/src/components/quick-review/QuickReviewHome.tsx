@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Play } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronRight, Layers, Play } from 'lucide-react';
 import type { ReviewOverviewDto, ReviewOverviewSubjectDto } from '@studyhub/contracts';
 import { SUBJECT_COLOR_HEX } from '@/lib/subjectColors';
 import { SESSION_LIMITS, type ReviewScope, type SessionLimit } from '@/lib/quickReview';
@@ -244,7 +244,8 @@ export function QuickReviewHome({
             </button>
           </div>
         ) : overview && overview.totalCards === 0 ? (
-          <div className="flex flex-col items-start gap-2 px-1 py-6">
+          <div className="bg-technical-grid flex flex-col items-start gap-2 rounded-[var(--radius-card)] border border-border px-5 py-6">
+            <Layers size={22} strokeWidth={1.75} aria-hidden="true" className="text-fg-secondary" />
             <p className="text-base font-medium">Nessuna flashcard ancora</p>
             <p className="text-sm text-fg-secondary">
               Genera le flashcard dai documenti di una materia: compariranno qui.
@@ -258,10 +259,19 @@ export function QuickReviewHome({
           </div>
         ) : overview ? (
           <>
+            {totalDue === 0 && (
+              <div className="bg-technical-grid mb-4 flex items-center gap-3 rounded-[var(--radius-card)] border border-border px-4 py-4">
+                <CheckCircle2 size={22} strokeWidth={1.75} aria-hidden="true" className="text-ok" />
+                <div>
+                  <p className="text-sm font-medium">Sei in pari</p>
+                  <p className="text-xs text-fg-secondary">
+                    Nessuna card in scadenza: la prossima data è qui sotto.
+                  </p>
+                </div>
+              </div>
+            )}
             <h2 className="mb-2.5 ml-1 text-xs font-medium text-fg-secondary">
-              {totalDue
-                ? 'Tocca una materia o un argomento per partire'
-                : 'Niente da ripassare oggi'}
+              {totalDue ? 'Tocca una materia o un argomento per partire' : 'Le tue materie'}
             </h2>
             <ul className="flex flex-col gap-2">
               {/* A subject without flashcards has nothing to offer here (it shows on desktop). */}

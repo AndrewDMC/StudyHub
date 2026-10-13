@@ -131,6 +131,26 @@ body {
   background-size: 24px 24px;
 }
 
+/* Ripasso rapido (docs/09-ripasso-mobile.md): next card and screen changes ease in. */
+@keyframes sr-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+@keyframes sr-screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+.anim-card-in {
+  animation: sr-card-in 220ms var(--ease-standard) backwards;
+}
+.anim-screen-in {
+  animation: sr-screen-in 240ms var(--ease-standard) backwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

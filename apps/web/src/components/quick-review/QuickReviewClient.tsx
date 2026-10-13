@@ -280,7 +280,8 @@ export function QuickReviewClient({
           role="dialog"
           aria-modal="true"
           aria-label={screen === 'summary' ? 'Riepilogo sessione' : `Ripasso: ${title}`}
-          className="fixed inset-0 z-50 flex flex-col bg-bg-base pt-[env(safe-area-inset-top)] text-fg-primary md:hidden"
+          key={screen}
+          className="anim-screen-in fixed inset-0 z-50 flex flex-col bg-bg-base pt-[env(safe-area-inset-top)] text-fg-primary md:hidden"
         >
           {screen === 'session' && card ? (
             <>
