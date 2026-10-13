@@ -105,6 +105,7 @@ export function QuickReviewSession({
 
       <div className="flex min-h-0 flex-1 p-4">
         <SwipeCard
+          key={position}
           enabled={revealed}
           onTap={revealed ? undefined : onReveal}
           onSwipe={(dir) => onRate(dir === 'right' ? 3 : 1)}

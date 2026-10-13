@@ -254,8 +254,16 @@ File come da struttura sopra, più `components/quick-review/useReviewOutbox.ts` 
 - **Test**: `test/quickReviewSession.test.ts` (logica pura, incluso il caso del prototipo 8 valutazioni → 6 card,
   67%), `e2e/ripasso.mobile.spec.ts` (sessione completa + deep link), `/ripasso` nello smoke responsive,
   rimando desktop in `e2e/shell.spec.ts`.
-- **Resta per la PR 5**: animazione di uscita della card dopo lo swipe, transizioni tra schermate, rifinitura
-  degli stati vuoti.
+
+### Fatto (PR 5)
+
+- Swipe oltre soglia: la card esce di lato (180 ms, con tinta e etichetta) e solo dopo viene registrata la
+  valutazione; `SwipeCard` è rimontata a ogni posizione (`key`), quindi la card successiva entra con una
+  dissolvenza breve. Sotto `prefers-reduced-motion` lo swipe resta disattivato e le durate sono azzerate.
+- Cambio schermata (home → sessione → riepilogo): l'overlay entra con dissolvenza e piccolo scorrimento.
+- Stati vuoti: "Sei in pari" (con la prossima scadenza nel piede) quando non c'è nulla in scadenza, e
+  "Nessuna flashcard ancora" con griglia tecnica e icona.
+- Haptics e badge della tab bar erano già in PR 4.
 
 ---
 
