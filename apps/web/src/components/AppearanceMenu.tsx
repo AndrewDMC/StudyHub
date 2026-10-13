@@ -97,7 +97,7 @@ export function AppearanceMenu() {
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="rounded-[var(--radius-control)] border border-border px-2.5 py-1 text-xs text-fg-secondary hover:text-fg-primary"
+        className="min-h-11 rounded-[var(--radius-control)] border border-border px-3 py-1 text-xs text-fg-secondary hover:text-fg-primary md:min-h-0 md:px-2.5"
       >
         Aspetto
       </button>
@@ -116,7 +116,7 @@ export function AppearanceMenu() {
                   type="button"
                   aria-pressed={theme === t}
                   onClick={() => chooseTheme(t)}
-                  className={seg(theme === t)}
+                  className={`${seg(theme === t)} max-md:min-h-11 max-md:flex-1`}
                 >
                   {THEME_LABELS[t]}
                 </button>
@@ -134,7 +134,7 @@ export function AppearanceMenu() {
                   type="button"
                   aria-pressed={density === d}
                   onClick={() => chooseDensity(d)}
-                  className={seg(density === d)}
+                  className={`${seg(density === d)} max-md:min-h-11 max-md:flex-1`}
                 >
                   {DENSITY_LABELS[d]}
                 </button>

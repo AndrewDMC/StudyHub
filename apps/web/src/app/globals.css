@@ -106,6 +106,8 @@ body {
 body {
   font-size: 0.875rem; /* 14px at comfortable density */
   font-family: var(--font-sans);
+  /* Touch: no grey flash on tap (every control has its own pressed/hover state). */
+  -webkit-tap-highlight-color: transparent;
 }
 
 * {
