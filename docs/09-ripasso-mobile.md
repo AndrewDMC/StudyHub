@@ -75,13 +75,23 @@ Obiettivo: ogni pagina esistente è usabile a 390 px prima di aggiungere la nuov
 Checklist per ogni route (`/`, `/materie`, `/materie/[slug]` e tab, `/piano`, `/calendario`,
 documento, sessione di studio, simulazione, risultati, admin): niente scroll orizzontale di pagina,
 tabelle larghe in contenitore `overflow-x-auto`, toolbar che vanno a capo, target ≥ 44 px, dialog Radix a
-tutta larghezza con `max-h-[90dvh]`. Correzioni note già da ora:
+tutta larghezza con `max-h-[90dvh]`.
 
-- `ReviewSessionClient`: togliere `h-dvh` (o portarlo in overlay come la nuova sessione), bottoni rating 44 px.
-- `SessionClient`: le tre colonne diventano tab (già previsto da docs/08, verificare che sia implementato).
-- `CalendarClient`/`PlanClient`: vista settimana → lista giornaliera sotto `md`.
+**Fatto (PR 2)**, misurato a 375 px con dati di prova (overflow di `<main>` e del documento):
 
-Ogni correzione è piccola e isolata: un commit per pagina.
+- Unici overflow reali: header e tab della materia (+301 px) e header/agenda del Calendario (+41 px).
+  Materia: header che va a capo, riga delle tab scorrevole in orizzontale, azioni che vanno a capo.
+  Calendario: header a capo, celle 56 px, righe dell'agenda a capo con titolo troncato correttamente.
+- Globali: margine pagina 16 px sotto `md` (`p-4 md:p-6`); `Button`/`Select` alti 44 px sotto `md`; dialog con
+  margine 16 px, `max-h-[90dvh]` e scroll; campi a 16 px sotto `md` (iOS non zooma al focus).
+- `ReviewSessionClient` ed `ExamModeClient`: `h-dvh` → `h-full` (niente doppio scroll dentro la shell),
+  bottoni 44 px, rating in griglia 4 colonne, scorciatoie da tastiera nascoste sotto `md`.
+  `DocumentViewerClient` (originale): `h-[calc(100vh-3rem)]` → `h-full`.
+- `SessionClient`: le colonne erano già tab sotto `lg`; tab 44 px e titolo su due righe.
+- `PlanClient`: il piano attivo era già una lista per giorno; righe task a capo, Fatta/Salta 44 px. Stesso
+  trattamento per le task in Dashboard e nella scheda materia, il timer Pomodoro e i KPI della Dashboard
+  (2 per riga).
+- Smoke Playwright `e2e/responsive.mobile.spec.ts` (progetto `mobile`) + `e2e/shell.spec.ts` (desktop).
 
 ---
 
@@ -205,10 +215,11 @@ su `{ queue, idx, history }`: testabili senza DOM.
   `countDueCards` allineato.
 - **Vitest** `lib/quickReview.ts`: ri-accodamento "Di nuovo", undo dopo ri-accodamento, metriche del riepilogo
   (stessi casi del prototipo: 8 valutazioni → 6 card, 67% al primo colpo).
-- **Playwright**: nuovo project `mobile` (`devices['Pixel 7']`) in `playwright.config.ts`;
-  `e2e/ripasso-mobile.spec.ts`: home → espandi materia → avvia argomento → rivela → swipe → undo → riepilogo →
-  ripassa errori. Più uno smoke "nessuno scroll orizzontale" su ogni route della Fase A
-  (`document.documentElement.scrollWidth <= innerWidth`). Test desktop: tab bar e link Ripasso assenti.
+- **Playwright**: project `mobile` (`devices['Pixel 7']`) in `playwright.config.ts`, che esegue solo i file
+  `*.mobile.spec.ts` (il project desktop li ignora). PR 2: smoke "nessuno scroll orizzontale" su ogni route
+  della Fase A (`e2e/responsive.mobile.spec.ts`, documento e `<main>`) e tab bar assente su desktop
+  (`e2e/shell.spec.ts`). PR 4: `e2e/ripasso.mobile.spec.ts`: home → espandi materia → avvia argomento →
+  rivela → swipe → undo → riepilogo → ripassa errori; su desktop link Ripasso assente.
 
 ---
 

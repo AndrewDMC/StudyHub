@@ -294,7 +294,7 @@ export function PomodoroPanel({ timer, active }: { timer: UsePomodoro; active: b
               disabled={!active}
               aria-pressed={mode === m}
               onClick={() => timer.setMode(m)}
-              className={`rounded-full px-2 py-0.5 ${
+              className={`rounded-full px-2 py-0.5 max-md:px-3 max-md:py-2 ${
                 mode === m ? 'bg-accent text-white' : 'text-fg-muted hover:text-fg-primary'
               }`}
             >
@@ -354,7 +354,7 @@ export function PomodoroPanel({ timer, active }: { timer: UsePomodoro; active: b
               requestNotifications();
               timer.setRunning(!running);
             }}
-            className="rounded-[var(--radius-control)] bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-hover"
+            className="rounded-[var(--radius-control)] bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-hover max-md:min-h-11 max-md:px-4"
           >
             {running ? 'Pausa' : 'Riprendi'}
           </button>
@@ -362,7 +362,7 @@ export function PomodoroPanel({ timer, active }: { timer: UsePomodoro; active: b
             <button
               type="button"
               onClick={timer.skip}
-              className="rounded-[var(--radius-control)] border border-border px-3 py-1 text-xs text-fg-secondary hover:bg-bg-raised"
+              className="rounded-[var(--radius-control)] border border-border px-3 py-1 text-xs text-fg-secondary hover:bg-bg-raised max-md:min-h-11 max-md:px-4"
             >
               {isFocus ? 'Salta al riposo' : 'Salta la pausa'}
             </button>

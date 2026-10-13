@@ -140,7 +140,7 @@ export function ExamModeClient({
 
   if (error && !attempt) {
     return (
-      <div className="flex h-dvh flex-col items-center justify-center gap-2 text-sm">
+      <div className="flex h-full flex-col items-center justify-center gap-2 text-sm">
         <p role="alert" className="text-danger">
           {error}
         </p>
@@ -152,7 +152,7 @@ export function ExamModeClient({
   }
   if (!attempt) {
     return (
-      <div className="flex h-dvh items-center justify-center text-sm text-fg-muted">
+      <div className="flex h-full items-center justify-center text-sm text-fg-muted">
         Preparazione esame…
       </div>
     );
@@ -162,9 +162,11 @@ export function ExamModeClient({
   const lowTime = remaining <= 300;
 
   return (
-    <div className="flex h-dvh flex-col bg-bg-base text-fg-primary">
-      <header className="flex items-center justify-between border-b border-border px-6 py-3 text-xs">
-        <span className="text-fg-muted">Modalità esame · nessun aiuto disponibile</span>
+    <div className="flex h-full flex-col bg-bg-base text-fg-primary">
+      <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 text-xs md:px-6">
+        <span className="text-fg-muted">
+          Modalità esame<span className="max-md:hidden"> · nessun aiuto disponibile</span>
+        </span>
         <span
           className={`font-mono text-base tabular-nums ${lowTime ? 'text-warn' : 'text-fg-primary'}`}
           aria-live={lowTime ? 'polite' : 'off'}
@@ -178,12 +180,12 @@ export function ExamModeClient({
         </span>
       </header>
 
-      <main className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto px-6 py-6">
+      <main className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-6">
         <div className="mb-4 flex items-center justify-between text-xs text-fg-muted">
           <button
             type="button"
             onClick={() => setShowAll((v) => !v)}
-            className="underline hover:text-fg-secondary"
+            className="underline hover:text-fg-secondary max-md:-my-3 max-md:py-3"
           >
             {showAll ? 'Un esercizio alla volta' : 'Vista completa'}
           </button>
@@ -228,7 +230,7 @@ export function ExamModeClient({
               type="button"
               onClick={() => setIndex((i) => Math.max(0, i - 1))}
               disabled={index === 0}
-              className="rounded-[var(--radius-control)] border border-border px-3 py-1.5 text-sm text-fg-secondary disabled:opacity-40"
+              className="rounded-[var(--radius-control)] border border-border px-3 py-1.5 text-sm text-fg-secondary disabled:opacity-40 max-md:min-h-11"
             >
               Precedente
             </button>
@@ -236,7 +238,7 @@ export function ExamModeClient({
               type="button"
               onClick={() => setIndex((i) => Math.min(attempt.items.length - 1, i + 1))}
               disabled={index >= attempt.items.length - 1}
-              className="rounded-[var(--radius-control)] border border-border px-3 py-1.5 text-sm text-fg-secondary disabled:opacity-40"
+              className="rounded-[var(--radius-control)] border border-border px-3 py-1.5 text-sm text-fg-secondary disabled:opacity-40 max-md:min-h-11"
             >
               Successivo
             </button>
@@ -244,14 +246,14 @@ export function ExamModeClient({
         )}
       </main>
 
-      <footer className="flex justify-end border-t border-border px-6 py-3">
+      <footer className="flex justify-end border-t border-border px-4 py-3 md:px-6">
         <button
           type="button"
           onClick={() => {
             if (window.confirm("Consegnare l'esame? Le risposte non saranno più modificabili."))
               void submit();
           }}
-          className="rounded-[var(--radius-control)] bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
+          className="rounded-[var(--radius-control)] bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover max-md:min-h-11"
         >
           Consegna
         </button>

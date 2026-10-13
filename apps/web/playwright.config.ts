@@ -17,5 +17,14 @@ export default defineConfig({
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3000',
     trace: 'on-first-retry',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  // `*.mobile.spec.ts` runs only at phone size (docs/09-ripasso-mobile.md §5); everything else
+  // only on desktop, where the sidebar and the keyboard-first screens live.
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+      testIgnore: /\.mobile\.spec\.ts$/,
+    },
+    { name: 'mobile', use: { ...devices['Pixel 7'] }, testMatch: /\.mobile\.spec\.ts$/ },
+  ],
 });

@@ -114,6 +114,15 @@ body {
   border-color: var(--border);
 }
 
+/* iOS Safari zooms into any field under 16px on focus; on phones every field is 16px. */
+@media (max-width: 767px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
 /* The one permitted "futuristic" effect: a faint technical grid on empty surfaces. */
 .bg-technical-grid {
   background-image:

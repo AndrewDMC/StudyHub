@@ -59,7 +59,9 @@ async function fetchRange(start: string, end: string): Promise<CalendarRangeDto>
   return body as CalendarRangeDto;
 }
 
-async function importIcs(file: File): Promise<{ imported: number; updated: number; skipped: number }> {
+async function importIcs(
+  file: File,
+): Promise<{ imported: number; updated: number; skipped: number }> {
   const res = await fetch('/api/calendar/import', {
     method: 'POST',
     headers: { 'Content-Type': 'text/calendar' },
@@ -106,7 +108,7 @@ function DayAgenda({
       {dayImportedEvents.map((event) => (
         <div
           key={event.id}
-          className="flex items-center gap-2 rounded-[var(--radius-control)] border border-border bg-bg-inset px-3 py-2 text-sm text-fg-secondary"
+          className="flex flex-wrap items-center gap-2 rounded-[var(--radius-control)] border border-border bg-bg-inset px-3 py-2 text-sm text-fg-secondary"
         >
           <span className="text-xs">📅</span>
           <span className="font-medium">{event.title}</span>
@@ -116,7 +118,7 @@ function DayAgenda({
       {dayExams.map((exam) => (
         <div
           key={exam.id}
-          className="flex items-center gap-2 rounded-[var(--radius-control)] border px-3 py-2 text-sm"
+          className="flex flex-wrap items-center gap-2 rounded-[var(--radius-control)] border px-3 py-2 text-sm"
           style={{ borderColor: SUBJECT_COLOR_HEX[exam.subjectColor] }}
         >
           <span
@@ -130,9 +132,9 @@ function DayAgenda({
       {dayTasks.map((task) => (
         <div
           key={task.id}
-          className="flex items-start justify-between gap-3 rounded-[var(--radius-control)] border border-border bg-bg-surface px-3 py-2"
+          className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 rounded-[var(--radius-control)] border border-border bg-bg-surface px-3 py-2"
         >
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1 basis-48">
             <p className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-fg-muted">
               <span
                 className="h-1.5 w-1.5 rounded-full"
@@ -142,7 +144,7 @@ function DayAgenda({
             </p>
             <Link
               href={`/materie/${task.subjectSlug}/piano`}
-              className="truncate text-sm font-medium text-fg-primary hover:underline"
+              className="block truncate text-sm font-medium text-fg-primary hover:underline"
             >
               {task.title}
             </Link>
@@ -152,12 +154,12 @@ function DayAgenda({
               type="date"
               value={moveTarget[task.id] ?? task.date}
               onChange={(e) => setMoveTarget((prev) => ({ ...prev, [task.id]: e.target.value }))}
-              className="rounded-[var(--radius-control)] border border-border bg-bg-inset px-1.5 py-1 text-xs text-fg-primary"
+              className="rounded-[var(--radius-control)] border border-border bg-bg-inset px-1.5 py-1 text-xs text-fg-primary max-md:min-h-11"
             />
             <button
               type="button"
               onClick={() => onMove(task.subjectSlug, task.id, moveTarget[task.id] ?? task.date)}
-              className="rounded-[var(--radius-control)] border border-border px-2 py-1 text-[11px] text-fg-secondary hover:text-fg-primary"
+              className="rounded-[var(--radius-control)] border border-border px-2 py-1 text-[11px] text-fg-secondary hover:text-fg-primary max-md:min-h-11 max-md:px-3"
             >
               Sposta
             </button>
@@ -183,7 +185,7 @@ function IcsFeedLink() {
   };
 
   return (
-    <div className="mb-3 flex items-center gap-2 text-xs text-fg-muted">
+    <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-muted">
       <span>Sottoscrivi in Google Calendar/Apple Calendar:</span>
       <a href={href} className="text-accent hover:underline">
         {href}
@@ -298,24 +300,26 @@ export function CalendarClient() {
   };
 
   return (
-    <div className="mx-auto max-w-5xl p-6">
-      <div className="mb-4 flex items-center justify-between gap-3">
+    <div className="mx-auto max-w-5xl p-4 md:p-6">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold tracking-[-0.02em]">Calendario</h1>
         <div className="flex items-center gap-2 text-sm">
           <button
             type="button"
             onClick={() => shiftMonth(-1)}
-            className="rounded-[var(--radius-control)] border border-border px-2 py-1 text-fg-secondary hover:text-fg-primary"
+            aria-label="Mese precedente"
+            className="rounded-[var(--radius-control)] border border-border px-2 py-1 text-fg-secondary hover:text-fg-primary max-md:min-h-11 max-md:min-w-11"
           >
             ←
           </button>
-          <span className="w-36 text-center font-medium text-fg-primary">
+          <span className="w-32 text-center font-medium text-fg-primary md:w-36">
             {MONTH_LABELS[cursor.month]} {cursor.year}
           </span>
           <button
             type="button"
             onClick={() => shiftMonth(1)}
-            className="rounded-[var(--radius-control)] border border-border px-2 py-1 text-fg-secondary hover:text-fg-primary"
+            aria-label="Mese successivo"
+            className="rounded-[var(--radius-control)] border border-border px-2 py-1 text-fg-secondary hover:text-fg-primary max-md:min-h-11 max-md:min-w-11"
           >
             →
           </button>
@@ -326,7 +330,7 @@ export function CalendarClient() {
               setCursor({ year: d.getUTCFullYear(), month: d.getUTCMonth() });
               setSelectedDay(todayIso);
             }}
-            className="rounded-[var(--radius-control)] border border-border px-2 py-1 text-xs text-fg-secondary hover:text-fg-primary"
+            className="rounded-[var(--radius-control)] border border-border px-2 py-1 text-xs text-fg-secondary hover:text-fg-primary max-md:min-h-11"
           >
             Oggi
           </button>
@@ -334,7 +338,9 @@ export function CalendarClient() {
       </div>
 
       <IcsFeedLink />
-      <ImportIcsButton onImported={() => queryClient.invalidateQueries({ queryKey: ['calendar'] })} />
+      <ImportIcsButton
+        onImported={() => queryClient.invalidateQueries({ queryKey: ['calendar'] })}
+      />
 
       {subjectsInRange.size > 0 && (
         <div className="mb-3 flex flex-wrap gap-3 text-xs text-fg-secondary">
@@ -389,7 +395,7 @@ export function CalendarClient() {
               key={date}
               type="button"
               onClick={() => setSelectedDay(date)}
-              className={`flex h-16 flex-col items-start gap-1 rounded-[var(--radius-control)] border p-1.5 text-left transition-colors duration-120 ${
+              className={`flex h-14 flex-col items-start gap-0.5 rounded md:h-16 md:gap-1-[var(--radius-control)] border p-1.5 text-left transition-colors duration-120 ${
                 isSelected
                   ? 'border-accent bg-bg-raised'
                   : 'border-border bg-bg-surface hover:bg-bg-raised'
