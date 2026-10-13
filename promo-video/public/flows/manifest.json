@@ -1,0 +1,127 @@
+{
+  "nav": [
+    {
+      "img": "nav-dash.png",
+      "x": 119.5,
+      "y": 112,
+      "w": 223,
+      "h": 36
+    },
+    {
+      "img": "nav-list.png",
+      "x": 477.328125,
+      "y": 196,
+      "w": 426.65625,
+      "h": 138
+    },
+    {
+      "img": "nav-subject.png",
+      "x": 642.6640625,
+      "y": 312,
+      "w": 229.328125,
+      "h": 112
+    },
+    {
+      "img": "nav-question.png",
+      "x": 919.9921875,
+      "y": 559.5,
+      "w": 192.765625,
+      "h": 36
+    },
+    {
+      "img": "nav-answer.png"
+    }
+  ],
+  "search": [
+    {
+      "img": "search-closed.png",
+      "x": 1542,
+      "y": 24,
+      "w": 84,
+      "h": 26
+    },
+    {
+      "img": "search-open.png"
+    },
+    {
+      "img": "search-t-fi.png",
+      "hold": 7
+    },
+    {
+      "img": "search-t-fisi.png",
+      "hold": 7
+    },
+    {
+      "img": "search-t-fisica.png",
+      "hold": 40
+    },
+    {
+      "img": "search-results.png",
+      "hold": 70
+    }
+  ],
+  "piano": [
+    {
+      "img": "piano-full.png",
+      "full": true
+    }
+  ],
+  "mobile": [
+    {
+      "img": "mobile-dash.png",
+      "x": 146.25,
+      "y": 816,
+      "w": 97.5,
+      "h": 56
+    },
+    {
+      "img": "mobile-list.png",
+      "x": 195,
+      "y": 334.84375,
+      "w": 358,
+      "h": 138
+    },
+    {
+      "img": "mobile-subject.png"
+    }
+  ],
+  "mnav": [
+    {
+      "img": "mnav-dash.png",
+      "x": 146.25,
+      "y": 816,
+      "w": 97.5,
+      "h": 56
+    },
+    {
+      "img": "mnav-list.png",
+      "x": 195,
+      "y": 334.84375,
+      "w": 358,
+      "h": 138
+    },
+    {
+      "img": "mnav-subject.png",
+      "x": 195,
+      "y": 713.171875,
+      "w": 358,
+      "h": 62
+    },
+    {
+      "img": "mnav-question.png",
+      "x": 194.9921875,
+      "y": 528,
+      "w": 136.609375,
+      "h": 44
+    },
+    {
+      "img": "mnav-answer.png"
+    }
+  ],
+  "mpiano": [
+    {
+      "img": "mpiano-full.png",
+      "full": true
+    }
+  ]
+}
