@@ -65,10 +65,12 @@ Obiettivo: ogni pagina esistente è usabile a 390 px prima di aggiungere la nuov
   (condiviso con la sidebar): **Dashboard · Materie · Calendario · Admin**, voce attiva con `usePathname`.
 - **Fatto (PR 1)**: header con padding `safe-area-inset-top`; la CommandPalette resta solo `md+` (serve la
   tastiera); il bottone Aspetto e le sue opzioni sono alti 44 px sotto `md`.
-- **PR 4**: "Ripasso" entra nella tab bar al posto di Admin (che passa a un menu `⋯` nell'header), con
-  badge mono del numero di card in scadenza (`GET /api/review/overview`, §B2); `start_url` del manifest
-  diventa `/ripasso`.
-- **PR 4**: la tab bar si nasconde quando la sessione di ripasso (overlay full-screen) è aperta.
+- **Fatto (PR 4)**: "Ripasso" entra nella tab bar al posto di Admin (che passa a un menu `⋯` nell'header,
+  `MobileMoreMenu`), con badge mono del numero di card in scadenza (`GET /api/review/overview`, §B2); ordine
+  **Dashboard · Materie · Ripasso · Calendario** (`MOBILE_NAV_ITEMS` in `lib/nav.ts`, la sidebar resta
+  `NAV_ITEMS`); `start_url` del manifest diventa `/ripasso`.
+- **Fatto (PR 4)**: la tab bar si nasconde (`html[data-fullscreen]`) quando la sessione di ripasso
+  (overlay full-screen) è aperta.
 
 ### A3. Audit pagina per pagina a 390×844
 
@@ -228,6 +230,32 @@ su `{ queue, idx, history }`: testabili senza DOM.
   `data-theme=light`. Contrasti ≥ 4.5:1 (il grigio `#8A93A6` del prototipo → `text-fg-secondary`).
 - Bottoni veri, `aria-label` sulle icone, focus visibile, annuncio `aria-live="polite"` della card successiva.
 - `/ripasso` a `≥ md`: blocco `hidden md:flex` con rimando ai ripassi per materia; il contenuto mobile è `md:hidden`.
+
+### Fatto (PR 4)
+
+File come da struttura sopra, più `components/quick-review/useReviewOutbox.ts` (invio delle valutazioni),
+`lib/reviewOverview.ts` (query condivisa tra home e badge) e `components/MobileMoreMenu.tsx`. Scostamenti:
+
+- **Invio in serie**: le valutazioni partono una alla volta e in ordine (una card ripassata due volte nella
+  stessa sessione viene schedulata nell'ordine giusto, un annulla trova sempre la review). Annullare una
+  valutazione non ancora partita la toglie dalla coda senza richieste; dopo 3 tentativi (1 s, 2 s, 4 s) la coda
+  si ferma con la richiesta fallita in testa e il toast "Valutazione non salvata — Riprova". Un 4xx (es. 409
+  sull'annulla di una card ripassata altrove) non si ritenta: toast con il messaggio. Richieste `keepalive` e
+  avviso `beforeunload` se resta qualcosa in coda.
+- **Prossime scadenze**: stimate subito dagli intervalli della card, poi sostituite dal `dueAt` restituito dal
+  server; gruppi per giorno di calendario locale (Oggi / Domani / Tra N giorni). Una card "Di nuovo" ri-accodata
+  riceve gli intervalli nuovi dalla risposta del server.
+- **Materie senza flashcard** non compaiono nella home né nel rimando desktop (non c'è nulla da avviare); quelle
+  con card ma niente in scadenza restano, attenuate e disabilitate.
+- **Deep link**: `n` accetta 1-500; senza `n` usa la lunghezza salvata. Alla chiusura l'URL torna `/ripasso`.
+- **Toast** in alto (sotto l'header della sessione), per non coprire i bottoni di valutazione.
+- **Accessibilità**: la sessione è un `role="dialog"` modale; il tap sulla card è solo una scorciatoia del
+  bottone "Mostra risposta"; badge della tab bar `aria-hidden` con testo `sr-only` equivalente.
+- **Test**: `test/quickReviewSession.test.ts` (logica pura, incluso il caso del prototipo 8 valutazioni → 6 card,
+  67%), `e2e/ripasso.mobile.spec.ts` (sessione completa + deep link), `/ripasso` nello smoke responsive,
+  rimando desktop in `e2e/shell.spec.ts`.
+- **Resta per la PR 5**: animazione di uscita della card dopo lo swipe, transizioni tra schermate, rifinitura
+  degli stati vuoti.
 
 ---
 
