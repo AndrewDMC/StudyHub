@@ -354,3 +354,22 @@ in scadenza, mastery e task di oggi — tutto sparisce, la materia attiva resta)
 `apps/web/test/calendar.test.ts` (stesso scenario su `getCalendarRange` direttamente). Chiude per
 davvero il criterio di accettazione "Archivio una materia" — prima verificato solo per la card
 della griglia, non per il resto della dashboard.
+
+## Aggiornamento — vista mobile di `/materie/[slug]`, slice 1 (2026-10-14)
+
+Sotto 768 px (`md`) la pagina materia monta una vista dedicata invece del layout a 3 colonne
+(`apps/web/src/components/subject-mobile/`). Il ramo è scelto da `useIsMobile`
+(`apps/web/src/lib/useIsMobile.ts`): se ne monta uno solo, il desktop resta invariato.
+
+- **Header**: indietro, titolo, cerca, kebab. L'header globale di `AppShell` è nascosto sotto `md` su questa pagina.
+- **6 tab**: Panoramica, Materiale, Flashcard, Simulazioni, Lacune, Piano.
+- **Panoramica**: card di stato con CTA, "Da fare adesso", task di oggi, argomenti con barre di mastery,
+  attività recente.
+- **FAB "Assistente"**: apre lo sheet "Azioni e AI" (generazione e azioni sulla materia), chiusura con swipe.
+- **`?tab=` vecchi** (`appunti`, `schemi`, `esami`, `altro`): aprono Materiale con il filtro corrispondente
+  (`apps/web/src/lib/subjectTabs.ts`).
+- **Soglie di mastery** condivise in `apps/web/src/lib/mastery.ts`.
+- Design di riferimento: `docs/design/materia-mobile/`.
+
+Non ancora: ridisegno mobile di Materiale/Documento, Flashcard/Ripasso, Simulazioni/Esame, Lacune/Piano
+e Sessione (slice 2-6). Nello sheet mancano il campo "Chiedi", il tile "Esercizi" e la selezione degli argomenti.

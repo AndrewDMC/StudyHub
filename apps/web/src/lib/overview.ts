@@ -22,6 +22,7 @@ import type {
   SuggestedActionDto,
 } from '@studyhub/contracts';
 import { SubjectNotFoundError } from './errors';
+import { LOW_MASTERY_THRESHOLD } from './mastery';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyDb = any;
@@ -34,8 +35,6 @@ async function requireSubject(db: AnyDb, subjectSlug: string) {
 
 const RECENT_DAYS = 7;
 const RECENT_ACTIVITY_LIMIT = 10;
-// docs/02-filesystem-e-dati.md §5 mastery bands, same threshold TopicsPanel's heatmap uses for "rosso".
-const LOW_MASTERY_THRESHOLD = 0.4;
 
 /** Candidate actions in priority order — the first 3 that apply are shown (docs/fasi/F2-materie.md). */
 async function suggestedActions(

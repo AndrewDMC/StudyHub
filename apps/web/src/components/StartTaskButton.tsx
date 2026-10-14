@@ -29,11 +29,16 @@ export function StartTaskButton({
   subjectSlug,
   taskId,
   kind,
+  className,
+  label = 'Inizia',
 }: {
   subjectSlug: string;
   taskId: string;
   kind: TaskKind;
+  className?: string;
+  label?: string;
 }) {
+  const cls = className ?? CLASSNAME;
   const router = useRouter();
   const start = useMutation({
     mutationFn: () => startSession(subjectSlug, taskId),
@@ -42,8 +47,8 @@ export function StartTaskButton({
 
   if (!SESSION_KINDS.has(kind)) {
     return (
-      <Link href={`/materie/${subjectSlug}/piano`} className={CLASSNAME}>
-        Inizia
+      <Link href={`/materie/${subjectSlug}/piano`} className={cls}>
+        {label}
       </Link>
     );
   }
@@ -54,9 +59,9 @@ export function StartTaskButton({
         type="button"
         disabled={start.isPending}
         onClick={() => start.mutate()}
-        className={CLASSNAME}
+        className={cls}
       >
-        {start.isPending ? 'Avvio…' : 'Inizia'}
+        {start.isPending ? 'Avvio…' : label}
       </button>
       {start.isError && (
         <span role="alert" className="text-xs text-danger">

@@ -11,12 +11,10 @@ import type {
   SubjectDto,
   TopicDto,
 } from '@studyhub/contracts';
-import type { DocumentType } from '@studyhub/core/browser';
 import { SUBJECT_COLOR_HEX } from '@/lib/subjectColors';
 import { formatExamCountdown } from '@/lib/format';
 import { SelectionProvider, useSelection } from '@/lib/selection';
-import { DocumentUploadForm } from './DocumentUploadForm';
-import { DocumentList } from './DocumentList';
+import { DocumentTypeTab } from './DocumentTypeTab';
 import { TopicsPanel } from './TopicsPanel';
 import { ExamsPanel } from './ExamsPanel';
 import { SubjectActions } from './SubjectActions';
@@ -29,6 +27,9 @@ import { GapsPanel, RecentActivityPanel, SuggestedActionsPanel } from './Overvie
 import { FlashcardListPanel } from './FlashcardListPanel';
 import { CalibrationPanel } from './CalibrationPanel';
 import { CoveragePanel } from './CoveragePanel';
+import { SubjectMobile } from './subject-mobile/SubjectMobile';
+import { parseSubjectTab } from '@/lib/subjectTabs';
+import { useIsMobile } from '@/lib/useIsMobile';
 
 const TABS = [
   { key: 'panoramica', label: 'Panoramica' },
@@ -87,69 +88,22 @@ async function fetchAiProvider(): Promise<string> {
   return body.provider as string;
 }
 
-/**
- * A document-type tab (Appunti/Schemi/Esami): filtered upload + list. When one or more topics
- * are selected in the left tree, the list also filters down to documents tagged to them
- * (docs/fasi/F2-materie.md "Sinistra ... filtro globale della pagina", via `document_topics`).
- * The AI panel lives once at the page level now (see `SubjectDetailClientInner`), not per-tab.
- */
-function DocumentTypeTab({
-  subjectSlug,
-  type,
-  includeTypes = [type],
-  documents,
-  extra,
-}: {
-  subjectSlug: string;
-  /** The type the upload form starts on. */
-  type: DocumentType;
-  /** Every type listed in the tab (the "Altro" tab also collects `slide`). */
-  includeTypes?: DocumentType[];
-  documents: DocumentDto[];
-  extra?: React.ReactNode;
-}) {
-  const { docIds, setDocIds, topicIds } = useSelection();
-  const filtered = documents
-    .filter((d) => includeTypes.includes(d.type))
-    .filter((d) => topicIds.size === 0 || d.topicIds.some((id) => topicIds.has(id)));
-
-  return (
-    <div className="min-w-0 space-y-6">
-      {extra}
-      <section>
-        <h2 className="mb-2 text-sm font-medium text-fg-secondary">Carica materiale</h2>
-        <DocumentUploadForm subjectSlug={subjectSlug} defaultType={type} />
-      </section>
-      <section>
-        <h2 className="mb-2 text-sm font-medium text-fg-secondary">
-          {filtered.length} documenti
-          {topicIds.size > 0 && ' (filtrati per argomento)'}
-        </h2>
-        {filtered.length === 0 ? (
-          <div className="rounded-[var(--radius-card)] border border-dashed border-border bg-bg-surface p-8 text-center text-sm text-fg-muted">
-            {topicIds.size > 0
-              ? 'Nessun documento di questo tipo taggato agli argomenti selezionati.'
-              : 'Nessun documento di questo tipo ancora.'}
-          </div>
-        ) : (
-          <DocumentList
-            subjectSlug={subjectSlug}
-            documents={filtered}
-            selectedDocIds={docIds}
-            onSelectionChange={setDocIds}
-          />
-        )}
-      </section>
-    </div>
-  );
-}
-
 function SubjectDetailClientInner({ slug }: { slug: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const activeTab: TabKey = TABS.some((t) => t.key === searchParams.get('tab'))
-    ? (searchParams.get('tab') as TabKey)
-    : 'panoramica';
+  // `?tab=materiale` is only emitted by the mobile layout: on desktop it opens the matching
+  // document tab (its `filtro`, else Appunti) so a shared link never lands on Panoramica.
+  const rawTab = searchParams.get('tab');
+  const filtro = searchParams.get('filtro');
+  const requestedTab = rawTab === 'materiale' ? (filtro ?? 'appunti') : rawTab;
+  const activeTab: TabKey = TABS.some((t) => t.key === requestedTab)
+    ? (requestedTab as TabKey)
+    : rawTab === 'materiale'
+      ? 'appunti'
+      : 'panoramica';
+  const mobileTab = parseSubjectTab(searchParams);
+  // JS split, not two CSS branches (md:hidden / hidden md:block): both would mount and duplicate the DOM.
+  const isMobile = useIsMobile();
 
   const { docIds: selectedDocIds, topicIds: selectedTopicIds, toggleTopic } = useSelection();
 
@@ -192,15 +146,23 @@ function SubjectDetailClientInner({ slug }: { slug: string }) {
     staleTime: 30_000, // can change at runtime: the in-app Claude login on /admin switches it
   });
 
-  if (subjectQuery.isLoading) {
+  if (subjectQuery.isLoading || isMobile === null) {
     return (
-      <div className="mx-auto max-w-[1440px] p-4 md:p-6 text-sm text-fg-muted">Caricamento…</div>
+      <div className="mx-auto max-w-[1440px] p-4 text-sm text-fg-muted max-md:pt-[calc(env(safe-area-inset-top)+1rem)] md:p-6">
+        <Link
+          href="/materie"
+          className="mb-3 flex min-h-11 items-center text-fg-secondary md:hidden"
+        >
+          Torna a Materie
+        </Link>
+        Caricamento…
+      </div>
     );
   }
 
   if (subjectQuery.isError || !subjectQuery.data) {
     return (
-      <div className="mx-auto max-w-[1440px] p-4 md:p-6">
+      <div className="mx-auto max-w-[1440px] p-4 max-md:pt-[calc(env(safe-area-inset-top)+1rem)] md:p-6">
         <div
           role="alert"
           className="rounded-[var(--radius-card)] border border-border bg-bg-surface p-6 text-sm"
@@ -234,165 +196,183 @@ function SubjectDetailClientInner({ slug }: { slug: string }) {
   };
 
   return (
-    <div className="mx-auto max-w-[1440px] p-4 md:p-6">
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-3">
-            <span
-              className="h-2.5 w-2.5 shrink-0 rounded-full"
-              style={{ backgroundColor: SUBJECT_COLOR_HEX[subject.color] }}
-            />
-            <h1 className="text-xl font-semibold tracking-[-0.02em]">{subject.name}</h1>
-            {subject.archivedAt && (
-              <span className="rounded-full border border-warn px-2 py-0.5 text-[11px] text-warn">
-                Archiviata
-              </span>
-            )}
-          </div>
-          <p className="mt-1 pl-[22px] text-xs text-fg-muted">
-            {documents.length} documenti
-            {topicsQuery.isSuccess && ` · ${topics.length} argomenti`}
-            {flashcardTotal !== null && ` · ${flashcardTotal} flashcard`}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-start gap-4">
-          {nextExam && (
-            <div className="shrink-0 text-[11px] text-fg-muted md:text-right">
-              esame{' '}
-              {new Date(nextExam.date).toLocaleDateString('it-IT', {
-                day: 'numeric',
-                month: 'long',
-              })}
-              <b className="block font-mono text-[15px] font-semibold text-fg-primary">
-                {formatExamCountdown(nextExam.date)}
-              </b>
-            </div>
-          )}
-          <SubjectActions subject={subject} />
-        </div>
-      </div>
-
-      <SearchPanel subjectSlug={subject.slug} />
-
-      {/* Below md the tab row scrolls sideways instead of pushing the page wider. */}
-      <div className="-mx-4 mb-6 flex items-center gap-1 overflow-x-auto border-b border-border px-4 [scrollbar-width:none] md:mx-0 md:overflow-visible md:px-0">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => setTab(tab.key)}
-            className={`-mb-px shrink-0 whitespace-nowrap border-b-[1.5px] px-1 py-2.5 text-sm font-medium transition-colors duration-120 max-md:min-h-11 max-md:px-2 ${
-              activeTab === tab.key
-                ? 'border-accent text-fg-primary'
-                : 'border-transparent text-fg-secondary hover:text-fg-primary'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-        <Link
-          href={`/materie/${slug}/piano`}
-          className="-mb-px shrink-0 whitespace-nowrap border-b-[1.5px] border-transparent px-1 py-2.5 text-sm font-medium text-fg-secondary transition-colors duration-120 hover:text-fg-primary max-md:flex max-md:min-h-11 max-md:items-center max-md:px-2"
-        >
-          Piano
-        </Link>
-        <button
-          type="button"
-          onClick={toggleAiPanel}
-          className="-mb-px ml-auto shrink-0 whitespace-nowrap border-b-[1.5px] border-transparent px-1 py-2.5 text-xs font-medium text-fg-muted transition-colors duration-120 hover:text-fg-primary max-md:min-h-11"
-        >
-          {aiPanelOpen ? 'Nascondi pannello AI ▸' : '◂ Mostra pannello AI'}
-        </button>
-      </div>
-
-      <div
-        className={`grid grid-cols-1 gap-6 ${
-          aiPanelOpen ? 'lg:grid-cols-[240px_1fr_320px]' : 'lg:grid-cols-[240px_1fr]'
-        }`}
-      >
-        <aside className="lg:sticky lg:top-6 lg:h-fit">
-          <TopicsPanel
-            subjectSlug={slug}
-            documents={documents}
-            selectedDocIds={selectedDocIds}
-            selectedTopicIds={selectedTopicIds}
-            onToggleTopic={toggleTopic}
-          />
-        </aside>
-
-        <main className="min-w-0">
-          {activeTab === 'panoramica' && (
-            <div className="space-y-4">
-              <SuggestedActionsPanel subjectSlug={slug} />
-              <DailyTasksPanel subjectSlug={slug} />
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <GapsPanel subjectSlug={slug} />
-                <RecentActivityPanel subjectSlug={slug} />
+    <>
+      {isMobile ? (
+        <SubjectMobile
+          slug={slug}
+          subject={subject}
+          documents={documents}
+          topics={topics}
+          topicsLoaded={topicsQuery.isSuccess}
+          stats={statsQuery.data}
+          flashcardTotal={flashcardTotal}
+          nextExam={nextExam}
+          tab={mobileTab.tab}
+          filter={mobileTab.filter}
+          fakeProvider={aiProviderQuery.data === 'fake'}
+        />
+      ) : (
+        <div className="mx-auto max-w-[1440px] p-4 md:p-6">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-3">
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: SUBJECT_COLOR_HEX[subject.color] }}
+                />
+                <h1 className="text-xl font-semibold tracking-[-0.02em]">{subject.name}</h1>
+                {subject.archivedAt && (
+                  <span className="rounded-full border border-warn px-2 py-0.5 text-[11px] text-warn">
+                    Archiviata
+                  </span>
+                )}
               </div>
-              {aiProviderQuery.data === 'fake' && (
-                <div className="rounded-[var(--radius-card)] border border-dashed border-border bg-bg-surface p-3 text-xs text-fg-muted">
-                  Generazione simulata (nessun provider AI configurato): le flashcard/riassunti sono
-                  creati per estrazione deterministica dal testo, non da un modello reale — vedi
-                  docs/fasi/F3-ai-core.md &quot;Stato&quot;.
+              <p className="mt-1 pl-[22px] text-xs text-fg-muted">
+                {documents.length} documenti
+                {topicsQuery.isSuccess && ` · ${topics.length} argomenti`}
+                {flashcardTotal !== null && ` · ${flashcardTotal} flashcard`}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-start gap-4">
+              {nextExam && (
+                <div className="shrink-0 text-[11px] text-fg-muted md:text-right">
+                  esame{' '}
+                  {new Date(nextExam.date).toLocaleDateString('it-IT', {
+                    day: 'numeric',
+                    month: 'long',
+                  })}
+                  <b className="block font-mono text-[15px] font-semibold text-fg-primary">
+                    {formatExamCountdown(nextExam.date)}
+                  </b>
                 </div>
               )}
+              <SubjectActions subject={subject} />
             </div>
-          )}
+          </div>
 
-          {activeTab === 'appunti' && (
-            <DocumentTypeTab subjectSlug={slug} type="appunti" documents={documents} />
-          )}
+          <SearchPanel subjectSlug={subject.slug} />
 
-          {activeTab === 'schemi' && (
-            <DocumentTypeTab subjectSlug={slug} type="schemi" documents={documents} />
-          )}
+          {/* Below md the tab row scrolls sideways instead of pushing the page wider. */}
+          <div className="-mx-4 mb-6 flex items-center gap-1 overflow-x-auto border-b border-border px-4 [scrollbar-width:none] md:mx-0 md:overflow-visible md:px-0">
+            {TABS.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setTab(tab.key)}
+                className={`-mb-px shrink-0 whitespace-nowrap border-b-[1.5px] px-1 py-2.5 text-sm font-medium transition-colors duration-120 max-md:min-h-11 max-md:px-2 ${
+                  activeTab === tab.key
+                    ? 'border-accent text-fg-primary'
+                    : 'border-transparent text-fg-secondary hover:text-fg-primary'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+            <Link
+              href={`/materie/${slug}/piano`}
+              className="-mb-px shrink-0 whitespace-nowrap border-b-[1.5px] border-transparent px-1 py-2.5 text-sm font-medium text-fg-secondary transition-colors duration-120 hover:text-fg-primary max-md:flex max-md:min-h-11 max-md:items-center max-md:px-2"
+            >
+              Piano
+            </Link>
+            <button
+              type="button"
+              onClick={toggleAiPanel}
+              className="-mb-px ml-auto shrink-0 whitespace-nowrap border-b-[1.5px] border-transparent px-1 py-2.5 text-xs font-medium text-fg-muted transition-colors duration-120 hover:text-fg-primary max-md:min-h-11"
+            >
+              {aiPanelOpen ? 'Nascondi pannello AI ▸' : '◂ Mostra pannello AI'}
+            </button>
+          </div>
 
-          {activeTab === 'altro' && (
-            <DocumentTypeTab
-              subjectSlug={slug}
-              type="altro"
-              includeTypes={['altro', 'slide']}
-              documents={documents}
-            />
-          )}
+          <div
+            className={`grid grid-cols-1 gap-6 ${
+              aiPanelOpen ? 'lg:grid-cols-[240px_1fr_320px]' : 'lg:grid-cols-[240px_1fr]'
+            }`}
+          >
+            <aside className="lg:sticky lg:top-6 lg:h-fit">
+              <TopicsPanel
+                subjectSlug={slug}
+                documents={documents}
+                selectedDocIds={selectedDocIds}
+                selectedTopicIds={selectedTopicIds}
+                onToggleTopic={toggleTopic}
+              />
+            </aside>
 
-          {activeTab === 'esami' && (
-            <DocumentTypeTab
-              subjectSlug={slug}
-              type="esami"
-              documents={documents}
-              extra={<ExamsPanel subjectSlug={slug} />}
-            />
-          )}
-
-          {activeTab === 'flashcard' && (
-            <div className="space-y-4">
-              <div className="max-w-md">
-                <StatsPanel subjectSlug={slug} />
-                <div className="mt-4">
-                  <CalibrationPanel subjectSlug={slug} />
+            <main className="min-w-0">
+              {activeTab === 'panoramica' && (
+                <div className="space-y-4">
+                  <SuggestedActionsPanel subjectSlug={slug} />
+                  <DailyTasksPanel subjectSlug={slug} />
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <GapsPanel subjectSlug={slug} />
+                    <RecentActivityPanel subjectSlug={slug} />
+                  </div>
+                  {aiProviderQuery.data === 'fake' && (
+                    <div className="rounded-[var(--radius-card)] border border-dashed border-border bg-bg-surface p-3 text-xs text-fg-muted">
+                      Generazione simulata (nessun provider AI configurato): le flashcard/riassunti
+                      sono creati per estrazione deterministica dal testo, non da un modello reale —
+                      vedi docs/fasi/F3-ai-core.md &quot;Stato&quot;.
+                    </div>
+                  )}
                 </div>
-              </div>
-              <FlashcardListPanel subjectSlug={slug} topics={topics} />
-            </div>
-          )}
+              )}
 
-          {activeTab === 'lacune' && <CoveragePanel subjectSlug={slug} />}
+              {activeTab === 'appunti' && (
+                <DocumentTypeTab subjectSlug={slug} type="appunti" documents={documents} />
+              )}
 
-          {activeTab === 'simulazioni' && (
-            <div className="max-w-md">
-              <ExamPrepPanel subjectSlug={slug} documents={documents} />
-            </div>
-          )}
-        </main>
+              {activeTab === 'schemi' && (
+                <DocumentTypeTab subjectSlug={slug} type="schemi" documents={documents} />
+              )}
 
-        {aiPanelOpen && (
-          <aside className="lg:sticky lg:top-6 lg:h-fit">
-            <AiPanel subjectSlug={slug} documents={documents} topics={topics} />
-          </aside>
-        )}
-      </div>
-    </div>
+              {activeTab === 'altro' && (
+                <DocumentTypeTab
+                  subjectSlug={slug}
+                  type="altro"
+                  includeTypes={['altro', 'slide']}
+                  documents={documents}
+                />
+              )}
+
+              {activeTab === 'esami' && (
+                <DocumentTypeTab
+                  subjectSlug={slug}
+                  type="esami"
+                  documents={documents}
+                  extra={<ExamsPanel subjectSlug={slug} />}
+                />
+              )}
+
+              {activeTab === 'flashcard' && (
+                <div className="space-y-4">
+                  <div className="max-w-md">
+                    <StatsPanel subjectSlug={slug} />
+                    <div className="mt-4">
+                      <CalibrationPanel subjectSlug={slug} />
+                    </div>
+                  </div>
+                  <FlashcardListPanel subjectSlug={slug} topics={topics} />
+                </div>
+              )}
+
+              {activeTab === 'lacune' && <CoveragePanel subjectSlug={slug} />}
+
+              {activeTab === 'simulazioni' && (
+                <div className="max-w-md">
+                  <ExamPrepPanel subjectSlug={slug} documents={documents} />
+                </div>
+              )}
+            </main>
+
+            {aiPanelOpen && (
+              <aside className="lg:sticky lg:top-6 lg:h-fit">
+                <AiPanel subjectSlug={slug} documents={documents} topics={topics} />
+              </aside>
+            )}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

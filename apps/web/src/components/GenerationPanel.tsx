@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ArtifactDto, DocumentDto, EstimateGenerationCostResponse } from '@studyhub/contracts';
 import { ModelPicker, MODEL_OPTIONS } from './ModelPicker';
 
-const KIND_LABELS: Record<ArtifactDto['kind'], string> = {
+export const KIND_LABELS: Record<ArtifactDto['kind'], string> = {
   flashcard_deck: 'Flashcard',
   schema: 'Schema',
   summary: 'Riassunto',
@@ -21,7 +21,7 @@ const STATUS_LABELS: Record<ArtifactDto['status'], string> = {
 };
 
 /** €0.0001 → "€0.0001"; €0 → "gratis" (FakeProvider, nessuna chiave configurata). */
-function formatCost(costEur: number): string {
+export function formatCost(costEur: number): string {
   return costEur === 0 ? 'gratis' : `~€${costEur.toFixed(4)}`;
 }
 
@@ -35,7 +35,7 @@ async function fetchArtifacts(slug: string): Promise<ArtifactDto[]> {
 /** Mirrors `GenerationScope` (packages/contracts/src/generation.ts): exactly one of the two. */
 export type ScopeInput = { docIds: string[] } | { topicIds: string[] };
 
-function scopeKey(scope: ScopeInput): string {
+export function scopeKey(scope: ScopeInput): string {
   return 'docIds' in scope ? `d:${scope.docIds.join(',')}` : `t:${scope.topicIds.join(',')}`;
 }
 
@@ -43,7 +43,7 @@ function scopeIsEmpty(scope: ScopeInput): boolean {
   return 'docIds' in scope ? scope.docIds.length === 0 : scope.topicIds.length === 0;
 }
 
-async function fetchEstimate(
+export async function fetchEstimate(
   slug: string,
   scope: ScopeInput,
   model: string,
@@ -58,7 +58,7 @@ async function fetchEstimate(
   return body as EstimateGenerationCostResponse;
 }
 
-async function enqueue(
+export async function enqueue(
   slug: string,
   kind: 'flashcards' | 'schema' | 'summary',
   scope: ScopeInput,

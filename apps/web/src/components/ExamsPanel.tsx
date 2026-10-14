@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ExamDto } from '@studyhub/contracts';
 import { formatExamCountdown } from '@/lib/format';
 
-const KIND_LABELS: Record<ExamDto['kind'], string> = {
+export const KIND_LABELS: Record<ExamDto['kind'], string> = {
   scritto: 'Scritto',
   orale: 'Orale',
   parziale: 'Parziale',

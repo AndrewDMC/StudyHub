@@ -12,7 +12,7 @@ async function fetchOverview(slug: string): Promise<SubjectOverviewDto> {
 }
 
 /** Shared by every panel below — same `queryKey` means React Query dedupes the fetch to one call. */
-function useOverview(subjectSlug: string) {
+export function useOverview(subjectSlug: string) {
   return useQuery({
     queryKey: ['overview', subjectSlug],
     queryFn: () => fetchOverview(subjectSlug),
@@ -48,7 +48,7 @@ const JOB_STATUS_LABELS: Record<string, string> = {
 
 const RATING_LABELS: Record<number, string> = { 1: 'Again', 2: 'Hard', 3: 'Good', 4: 'Easy' };
 
-function timeAgo(iso: string): string {
+export function timeAgo(iso: string): string {
   const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
   if (minutes < 1) return 'ora';
   if (minutes < 60) return `${minutes} min fa`;
@@ -57,7 +57,7 @@ function timeAgo(iso: string): string {
   return `${Math.round(hours / 24)} g fa`;
 }
 
-function activityLabel(item: RecentActivityItemDto): string {
+export function activityLabel(item: RecentActivityItemDto): string {
   if (item.kind === 'job') {
     return `${JOB_TYPE_LABELS[item.jobType] ?? item.jobType} — ${JOB_STATUS_LABELS[item.status] ?? item.status}`;
   }
