@@ -28,7 +28,7 @@ function MarkdownFile({ url, subjectSlug }: { url: string; subjectSlug: string }
       </p>
     );
   return (
-    <div className="mx-auto max-w-3xl p-6">
+    <div className="mx-auto max-w-3xl p-4 md:p-6">
       <ObsidianMarkdown source={query.data ?? ''} subjectSlug={subjectSlug} />
     </div>
   );
@@ -54,7 +54,7 @@ export function DocumentViewerClient({
   const doc = query.data;
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-3rem)] max-w-5xl flex-col p-6">
+    <div className="mx-auto flex h-full max-w-5xl flex-col p-4 md:p-6">
       <div className="mb-4 flex items-center justify-between gap-3">
         <Link
           href={`/materie/${subjectSlug}`}

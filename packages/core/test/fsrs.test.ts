@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { isDue, newCardSchedule, retrievability, scheduleReview } from '../src/fsrs.js';
+import {
+  isDue,
+  newCardSchedule,
+  previewIntervals,
+  retrievability,
+  scheduleReview,
+} from '../src/fsrs.js';
 
 const FIXED_NOW = new Date('2026-01-01T09:00:00.000Z');
 
@@ -95,5 +101,37 @@ describe('isDue', () => {
     expect(isDue(schedule, FIXED_NOW)).toBe(false);
     expect(isDue(schedule, schedule.dueAt!)).toBe(true);
     expect(isDue(schedule, new Date(schedule.dueAt!.getTime() + 86_400_000))).toBe(true);
+  });
+});
+
+describe('previewIntervals', () => {
+  it('orders the four ratings Again < Hard < Good < Easy for a card in review', () => {
+    const reviewed = scheduleReview(newCardSchedule(), 3, FIXED_NOW).schedule;
+    const later = new Date(reviewed.dueAt!.getTime() + 86_400_000);
+    const p = previewIntervals(reviewed, later);
+    expect(p[1]).toBeLessThan(p[2]);
+    expect(p[2]).toBeLessThan(p[3]);
+    expect(p[3]).toBeLessThan(p[4]);
+  });
+
+  it('keeps a new card on short learning steps except for Easy', () => {
+    const p = previewIntervals(newCardSchedule(), FIXED_NOW);
+    expect(p[1]).toBeLessThan(60 * 60_000);
+    expect(p[4]).toBeGreaterThanOrEqual(86_400_000);
+  });
+
+  it('treats a seen card without stability/difficulty (an import) as new, never NaN', () => {
+    const imported = { ...newCardSchedule(), state: 'review' as const, reps: 3, dueAt: FIXED_NOW };
+    const p = previewIntervals(imported, FIXED_NOW);
+    for (const r of [1, 2, 3, 4] as const) expect(Number.isFinite(p[r])).toBe(true);
+    expect(Number.isFinite(scheduleReview(imported, 3, FIXED_NOW).schedule.stability)).toBe(true);
+  });
+
+  it('matches what scheduleReview then does', () => {
+    const p = previewIntervals(newCardSchedule(), FIXED_NOW);
+    for (const r of [1, 2, 3, 4] as const) {
+      const due = scheduleReview(newCardSchedule(), r, FIXED_NOW).schedule.dueAt!;
+      expect(due.getTime() - FIXED_NOW.getTime()).toBe(p[r]);
+    }
   });
 });

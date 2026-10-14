@@ -1,4 +1,4 @@
-import { and, eq, gt, isNotNull, isNull, lte, or } from 'drizzle-orm';
+import { and, eq, gt, isNull } from 'drizzle-orm';
 import {
   artifacts,
   documents,
@@ -14,6 +14,7 @@ import type { DashboardSummaryDto, OnboardingDto } from '@studyhub/contracts';
 import { listSubjectSummaries } from './subjects';
 import { getCalendarRange } from './calendar';
 import { getRecentJobs } from './jobs';
+import { getReviewOverview } from './review';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyDb = any;
@@ -21,56 +22,10 @@ type AnyDb = any;
 const UPCOMING_DAYS = 14; // docs/fasi/F7-dashboard-polish.md §5: "prossimi 14 giorni"
 
 /**
- * Cards due *by the end of `today`* (docs/fasi/F4-flashcard.md daily queue rule): new, or
- * past/at their `dueAt`. Joins subjects to exclude archived ones — a card doesn't stop being
- * "due" when its subject is archived, but it should stop showing up on the dashboard home
- * (docs/fasi/F2-materie.md "Archivio una materia: sparisce dalla dashboard").
- */
-async function countDueCards(db: AnyDb, endOfToday: Date): Promise<number> {
-  const rows: { id: string }[] = await db
-    .select({ id: flashcards.id })
-    .from(flashcards)
-    .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
-    .innerJoin(subjects, eq(artifacts.subjectId, subjects.id))
-    .where(
-      and(
-        eq(flashcards.suspended, false),
-        isNull(subjects.archivedAt),
-        or(
-          eq(flashcards.state, 'new'),
-          and(isNotNull(flashcards.dueAt), lte(flashcards.dueAt, endOfToday)),
-        ),
-      ),
-    );
-  return rows.length;
-}
-
-/** Per-subject due-card counts, for the "Flashcard per materia" tile. */
-async function countDueCardsBySubject(db: AnyDb, endOfToday: Date): Promise<Map<string, number>> {
-  const rows: { subjectId: string }[] = await db
-    .select({ subjectId: artifacts.subjectId })
-    .from(flashcards)
-    .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
-    .innerJoin(subjects, eq(artifacts.subjectId, subjects.id))
-    .where(
-      and(
-        eq(flashcards.suspended, false),
-        isNull(subjects.archivedAt),
-        or(
-          eq(flashcards.state, 'new'),
-          and(isNotNull(flashcards.dueAt), lte(flashcards.dueAt, endOfToday)),
-        ),
-      ),
-    );
-  const counts = new Map<string, number>();
-  for (const r of rows) counts.set(r.subjectId, (counts.get(r.subjectId) ?? 0) + 1);
-  return counts;
-}
-
-/**
  * `mastery` (docs/02-filesystem-e-dati.md §5) is `null` on many topics still — only those with
  * a reviewed card, a simulation, or assigned material get one (`recomputeTopicMastery`). Joins
- * subjects to exclude archived ones from the average (same reasoning as `countDueCards`).
+ * subjects to exclude archived ones from the average (docs/fasi/F2-materie.md "Archivio una
+ * materia: sparisce dalla dashboard").
  */
 async function averageMastery(db: AnyDb): Promise<number | null> {
   const rows: { mastery: number | null }[] = await db
@@ -185,27 +140,24 @@ export async function getOnboarding(db: AnyDb): Promise<OnboardingDto> {
  */
 export async function getDashboardSummary(db: AnyDb, today: IsoDate): Promise<DashboardSummaryDto> {
   const startOfToday = new Date(`${today}T00:00:00.000Z`);
-  const endOfToday = new Date(`${today}T23:59:59.999Z`);
-  const [
-    subjectSummaries,
-    dueBySubject,
-    dueCardsCount,
-    avgMastery,
-    exam,
-    upcoming,
-    recentJobs,
-    onboarding,
-  ] = await Promise.all([
-    listSubjectSummaries(db),
-    countDueCardsBySubject(db, endOfToday),
-    countDueCards(db, endOfToday),
-    averageMastery(db),
-    nextExam(db, startOfToday),
-    getCalendarRange(db, today, addDays(today, UPCOMING_DAYS)),
-    getRecentJobs(db, 10),
-    getOnboarding(db),
-  ]);
+  // Due cards come from the Ripasso overview, i.e. the queue's own rule (docs/09-ripasso-mobile.md
+  // §B1): the count is exactly what a review session serves — flagged cards and the new-card limit
+  // included. `today` is normally the current day; a test may pin another one.
+  const now = new Date();
+  const reviewClock = now.toISOString().startsWith(today) ? now : startOfToday;
+  const [subjectSummaries, reviewOverview, avgMastery, exam, upcoming, recentJobs, onboarding] =
+    await Promise.all([
+      listSubjectSummaries(db),
+      getReviewOverview(db, reviewClock),
+      averageMastery(db),
+      nextExam(db, startOfToday),
+      getCalendarRange(db, today, addDays(today, UPCOMING_DAYS)),
+      getRecentJobs(db, 10),
+      getOnboarding(db),
+    ]);
 
+  const dueBySubject = new Map(reviewOverview.subjects.map((s) => [s.slug, s.due]));
+  const dueCardsCount = reviewOverview.totalDue;
   const todayTasksAll = upcoming.tasks.filter((t) => t.date === today);
   const minutesPlannedToday = todayTasksAll.reduce((s, t) => s + t.minutes, 0);
   const todayTasks = todayTasksAll.filter((t) => t.status === 'todo' || t.status === 'doing');
@@ -233,7 +185,7 @@ export async function getDashboardSummary(db: AnyDb, today: IsoDate): Promise<Da
       color: s.color,
       documentCount: s.documentCount,
       nextExamAt: s.nextExamAt,
-      dueCardsCount: dueBySubject.get(s.id) ?? 0,
+      dueCardsCount: dueBySubject.get(s.slug) ?? 0,
     })),
     recentJobs,
     onboarding,

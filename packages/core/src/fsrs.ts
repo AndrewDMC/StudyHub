@@ -57,9 +57,10 @@ function cardToSchedule(card: Card): FlashcardSchedule {
 }
 
 function scheduleToCard(schedule: FlashcardSchedule, now: Date): Card {
-  if (schedule.state === 'new') {
-    // A never-reviewed card has no meaningful stability/difficulty yet —
-    // let the library seed them from scratch, "due now".
+  // A never-reviewed card has no meaningful stability/difficulty yet — let the library seed
+  // them from scratch, "due now". Same for a seen card that lacks them (an import without FSRS
+  // memory state): starting FSRS from 0 would yield NaN intervals and a NaN schedule.
+  if (schedule.state === 'new' || !schedule.stability || !schedule.difficulty) {
     return createEmptyCard(now);
   }
   const base: Card = {
@@ -105,6 +106,22 @@ export function scheduleReview(
     elapsedDays: log.elapsed_days,
     scheduledDays: log.scheduled_days,
   };
+}
+
+/**
+ * How far out each rating would schedule the card, in ms from `now` — the "<1 min · 1 g · 4 g"
+ * shown under the rating buttons (docs/09-ripasso-mobile.md §B4). Same scheduler as
+ * `scheduleReview`, so the preview always matches what a rating then does.
+ */
+export function previewIntervals(
+  current: FlashcardSchedule,
+  now: Date = new Date(),
+): Record<FsrsRating, number> {
+  const log = scheduler.repeat(scheduleToCard(current, now), now);
+  const ratings: FsrsRating[] = [1, 2, 3, 4];
+  return Object.fromEntries(
+    ratings.map((r) => [r, Math.max(0, log[r as Grade].card.due.getTime() - now.getTime())]),
+  ) as Record<FsrsRating, number>;
 }
 
 /**

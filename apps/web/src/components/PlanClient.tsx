@@ -532,17 +532,17 @@ function TaskRow({
   onStatus: (id: string, status: 'done' | 'skipped') => void;
 }) {
   return (
-    <li className="flex items-start justify-between gap-3 rounded-[var(--radius-control)] border border-border bg-bg-surface px-3 py-2">
-      <div className="min-w-0">
+    <li className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 rounded-[var(--radius-control)] border border-border bg-bg-surface px-3 py-2">
+      <div className="min-w-0 flex-1 basis-56">
         <p className="text-xs uppercase tracking-wide text-fg-muted">
           {KIND_LABELS[task.kind]} · {task.minutes} min{task.pinned ? ' · fissata' : ''}
         </p>
-        <p className="truncate text-sm font-medium text-fg-primary">{task.title}</p>
+        <p className="text-sm font-medium text-fg-primary md:truncate">{task.title}</p>
         {task.description && (
-          <p className="truncate text-xs text-fg-secondary">{task.description}</p>
+          <p className="text-xs text-fg-secondary md:truncate">{task.description}</p>
         )}
       </div>
-      <div className="flex shrink-0 gap-1.5">
+      <div className="flex shrink-0 gap-1.5 max-md:[&>button]:min-h-11 max-md:[&>button]:px-3">
         {isDraft ? (
           <>
             <button
@@ -690,7 +690,7 @@ export function PlanClient({ slug }: { slug: string }) {
   const loadByDate = new Map((plan?.loadPerDay ?? []).map((d) => [d.date, d]));
 
   return (
-    <div className="mx-auto max-w-3xl p-6">
+    <div className="mx-auto max-w-3xl p-4 md:p-6">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <Link

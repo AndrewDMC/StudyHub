@@ -193,12 +193,14 @@ function SubjectDetailClientInner({ slug }: { slug: string }) {
   });
 
   if (subjectQuery.isLoading) {
-    return <div className="mx-auto max-w-[1440px] p-6 text-sm text-fg-muted">Caricamento…</div>;
+    return (
+      <div className="mx-auto max-w-[1440px] p-4 md:p-6 text-sm text-fg-muted">Caricamento…</div>
+    );
   }
 
   if (subjectQuery.isError || !subjectQuery.data) {
     return (
-      <div className="mx-auto max-w-[1440px] p-6">
+      <div className="mx-auto max-w-[1440px] p-4 md:p-6">
         <div
           role="alert"
           className="rounded-[var(--radius-card)] border border-border bg-bg-surface p-6 text-sm"
@@ -232,9 +234,9 @@ function SubjectDetailClientInner({ slug }: { slug: string }) {
   };
 
   return (
-    <div className="mx-auto max-w-[1440px] p-6">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
+    <div className="mx-auto max-w-[1440px] p-4 md:p-6">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
           <div className="flex items-center gap-3">
             <span
               className="h-2.5 w-2.5 shrink-0 rounded-full"
@@ -253,9 +255,9 @@ function SubjectDetailClientInner({ slug }: { slug: string }) {
             {flashcardTotal !== null && ` · ${flashcardTotal} flashcard`}
           </p>
         </div>
-        <div className="flex items-start gap-4">
+        <div className="flex flex-wrap items-start gap-4">
           {nextExam && (
-            <div className="shrink-0 text-right text-[11px] text-fg-muted">
+            <div className="shrink-0 text-[11px] text-fg-muted md:text-right">
               esame{' '}
               {new Date(nextExam.date).toLocaleDateString('it-IT', {
                 day: 'numeric',
@@ -272,13 +274,14 @@ function SubjectDetailClientInner({ slug }: { slug: string }) {
 
       <SearchPanel subjectSlug={subject.slug} />
 
-      <div className="mb-6 flex items-center gap-1 border-b border-border">
+      {/* Below md the tab row scrolls sideways instead of pushing the page wider. */}
+      <div className="-mx-4 mb-6 flex items-center gap-1 overflow-x-auto border-b border-border px-4 [scrollbar-width:none] md:mx-0 md:overflow-visible md:px-0">
         {TABS.map((tab) => (
           <button
             key={tab.key}
             type="button"
             onClick={() => setTab(tab.key)}
-            className={`-mb-px border-b-[1.5px] px-1 py-2.5 text-sm font-medium transition-colors duration-120 ${
+            className={`-mb-px shrink-0 whitespace-nowrap border-b-[1.5px] px-1 py-2.5 text-sm font-medium transition-colors duration-120 max-md:min-h-11 max-md:px-2 ${
               activeTab === tab.key
                 ? 'border-accent text-fg-primary'
                 : 'border-transparent text-fg-secondary hover:text-fg-primary'
@@ -289,14 +292,14 @@ function SubjectDetailClientInner({ slug }: { slug: string }) {
         ))}
         <Link
           href={`/materie/${slug}/piano`}
-          className="-mb-px border-b-[1.5px] border-transparent px-1 py-2.5 text-sm font-medium text-fg-secondary transition-colors duration-120 hover:text-fg-primary"
+          className="-mb-px shrink-0 whitespace-nowrap border-b-[1.5px] border-transparent px-1 py-2.5 text-sm font-medium text-fg-secondary transition-colors duration-120 hover:text-fg-primary max-md:flex max-md:min-h-11 max-md:items-center max-md:px-2"
         >
           Piano
         </Link>
         <button
           type="button"
           onClick={toggleAiPanel}
-          className="-mb-px ml-auto border-b-[1.5px] border-transparent px-1 py-2.5 text-xs font-medium text-fg-muted transition-colors duration-120 hover:text-fg-primary"
+          className="-mb-px ml-auto shrink-0 whitespace-nowrap border-b-[1.5px] border-transparent px-1 py-2.5 text-xs font-medium text-fg-muted transition-colors duration-120 hover:text-fg-primary max-md:min-h-11"
         >
           {aiPanelOpen ? 'Nascondi pannello AI ▸' : '◂ Mostra pannello AI'}
         </button>

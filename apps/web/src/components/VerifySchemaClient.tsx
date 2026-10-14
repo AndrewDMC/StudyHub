@@ -308,11 +308,13 @@ export function VerifySchemaClient({
   };
 
   if (documentQuery.isLoading) {
-    return <div className="mx-auto max-w-[1440px] p-6 text-sm text-fg-muted">Caricamento…</div>;
+    return (
+      <div className="mx-auto max-w-[1440px] p-4 md:p-6 text-sm text-fg-muted">Caricamento…</div>
+    );
   }
   if (documentQuery.isError || !documentQuery.data) {
     return (
-      <div className="mx-auto max-w-[1440px] p-6">
+      <div className="mx-auto max-w-[1440px] p-4 md:p-6">
         <p role="alert" className="text-sm text-danger">
           {(documentQuery.error as Error)?.message ?? 'Documento non trovato.'}
         </p>
@@ -330,7 +332,7 @@ export function VerifySchemaClient({
   const pct = total === 0 ? 0 : Math.round(((total - blockedCount) / total) * 100);
 
   return (
-    <div className="mx-auto max-w-[1440px] p-6">
+    <div className="mx-auto max-w-[1440px] p-4 md:p-6">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <Link

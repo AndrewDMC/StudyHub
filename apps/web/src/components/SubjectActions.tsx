@@ -47,7 +47,7 @@ export function SubjectActions({ subject }: { subject: SubjectDto }) {
   });
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <Dialog open={editing} onOpenChange={setEditing}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -60,7 +60,7 @@ export function SubjectActions({ subject }: { subject: SubjectDto }) {
       <button
         type="button"
         onClick={() => setEditing(true)}
-        className="rounded-[var(--radius-control)] border border-border px-2.5 py-1 text-xs text-fg-secondary hover:text-fg-primary"
+        className="rounded-[var(--radius-control)] border border-border px-2.5 py-1 text-xs max-md:py-2 text-fg-secondary hover:text-fg-primary"
       >
         Modifica
       </button>
@@ -69,7 +69,7 @@ export function SubjectActions({ subject }: { subject: SubjectDto }) {
         type="button"
         onClick={() => archiveMutation.mutate(!isArchived)}
         disabled={archiveMutation.isPending}
-        className="rounded-[var(--radius-control)] border border-border px-2.5 py-1 text-xs text-fg-secondary hover:text-fg-primary"
+        className="rounded-[var(--radius-control)] border border-border px-2.5 py-1 text-xs max-md:py-2 text-fg-secondary hover:text-fg-primary"
       >
         {isArchived ? 'Ripristina' : 'Archivia'}
       </button>
@@ -78,14 +78,14 @@ export function SubjectActions({ subject }: { subject: SubjectDto }) {
         <button
           type="button"
           onClick={() => setConfirmingDelete(true)}
-          className="rounded-[var(--radius-control)] border border-border px-2.5 py-1 text-xs text-danger hover:border-danger"
+          className="rounded-[var(--radius-control)] border border-border px-2.5 py-1 text-xs max-md:py-2 text-danger hover:border-danger"
         >
           Elimina definitivamente
         </button>
       ) : (
-        <div className="flex items-center gap-2 rounded-[var(--radius-control)] border border-danger bg-bg-raised px-2.5 py-1 text-xs">
+        <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-control)] border border-danger bg-bg-raised px-2.5 py-1 text-xs">
           <span className="text-fg-secondary">
-            Sposta <code className="font-mono">{subject.folderPath}</code> in{' '}
+            Sposta <code className="break-all font-mono">{subject.folderPath}</code> in{' '}
             <code className="font-mono">.trash/</code>. Confermi?
           </span>
           <button

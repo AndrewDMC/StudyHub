@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { NAV_ITEMS } from '@/lib/nav';
 import { AppearanceMenu } from './AppearanceMenu';
 import { CommandPalette } from './CommandPalette';
+import { MobileMoreMenu } from './MobileMoreMenu';
 import { MobileTabBar } from './MobileTabBar';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -40,6 +41,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {/* ⌘K needs a keyboard: on a phone the tab bar is the navigation. */}
               <div className="hidden md:block">
                 <CommandPalette />
+              </div>
+              <div className="-mr-2 md:hidden">
+                <MobileMoreMenu />
               </div>
             </div>
           </div>

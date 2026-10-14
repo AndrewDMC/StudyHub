@@ -10,7 +10,8 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: 'StudyHub',
     description: 'Il tuo studio, organizzato.',
     lang: 'it',
-    start_url: '/',
+    // From the home screen straight into Ripasso rapido, the phone's main use (§A2).
+    start_url: '/ripasso',
     scope: '/',
     display: 'standalone',
     orientation: 'portrait',

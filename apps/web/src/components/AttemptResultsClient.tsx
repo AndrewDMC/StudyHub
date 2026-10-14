@@ -93,7 +93,7 @@ export function AttemptResultsClient({
   const attempt = attemptQuery.data;
 
   return (
-    <div className="mx-auto max-w-3xl p-6">
+    <div className="mx-auto max-w-3xl p-4 md:p-6">
       <Link
         href={`/materie/${subjectSlug}`}
         className="text-xs text-fg-secondary underline-offset-2 hover:underline"

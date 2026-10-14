@@ -114,12 +114,41 @@ body {
   border-color: var(--border);
 }
 
+/* iOS Safari zooms into any field under 16px on focus; on phones every field is 16px. */
+@media (max-width: 767px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
 /* The one permitted "futuristic" effect: a faint technical grid on empty surfaces. */
 .bg-technical-grid {
   background-image:
     linear-gradient(to right, color-mix(in srgb, var(--fg-primary) 3%, transparent) 1px, transparent 1px),
     linear-gradient(to bottom, color-mix(in srgb, var(--fg-primary) 3%, transparent) 1px, transparent 1px);
   background-size: 24px 24px;
+}
+
+/* Ripasso rapido (docs/09-ripasso-mobile.md): next card and screen changes ease in. */
+@keyframes sr-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+@keyframes sr-screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+.anim-card-in {
+  animation: sr-card-in 220ms var(--ease-standard) backwards;
+}
+.anim-screen-in {
+  animation: sr-screen-in 240ms var(--ease-standard) backwards;
 }
 
 @media (prefers-reduced-motion: reduce) {

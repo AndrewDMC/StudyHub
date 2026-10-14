@@ -65,23 +65,35 @@ Obiettivo: ogni pagina esistente è usabile a 390 px prima di aggiungere la nuov
   (condiviso con la sidebar): **Dashboard · Materie · Calendario · Admin**, voce attiva con `usePathname`.
 - **Fatto (PR 1)**: header con padding `safe-area-inset-top`; la CommandPalette resta solo `md+` (serve la
   tastiera); il bottone Aspetto e le sue opzioni sono alti 44 px sotto `md`.
-- **PR 4**: "Ripasso" entra nella tab bar al posto di Admin (che passa a un menu `⋯` nell'header), con
-  badge mono del numero di card in scadenza (`GET /api/review/overview`, §B2); `start_url` del manifest
-  diventa `/ripasso`.
-- **PR 4**: la tab bar si nasconde quando la sessione di ripasso (overlay full-screen) è aperta.
+- **Fatto (PR 4)**: "Ripasso" entra nella tab bar al posto di Admin (che passa a un menu `⋯` nell'header,
+  `MobileMoreMenu`), con badge mono del numero di card in scadenza (`GET /api/review/overview`, §B2); ordine
+  **Dashboard · Materie · Ripasso · Calendario** (`MOBILE_NAV_ITEMS` in `lib/nav.ts`, la sidebar resta
+  `NAV_ITEMS`); `start_url` del manifest diventa `/ripasso`.
+- **Fatto (PR 4)**: la tab bar si nasconde (`html[data-fullscreen]`) quando la sessione di ripasso
+  (overlay full-screen) è aperta.
 
 ### A3. Audit pagina per pagina a 390×844
 
 Checklist per ogni route (`/`, `/materie`, `/materie/[slug]` e tab, `/piano`, `/calendario`,
 documento, sessione di studio, simulazione, risultati, admin): niente scroll orizzontale di pagina,
 tabelle larghe in contenitore `overflow-x-auto`, toolbar che vanno a capo, target ≥ 44 px, dialog Radix a
-tutta larghezza con `max-h-[90dvh]`. Correzioni note già da ora:
+tutta larghezza con `max-h-[90dvh]`.
 
-- `ReviewSessionClient`: togliere `h-dvh` (o portarlo in overlay come la nuova sessione), bottoni rating 44 px.
-- `SessionClient`: le tre colonne diventano tab (già previsto da docs/08, verificare che sia implementato).
-- `CalendarClient`/`PlanClient`: vista settimana → lista giornaliera sotto `md`.
+**Fatto (PR 2)**, misurato a 375 px con dati di prova (overflow di `<main>` e del documento):
 
-Ogni correzione è piccola e isolata: un commit per pagina.
+- Unici overflow reali: header e tab della materia (+301 px) e header/agenda del Calendario (+41 px).
+  Materia: header che va a capo, riga delle tab scorrevole in orizzontale, azioni che vanno a capo.
+  Calendario: header a capo, celle 56 px, righe dell'agenda a capo con titolo troncato correttamente.
+- Globali: margine pagina 16 px sotto `md` (`p-4 md:p-6`); `Button`/`Select` alti 44 px sotto `md`; dialog con
+  margine 16 px, `max-h-[90dvh]` e scroll; campi a 16 px sotto `md` (iOS non zooma al focus).
+- `ReviewSessionClient` ed `ExamModeClient`: `h-dvh` → `h-full` (niente doppio scroll dentro la shell),
+  bottoni 44 px, rating in griglia 4 colonne, scorciatoie da tastiera nascoste sotto `md`.
+  `DocumentViewerClient` (originale): `h-[calc(100vh-3rem)]` → `h-full`.
+- `SessionClient`: le colonne erano già tab sotto `lg`; tab 44 px e titolo su due righe.
+- `PlanClient`: il piano attivo era già una lista per giorno; righe task a capo, Fatta/Salta 44 px. Stesso
+  trattamento per le task in Dashboard e nella scheda materia, il timer Pomodoro e i KPI della Dashboard
+  (2 per riga).
+- Smoke Playwright `e2e/responsive.mobile.spec.ts` (progetto `mobile`) + `e2e/shell.spec.ts` (desktop).
 
 ---
 
@@ -127,6 +139,30 @@ Ogni correzione è piccola e isolata: un commit per pagina.
 
 `ReviewOverviewDtoSchema`, `ReviewQueueItemDtoSchema`, `SubmitReviewResponseSchema` (`reviewId`, `dueAt`),
 esportati dal barrel.
+
+### Fatto (PR 3)
+
+Differenze rispetto a quanto scritto sopra, decise in implementazione:
+
+- **Regola "in scadenza"** (`dueCardConditions` in `lib/review.ts`): card nuova; card in `review` con `dueAt`
+  entro fine giornata (UTC, come la Dashboard); card in `learning`/`relearning` solo con `dueAt ≤ adesso`. I passi
+  di apprendimento sono di minuti: con "fine giornata" una card valutata "Bene" tornerebbe subito nella stessa
+  sessione.
+- **`newLimit` (20) per coda e per materia**: nella coda "tutte le materie" ogni materia porta al massimo 20 card
+  nuove, poi round-robin. Nell'overview ogni contatore (materia o argomento) è esattamente quello che avvia
+  quella riga con "Tutte", quindi i contatori degli argomenti possono sommare più di quello della materia.
+- **La Dashboard** prende i conteggi dall'overview: ora esclude le card segnalate e applica `newLimit`.
+- **Overview**: in più `cardCount` (per materia e argomento), `totalCards` e `nextDueAt`, per distinguere
+  "niente da ripassare oggi" da "nessuna flashcard". Riga "Senza argomento" con `id: null`, solo se ha card.
+- **Coda**: `GET /api/review/queue?materia=&argomento=&n=`, `argomento=none` = card senza argomento, `n` ≤ 500
+  (assente = tutte). Risposta `{ queue }` come la coda per materia.
+- **Intervalli in ms**, non stringhe: `intervals: { 1..4: number }`. `formatInterval` in `lib/format.ts` li
+  formatta lato client. La risposta del rating include anche `intervals` della card aggiornata, per una
+  card ri-accodata dopo "Di nuovo".
+- **Annulla**: `DELETE /api/review/[reviewId]` → `{ flashcard }`; 404 se non esiste, 409 se non è l'ultima
+  valutazione della card o se è precedente alla migrazione 0021 (`prev_schedule` null).
+- **Card viste ma senza stabilità/difficoltà** (import Anki o di mazzi senza stato FSRS): FSRS le tratta come
+  nuove. Prima davano intervalli e schedule `NaN`.
 
 ---
 
@@ -195,6 +231,40 @@ su `{ queue, idx, history }`: testabili senza DOM.
 - Bottoni veri, `aria-label` sulle icone, focus visibile, annuncio `aria-live="polite"` della card successiva.
 - `/ripasso` a `≥ md`: blocco `hidden md:flex` con rimando ai ripassi per materia; il contenuto mobile è `md:hidden`.
 
+### Fatto (PR 4)
+
+File come da struttura sopra, più `components/quick-review/useReviewOutbox.ts` (invio delle valutazioni),
+`lib/reviewOverview.ts` (query condivisa tra home e badge) e `components/MobileMoreMenu.tsx`. Scostamenti:
+
+- **Invio in serie**: le valutazioni partono una alla volta e in ordine (una card ripassata due volte nella
+  stessa sessione viene schedulata nell'ordine giusto, un annulla trova sempre la review). Annullare una
+  valutazione non ancora partita la toglie dalla coda senza richieste; dopo 3 tentativi (1 s, 2 s, 4 s) la coda
+  si ferma con la richiesta fallita in testa e il toast "Valutazione non salvata — Riprova". Un 4xx (es. 409
+  sull'annulla di una card ripassata altrove) non si ritenta: toast con il messaggio. Richieste `keepalive` e
+  avviso `beforeunload` se resta qualcosa in coda.
+- **Prossime scadenze**: stimate subito dagli intervalli della card, poi sostituite dal `dueAt` restituito dal
+  server; gruppi per giorno di calendario locale (Oggi / Domani / Tra N giorni). Una card "Di nuovo" ri-accodata
+  riceve gli intervalli nuovi dalla risposta del server.
+- **Materie senza flashcard** non compaiono nella home né nel rimando desktop (non c'è nulla da avviare); quelle
+  con card ma niente in scadenza restano, attenuate e disabilitate.
+- **Deep link**: `n` accetta 1-500; senza `n` usa la lunghezza salvata. Alla chiusura l'URL torna `/ripasso`.
+- **Toast** in alto (sotto l'header della sessione), per non coprire i bottoni di valutazione.
+- **Accessibilità**: la sessione è un `role="dialog"` modale; il tap sulla card è solo una scorciatoia del
+  bottone "Mostra risposta"; badge della tab bar `aria-hidden` con testo `sr-only` equivalente.
+- **Test**: `test/quickReviewSession.test.ts` (logica pura, incluso il caso del prototipo 8 valutazioni → 6 card,
+  67%), `e2e/ripasso.mobile.spec.ts` (sessione completa + deep link), `/ripasso` nello smoke responsive,
+  rimando desktop in `e2e/shell.spec.ts`.
+
+### Fatto (PR 5)
+
+- Swipe oltre soglia: la card esce di lato (180 ms, con tinta e etichetta) e solo dopo viene registrata la
+  valutazione; `SwipeCard` è rimontata a ogni posizione (`key`), quindi la card successiva entra con una
+  dissolvenza breve. Sotto `prefers-reduced-motion` lo swipe resta disattivato e le durate sono azzerate.
+- Cambio schermata (home → sessione → riepilogo): l'overlay entra con dissolvenza e piccolo scorrimento.
+- Stati vuoti: "Sei in pari" (con la prossima scadenza nel piede) quando non c'è nulla in scadenza, e
+  "Nessuna flashcard ancora" con griglia tecnica e icona.
+- Haptics e badge della tab bar erano già in PR 4.
+
 ---
 
 ## 5. Test
@@ -205,10 +275,11 @@ su `{ queue, idx, history }`: testabili senza DOM.
   `countDueCards` allineato.
 - **Vitest** `lib/quickReview.ts`: ri-accodamento "Di nuovo", undo dopo ri-accodamento, metriche del riepilogo
   (stessi casi del prototipo: 8 valutazioni → 6 card, 67% al primo colpo).
-- **Playwright**: nuovo project `mobile` (`devices['Pixel 7']`) in `playwright.config.ts`;
-  `e2e/ripasso-mobile.spec.ts`: home → espandi materia → avvia argomento → rivela → swipe → undo → riepilogo →
-  ripassa errori. Più uno smoke "nessuno scroll orizzontale" su ogni route della Fase A
-  (`document.documentElement.scrollWidth <= innerWidth`). Test desktop: tab bar e link Ripasso assenti.
+- **Playwright**: project `mobile` (`devices['Pixel 7']`) in `playwright.config.ts`, che esegue solo i file
+  `*.mobile.spec.ts` (il project desktop li ignora). PR 2: smoke "nessuno scroll orizzontale" su ogni route
+  della Fase A (`e2e/responsive.mobile.spec.ts`, documento e `<main>`) e tab bar assente su desktop
+  (`e2e/shell.spec.ts`). PR 4: `e2e/ripasso.mobile.spec.ts`: home → espandi materia → avvia argomento →
+  rivela → swipe → undo → riepilogo → ripassa errori; su desktop link Ripasso assente.
 
 ---
 

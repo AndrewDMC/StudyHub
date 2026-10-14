@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { FlashcardTypeSchema } from '@studyhub/ai';
+import { SubjectColorSchema } from '@studyhub/core';
 import { FlashcardDtoSchema } from './generation.js';
 
 export const FsrsRatingSchema = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]);
@@ -164,3 +165,76 @@ export const CalibrationDtoSchema = z.object({
   ),
 });
 export type CalibrationDto = z.infer<typeof CalibrationDtoSchema>;
+
+/**
+ * Ripasso rapido (docs/09-ripasso-mobile.md §B2). Counts follow the same rule as the queue:
+ * not suspended, not flagged, active subject; new cards (at most `newLimit` per subject), review
+ * cards due by the end of today, learning cards due by now.
+ */
+export const ReviewOverviewTopicDtoSchema = z.object({
+  /** null = the "Senza argomento" row: cards not tagged with any topic. */
+  id: z.string().uuid().nullable(),
+  name: z.string(),
+  mastery: z.number().min(0).max(1).nullable(),
+  due: z.number().int().nonnegative(),
+  /** Reviewable cards in the topic, due or not: 0 means there is nothing to review here at all. */
+  cardCount: z.number().int().nonnegative(),
+});
+export type ReviewOverviewTopicDto = z.infer<typeof ReviewOverviewTopicDtoSchema>;
+
+export const ReviewOverviewSubjectDtoSchema = z.object({
+  slug: z.string(),
+  name: z.string(),
+  color: SubjectColorSchema,
+  nextExam: z.object({ title: z.string(), date: z.string().datetime() }).nullable(),
+  due: z.number().int().nonnegative(),
+  cardCount: z.number().int().nonnegative(),
+  topics: z.array(ReviewOverviewTopicDtoSchema),
+});
+export type ReviewOverviewSubjectDto = z.infer<typeof ReviewOverviewSubjectDtoSchema>;
+
+export const ReviewOverviewDtoSchema = z.object({
+  totalDue: z.number().int().nonnegative(),
+  totalCards: z.number().int().nonnegative(),
+  /** Earliest future due date among cards not due today, for the "niente da ripassare" state. */
+  nextDueAt: z.string().datetime().nullable(),
+  subjects: z.array(ReviewOverviewSubjectDtoSchema),
+});
+export type ReviewOverviewDto = z.infer<typeof ReviewOverviewDtoSchema>;
+
+/** ms from now that each rating would schedule the card (Again, Hard, Good, Easy). */
+export const RatingIntervalsSchema = z.object({
+  1: z.number().nonnegative(),
+  2: z.number().nonnegative(),
+  3: z.number().nonnegative(),
+  4: z.number().nonnegative(),
+});
+export type RatingIntervals = z.infer<typeof RatingIntervalsSchema>;
+
+/** `GET /api/review/queue?materia=&argomento=&n=`; `argomento=none` = cards without a topic. */
+export const ReviewQueueQuerySchema = z.object({
+  materia: z.string().min(1).optional(),
+  argomento: z.union([z.string().uuid(), z.literal('none')]).optional(),
+  n: z.coerce.number().int().positive().max(500).optional(),
+});
+export type ReviewQueueQuery = z.infer<typeof ReviewQueueQuerySchema>;
+
+export const ReviewQueueItemDtoSchema = FlashcardDtoSchema.extend({
+  subjectSlug: z.string(),
+  subjectName: z.string(),
+  subjectColor: SubjectColorSchema,
+  topicName: z.string().nullable(),
+  intervals: RatingIntervalsSchema,
+});
+export type ReviewQueueItemDto = z.infer<typeof ReviewQueueItemDtoSchema>;
+
+/** `POST /api/subjects/:slug/review/:cardId` response. */
+export const SubmitReviewResponseSchema = z.object({
+  flashcard: FlashcardDtoSchema,
+  /** For `DELETE /api/review/:reviewId` (undo). */
+  reviewId: z.string().uuid(),
+  dueAt: z.string().datetime(),
+  /** Previews for the card's next review, for a card re-queued in the same session. */
+  intervals: RatingIntervalsSchema,
+});
+export type SubmitReviewResponse = z.infer<typeof SubmitReviewResponseSchema>;

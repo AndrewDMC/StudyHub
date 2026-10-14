@@ -74,7 +74,7 @@ export function ArtifactReviewClient({
   });
 
   return (
-    <div className="mx-auto max-w-3xl p-6">
+    <div className="mx-auto max-w-3xl p-4 md:p-6">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <Link
