@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>Ripasso · Analisi Matematica I</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.sh{--bg-base:#0a0b0f;--bg-surface:#111318;--bg-raised:#171a21;--bg-inset:#0d0e13;--border:#22262f;--border-strong:#2e3441;--fg-primary:#e8eaf0;--fg-secondary:#9ba3b4;--fg-muted:#7a8394;--accent:#5b8cff;--accent-hover:#7aa2ff;--accent-subtle:#5b8cff1f;--on-accent:#0a0b0f;--ok:#3dd68c;--warn:#f5b544;--danger:#ff6b6b;--info:#4ecdc4;--subject:#8b5cf6;position:relative;font-family:Inter,ui-sans-serif,system-ui,sans-serif;font-size:15px;line-height:1.45;color:var(--fg-primary);background:var(--bg-base);-webkit-font-smoothing:antialiased}
+.sh.light{--bg-base:#f6f7f9;--bg-surface:#ffffff;--bg-raised:#eef0f4;--bg-inset:#eceff3;--border:#dde1e8;--border-strong:#c5ccd8;--fg-primary:#14171f;--fg-secondary:#444c5c;--fg-muted:#5f6879;--accent:#2a5bd7;--accent-hover:#1f49b3;--accent-subtle:#2a5bd71a;--on-accent:#ffffff;--ok:#0c7a52;--warn:#8f5a00;--danger:#c22b2b;--info:#0a7570;--subject:#7c3aed}
+.sh *{box-sizing:border-box}
+.sh h1,.sh h2,.sh p{margin:0}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace}
+.gridbg{background-image:linear-gradient(to right,color-mix(in srgb,var(--fg-primary) 3%,transparent) 1px,transparent 1px),linear-gradient(to bottom,color-mix(in srgb,var(--fg-primary) 3%,transparent) 1px,transparent 1px);background-size:24px 24px}
+.sh a{color:var(--accent);text-decoration:none}
+.ib{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;flex-shrink:0;border:0;border-radius:8px;background:transparent;color:var(--fg-secondary);cursor:pointer}
+.sh a.ib{color:var(--fg-secondary)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:52px;padding:0 16px;border-radius:10px;border:1px solid var(--border-strong);background:var(--bg-raised);color:var(--fg-primary);font:600 15px/1 Inter,system-ui,sans-serif;cursor:pointer;white-space:nowrap}
+.sh a.btn{color:var(--fg-primary)}
+.btn.pri,.sh a.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.conf{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:60px;border-radius:10px;border:1px solid var(--border-strong);background:var(--bg-raised);color:var(--fg-primary);font:600 14px Inter,system-ui,sans-serif;cursor:pointer}
+.conf.on{border-color:var(--accent);background:var(--accent-subtle)}
+.grade{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:64px;border-radius:10px;border:1px solid;background:transparent;font:600 14px Inter,system-ui,sans-serif;cursor:pointer}
+.grade span{font:500 11px 'JetBrains Mono',monospace;opacity:.85}
+</style>
+</helmet>
+<div class="sh {{theme}}" style="width: 390px; height: 844px; display: flex; flex-direction: column; overflow: hidden">
+<header style="flex-shrink: 0; display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 4px 0 4px">
+<a class="ib" href="Flashcard.dc.html" aria-label="Termina il ripasso"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></a>
+<div style="flex: 1; height: 6px; border-radius: 3px; background: var(--bg-raised); overflow: hidden" role="progressbar" aria-valuemin="0" aria-valuemax="42" aria-valuenow="{{pos}}" aria-label="Avanzamento"><span style="display: block; height: 100%; width: {{pct}}%; background: var(--accent); border-radius: 3px"></span></div>
+<span class="mono" style="min-width: 52px; text-align: right; padding-right: 12px; font-size: 13px; color: var(--fg-secondary)">{{pos}}/42</span>
+</header>
+
+<main class="gridbg" style="flex: 1; min-height: 0; padding: 8px 16px 16px; display: flex; flex-direction: column; gap: 16px">
+<article style="flex: 1; display: flex; flex-direction: column; border-radius: 16px; border: 1px solid var(--border); background: var(--bg-surface); padding: 20px; gap: 16px">
+<div style="display: flex; justify-content: space-between; align-items: center">
+<span style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fg-secondary)"><span style="width: 8px; height: 8px; border-radius: 50%; background: var(--subject)"></span>{{card.topic}}</span>
+<button class="ib" aria-label="Apri la fonte nel documento" style="width: auto; padding: 0 10px; font: 500 13px Inter, system-ui, sans-serif; gap: 6px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><path d="M14 3v6h6"></path></svg>Fonte</button>
+</div>
+<div style="flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 20px">
+<h1 style="font-size: 22px; font-weight: 600; line-height: 1.35; letter-spacing: -0.01em">{{card.q}}</h1>
+<sc-if value="{{revealed}}" hint-placeholder-val="{{false}}">
+<div style="padding-top: 18px; border-top: 1px solid var(--border)">
+<p style="font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--fg-muted); margin-bottom: 6px">Risposta</p>
+<p style="font-size: 17px; line-height: 1.55">{{card.a}}</p>
+</div>
+</sc-if>
+</div>
+</article>
+
+<sc-if value="{{asking}}" hint-placeholder-val="{{true}}">
+<div style="display: flex; flex-direction: column; gap: 10px">
+<p style="font-size: 14px; color: var(--fg-secondary); text-align: center">Quanto sei sicuro?</p>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+<button class="conf {{cc.no}}" onClick="{{pickNo}}">Non lo so</button>
+<button class="conf {{cc.maybe}}" onClick="{{pickMaybe}}">Forse</button>
+<button class="conf {{cc.yes}}" onClick="{{pickYes}}">Lo so</button>
+</div>
+<button class="btn pri" onClick="{{reveal}}" style="width: 100%">Mostra la risposta</button>
+</div>
+</sc-if>
+
+<sc-if value="{{revealed}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 10px">
+<p style="font-size: 14px; color: var(--fg-secondary); text-align: center">Come è andata?</p>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px">
+<button class="grade" onClick="{{next}}" style="border-color: color-mix(in srgb, var(--danger) 50%, transparent); color: var(--danger)">Di nuovo<span>1 min</span></button>
+<button class="grade" onClick="{{next}}" style="border-color: color-mix(in srgb, var(--warn) 50%, transparent); color: var(--warn)">Difficile<span>8 min</span></button>
+<button class="grade" onClick="{{next}}" style="border-color: color-mix(in srgb, var(--ok) 50%, transparent); color: var(--ok)">Bene<span>3 g</span></button>
+<button class="grade" onClick="{{next}}" style="border-color: color-mix(in srgb, var(--accent) 50%, transparent); color: var(--accent)">Facile<span>9 g</span></button>
+</div>
+</div>
+</sc-if>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["scuro","chiaro"],"default":"scuro"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+constructor(props) {
+super(props);
+this.state = { i: 0, revealed: false, conf: '' };
+}
+renderVals() {
+const cards = [
+{ topic: 'Integrali', q: 'Per quali valori di p converge ∫₁^∞ 1/xᵖ dx?', a: 'Per p > 1. Per p ≤ 1 l’integrale diverge.' },
+{ topic: 'Derivate', q: 'Enuncia il teorema di Lagrange.', a: 'Se f è continua su [a, b] e derivabile su (a, b), esiste c in (a, b) con f′(c) = (f(b) − f(a)) / (b − a).' },
+{ topic: 'Serie numeriche', q: 'Qual è la condizione necessaria per la convergenza di Σ aₙ?', a: 'aₙ → 0. Non è sufficiente: la serie armonica diverge.' }
+];
+const { i, revealed, conf } = this.state;
+const pos = 12 + i;
+const cc = { no: conf === 'no' ? 'on' : '', maybe: conf === 'maybe' ? 'on' : '', yes: conf === 'yes' ? 'on' : '' };
+return {
+theme: this.props.theme === 'chiaro' ? 'light' : '',
+card: cards[i % cards.length], revealed, asking: !revealed, cc,
+pos, pct: Math.round((pos / 42) * 100),
+pickNo: () => this.setState({ conf: 'no' }),
+pickMaybe: () => this.setState({ conf: 'maybe' }),
+pickYes: () => this.setState({ conf: 'yes' }),
+reveal: () => this.setState({ revealed: true }),
+next: () => this.setState({ i: i + 1, revealed: false, conf: '' })
+};
+}
+}
+</script>
+</body>
+</html>

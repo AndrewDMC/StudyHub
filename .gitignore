@@ -22,6 +22,10 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 
+# agenti: spec e piani di lavoro temporanei
+.claude/work/
+.claude/settings.local.json
+
 # editor
 .vscode/*
 !.vscode/extensions.json
