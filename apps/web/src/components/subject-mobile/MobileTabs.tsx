@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { tabLinks, type MobileTab } from '@/lib/subjectTabs';
 
-export function MobileTabs({ slug, activeTab }: { slug: string; activeTab: MobileTab }) {
+export function MobileTabs({ slug, activeTab }: { slug: string; activeTab: MobileTab | 'piano' }) {
   const activeRef = useRef<HTMLAnchorElement>(null);
 
   useEffect(() => {
