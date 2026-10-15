@@ -434,3 +434,51 @@ Non ancora:
 - confidenza pre-risposta nel ripasso (omessa, come in [`docs/09-ripasso-mobile.md`](../09-ripasso-mobile.md));
 - il passo "Quanto sei sicuro?" del design, omesso per la stessa ragione;
 - slice 4-6 (Simulazioni/Esame, Lacune/Piano, Sessione).
+
+## Aggiornamento — vista mobile di Simulazioni, slice 4 (2026-10-15)
+
+Sotto 768 px le viste di simulazioni e tentativi passano ai componenti in
+[`apps/web/src/components/simulation-mobile/`](../../apps/web/src/components/simulation-mobile/). Il desktop
+non cambia; le route restano quelle di F5.
+
+- **Tab Simulazioni**: profilo d'esame, lista simulazioni con sheet Inizia / Riprendi / Rifai / Vedi la
+  correzione, generazione, andamento per argomento in disclosure.
+- **Esame** (`/materie/[slug]/simulations/[id]`): una domanda alla volta, timer sticky, chip per saltare
+  tra gli esercizi. Uscita e consegna passano da uno sheet di conferma; l'uscita usa `router.replace`.
+- **Risultati** (`/materie/[slug]/attempts/[id]/results`): punteggio, dettaglio per esercizio, seconda
+  opinione, drill sugli errori, stato "correzione in corso".
+- **Shell**: [`AppShell.tsx`](../../apps/web/src/components/AppShell.tsx) nasconde l'header globale anche su
+  queste due route.
+- **Hook e logica**: [`useExamAttempt.ts`](../../apps/web/src/lib/useExamAttempt.ts) è chiamato una sola volta
+  in `ExamModeClient`, così la rotazione dello schermo non riavvia il tentativo;
+  [`useAttemptResults.ts`](../../apps/web/src/lib/useAttemptResults.ts) per la pagina risultati; le funzioni
+  pure stanno in [`examAttemptLogic.ts`](../../apps/web/src/lib/examAttemptLogic.ts).
+- **Contratto**: `SimulationSummaryDto` ha `openAttemptId` (tentativo in corso non scaduto) e
+  `lastAttemptId` (ultimo consegnato o corretto; i tentativi scaduti contano come consegnati).
+
+**Robustezza** (vale anche per il desktop):
+
+- autosave fallito: il salvataggio torna in coda e l'uscita è bloccata con un errore;
+- consegna con errore di rete: resta riprovabile, e a tempo scaduto viene ritentata ogni 5 s;
+- timer calcolato dalla scadenza assoluta sul server, con flush del salvataggio su `visibilitychange`;
+- la consegna attende il salvataggio in volo;
+- `startOrResumeAttempt` è transazionale (`SELECT ... FOR UPDATE`), così due richieste concorrenti non
+  creano due tentativi.
+
+Verifica: e2e [`materia-simulazioni.mobile.spec.ts`](../../apps/web/e2e/materia-simulazioni.mobile.spec.ts)
+(8 test), [`materia-simulazioni-desktop.spec.ts`](../../apps/web/e2e/materia-simulazioni-desktop.spec.ts)
+(3 test; verifica che il desktop non cambi). Seed in
+[`e2e/fixtures/simulazioni-seed.ts`](../../apps/web/e2e/fixtures/simulazioni-seed.ts): la correzione AI è
+simulata scrivendo sul DB, perché il worker non gira negli e2e. Unit:
+[`simulationMobile.test.ts`](../../apps/web/test/simulationMobile.test.ts),
+[`examAttemptLogic.test.ts`](../../apps/web/test/examAttemptLogic.test.ts),
+[`examPrep.test.ts`](../../apps/web/test/examPrep.test.ts).
+
+Non ancora:
+
+- ora dell'ultimo salvataggio: il DTO non la espone;
+- foto del foglio: non implementata;
+- verdetto "Sufficiente" sugli argomenti: non implementato;
+- pill ×N sugli argomenti: il dato non è disponibile;
+- lo stato "In generazione" è solo locale alla pagina, non persiste dopo il ricaricamento;
+- slice 5-6 (Lacune/Piano, Sessione).

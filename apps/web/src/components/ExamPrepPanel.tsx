@@ -13,14 +13,14 @@ import type {
 } from '@studyhub/contracts';
 import { ModelPicker, MODEL_OPTIONS } from './ModelPicker';
 
-async function getJson<T>(url: string, key: string): Promise<T> {
+export async function getJson<T>(url: string, key: string): Promise<T> {
   const res = await fetch(url);
   const body = await res.json();
   if (!res.ok) throw new Error(body.error?.message ?? 'Caricamento fallito');
   return body[key] as T;
 }
 
-async function postJson(url: string, payload: unknown, method = 'POST') {
+export async function postJson(url: string, payload: unknown, method = 'POST') {
   const res = await fetch(url, {
     method,
     headers: { 'Content-Type': 'application/json' },
@@ -32,13 +32,13 @@ async function postJson(url: string, payload: unknown, method = 'POST') {
 }
 
 /** €0.0001 → "€0.0001"; €0 → "gratis" (FakeProvider, nessuna chiave configurata). */
-function formatCost(costEur: number): string {
+export function formatCost(costEur: number): string {
   return costEur === 0 ? 'gratis' : `~€${costEur.toFixed(4)}`;
 }
 
-type SimScope = { docIds: string[] } | { topicIds: string[] };
+export type SimScope = { docIds: string[] } | { topicIds: string[] };
 
-async function fetchEstimate(
+export async function fetchEstimate(
   slug: string,
   scope: SimScope,
   model: string,
@@ -54,7 +54,7 @@ async function fetchEstimate(
 }
 
 /** A topic's score over successive graded attempts: a sparkline plus the last value and the change. */
-function TopicTrendRow({ trend }: { trend: TopicTrendDto }) {
+export function TopicTrendRow({ trend }: { trend: TopicTrendDto }) {
   const W = 72;
   const H = 18;
   const n = trend.points.length;

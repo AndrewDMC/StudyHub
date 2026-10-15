@@ -1,11 +1,11 @@
 'use client';
 
 import type { DocumentDto, TopicDto } from '@studyhub/contracts';
-import { ExamPrepPanel } from '../ExamPrepPanel';
 import { CoveragePanel } from '../CoveragePanel';
 import { FlashcardMobile } from '../flashcard-mobile/FlashcardMobile';
+import { SimulationsMobile } from '../simulation-mobile/SimulationsMobile';
 
-/** Flashcard (mobile screen) / Simulazioni / Lacune (desktop panels, redesigned in later slices). */
+/** Flashcard / Simulazioni (mobile screens) / Lacune (desktop panel, redesigned in a later slice). */
 export function MobileTabContent({
   slug,
   tab,
@@ -21,11 +21,7 @@ export function MobileTabContent({
     return <FlashcardMobile slug={slug} topics={topics} />;
   }
   if (tab === 'simulazioni') {
-    return (
-      <div className="min-w-0">
-        <ExamPrepPanel subjectSlug={slug} documents={documents} />
-      </div>
-    );
+    return <SimulationsMobile slug={slug} documents={documents} topics={topics} />;
   }
   return (
     <div className="min-w-0">

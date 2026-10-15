@@ -129,6 +129,7 @@ export async function enqueueSimulation(
 export async function listSimulations(
   db: AnyDb,
   subjectSlug: string,
+  now: Date = new Date(),
 ): Promise<SimulationSummaryDto[]> {
   const subject = await requireSubject(db, subjectSlug);
   const rows: { a: typeof artifacts.$inferSelect; s: typeof simulations.$inferSelect }[] = await db
@@ -153,8 +154,29 @@ export async function listSimulations(
   return rows.map(({ a, s }) => {
     const mine = attempts.filter((t) => t.simulationId === a.id);
     const lastGraded = mine.find((t) => t.status === 'graded' && (t.totalMax ?? 0) > 0);
+    // An expired in-progress attempt is auto-submitted by expireIfDue on next access, so it
+    // counts as submitted here (deadline as submission time), never as resumable.
+    const isDone = (t: SimulationAttempt) =>
+      t.status === 'submitted' ||
+      t.status === 'graded' ||
+      (t.status === 'in_progress' && isExpired(t.startedAt, t.durationMin, now));
+    const doneAt = (t: SimulationAttempt) =>
+      (
+        t.submittedAt ??
+        (t.status === 'in_progress'
+          ? new Date(t.startedAt.getTime() + t.durationMin * 60_000)
+          : t.startedAt)
+      ).getTime();
+    const openAttempt = mine.find((t) => t.status === 'in_progress' && !isDone(t));
+    let lastAttempt: SimulationAttempt | undefined;
+    for (const t of mine) {
+      if (!isDone(t)) continue;
+      if (!lastAttempt || doneAt(t) > doneAt(lastAttempt)) lastAttempt = t;
+    }
     return {
       id: a.id,
+      openAttemptId: openAttempt?.id ?? null,
+      lastAttemptId: lastAttempt?.id ?? null,
       title: a.title,
       mode: s.mode,
       topicId: s.topicId,
@@ -346,25 +368,35 @@ export async function startOrResumeAttempt(
   if (!sim) throw new NotFoundError('Simulazione');
 
   const items = await loadItems(db, simulationId);
-  const [open] = await db
-    .select()
-    .from(simulationAttempts)
-    .where(
-      and(
-        eq(simulationAttempts.simulationId, simulationId),
-        eq(simulationAttempts.status, 'in_progress'),
-      ),
-    );
-  if (open) {
-    const checked = await expireIfDue(db, queue, open, now);
-    if (checked.status === 'in_progress') return attemptToDto(checked, items, now);
-  }
-
-  const [created] = await db
-    .insert(simulationAttempts)
-    .values({ id: randomUUID(), simulationId, durationMin: sim.s.timeBudgetMin, startedAt: now })
-    .returning();
-  return attemptToDto(created, items, now);
+  // Select-then-insert must be atomic: concurrent POSTs (StrictMode, two tabs) would otherwise
+  // both create an in-progress attempt. Row-lock the simulation's artifact so they serialize
+  // (simpler than a partial unique index + migration, and works on pglite and Postgres).
+  const attempt: SimulationAttempt = await db.transaction(async (tx: AnyDb) => {
+    await tx
+      .select({ id: artifacts.id })
+      .from(artifacts)
+      .where(eq(artifacts.id, simulationId))
+      .for('update');
+    const [open] = await tx
+      .select()
+      .from(simulationAttempts)
+      .where(
+        and(
+          eq(simulationAttempts.simulationId, simulationId),
+          eq(simulationAttempts.status, 'in_progress'),
+        ),
+      );
+    if (open) {
+      const checked = await expireIfDue(tx, queue, open, now);
+      if (checked.status === 'in_progress') return checked;
+    }
+    const [created] = await tx
+      .insert(simulationAttempts)
+      .values({ id: randomUUID(), simulationId, durationMin: sim.s.timeBudgetMin, startedAt: now })
+      .returning();
+    return created;
+  });
+  return attemptToDto(attempt, items, now);
 }
 
 export async function getAttempt(

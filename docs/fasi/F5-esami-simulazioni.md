@@ -157,3 +157,16 @@ dopo chiusura tab; profilo modificabile e non sovrascritto; risultato scarso →
 automatizzabili): "da 3 esami passati emerge un profilo riconoscibile" e "una simulazione somiglia
 all'esame reale (verifica manuale documentata)". `AnthropicProvider` resta mai eseguito contro
 l'API vera, quindi anche il ramo immagini è provato solo contro un client mockato.
+
+## Aggiornamento — correzioni di robustezza della modalità Esame (2026-10-15)
+
+Vale per desktop e mobile (vedi [`docs/fasi/F2-materie.md`](F2-materie.md) "slice 4"):
+
+- autosave fallito rimesso in coda, con uscita bloccata finché non va a buon fine;
+- consegna con errore di rete riprovabile, ritentata ogni 5 s a tempo scaduto;
+- timer da scadenza assoluta, flush su `visibilitychange`; la consegna attende il salvataggio in volo;
+- `startOrResumeAttempt` transazionale (`SELECT ... FOR UPDATE`) contro tentativi doppi.
+
+Logica in [`apps/web/src/lib/useExamAttempt.ts`](../../apps/web/src/lib/useExamAttempt.ts) e
+[`examAttemptLogic.ts`](../../apps/web/src/lib/examAttemptLogic.ts). Test:
+[`examAttemptLogic.test.ts`](../../apps/web/test/examAttemptLogic.test.ts).

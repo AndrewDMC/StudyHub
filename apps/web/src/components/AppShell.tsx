@@ -9,10 +9,10 @@ import { MobileMoreMenu } from './MobileMoreMenu';
 import { MobileTabBar } from './MobileTabBar';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  // Below md the subject page and the redesigned document routes (testo, originale, verifica)
+  // Below md the subject page and the redesigned sub-routes (documenti, artifacts, esame, risultati)
   // bring their own header: the global one goes.
   const inSubject =
-    /^\/materie\/[^/]+(\/documenti\/[^/]+(\/(originale|verifica))?|\/artifacts\/[^/]+)?\/?$/.test(
+    /^\/materie\/[^/]+(\/documenti\/[^/]+(\/(originale|verifica))?|\/artifacts\/[^/]+|\/simulations\/[^/]+|\/attempts\/[^/]+\/results)?\/?$/.test(
       usePathname() ?? '',
     );
   return (

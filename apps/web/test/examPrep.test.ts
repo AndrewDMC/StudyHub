@@ -149,6 +149,55 @@ describe('exam prep (web)', () => {
     });
   });
 
+  describe('simulation attempt ids', () => {
+    it('exposes openAttemptId and lastAttemptId (null, in progress, most recent submitted/graded)', async () => {
+      const none = (await listSimulations(db, slug))[0];
+      expect(none).toMatchObject({ openAttemptId: null, lastAttemptId: null });
+
+      const openId = randomUUID();
+      await db.insert(simulationAttempts).values({
+        id: openId,
+        simulationId,
+        durationMin: 60,
+        status: 'in_progress',
+      });
+      const open = (await listSimulations(db, slug))[0];
+      expect(open).toMatchObject({ openAttemptId: openId, lastAttemptId: null });
+
+      await db
+        .update(simulationAttempts)
+        .set({ status: 'submitted', submittedAt: new Date('2026-01-10T10:00:00Z') })
+        .where(eq(simulationAttempts.id, openId));
+      const newerId = randomUUID();
+      await db.insert(simulationAttempts).values({
+        id: newerId,
+        simulationId,
+        durationMin: 60,
+        status: 'graded',
+        startedAt: new Date('2026-02-01T09:00:00Z'),
+        submittedAt: new Date('2026-02-01T10:00:00Z'),
+        totalAwarded: 10,
+        totalMax: 20,
+      });
+      const done = (await listSimulations(db, slug))[0];
+      expect(done).toMatchObject({ openAttemptId: null, lastAttemptId: newerId });
+    });
+  });
+
+  describe('expired in-progress attempts in the list', () => {
+    it('are not resumable (openAttemptId null) and count as lastAttemptId', async () => {
+      const id = randomUUID();
+      const startedAt = new Date('2026-03-01T09:00:00Z');
+      await db
+        .insert(simulationAttempts)
+        .values({ id, simulationId, durationMin: 60, status: 'in_progress', startedAt });
+      const during = (await listSimulations(db, slug, new Date('2026-03-01T09:30:00Z')))[0];
+      expect(during).toMatchObject({ openAttemptId: id, lastAttemptId: null });
+      const after = (await listSimulations(db, slug, new Date('2026-03-01T11:00:00Z')))[0];
+      expect(after).toMatchObject({ openAttemptId: null, lastAttemptId: id });
+    });
+  });
+
   describe('exam mode', () => {
     it('starting shows prompts and points but never the solution or rubric', async () => {
       const attempt = await startOrResumeAttempt(db, fakeQueue(), slug, simulationId);
@@ -156,6 +205,19 @@ describe('exam prep (web)', () => {
       expect(JSON.stringify(attempt)).not.toContain('SOLUZIONE SEGRETA');
       expect(attempt.items[0]).not.toHaveProperty('rubric');
       expect(attempt.remainingSeconds).toBe(3600);
+    });
+
+    it('concurrent starts create a single in-progress attempt', async () => {
+      const [a, b] = await Promise.all([
+        startOrResumeAttempt(db, fakeQueue(), slug, simulationId),
+        startOrResumeAttempt(db, fakeQueue(), slug, simulationId),
+      ]);
+      expect(a.id).toBe(b.id);
+      const rows = await db
+        .select()
+        .from(simulationAttempts)
+        .where(eq(simulationAttempts.simulationId, simulationId));
+      expect(rows).toHaveLength(1);
     });
 
     it('resumes the in-progress attempt instead of starting a new one', async () => {
