@@ -71,6 +71,7 @@ async function dueCardsTodayBySubject(db: AnyDb): Promise<Map<string, number>> {
     .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
     .where(
       and(
+        eq(artifacts.status, 'approved'),
         eq(flashcards.suspended, false),
         or(
           eq(flashcards.state, 'new'),

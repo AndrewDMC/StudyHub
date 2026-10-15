@@ -19,6 +19,7 @@ async function seedDeck(db: Awaited<ReturnType<typeof createTestDb>>, subjectId:
     path: '/x',
     model: 'fake-v1',
     promptVersion: 'flashcards/v1',
+    status: 'approved',
   });
   return deckId;
 }

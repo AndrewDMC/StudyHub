@@ -187,6 +187,7 @@ describe('getDashboardSummary', () => {
       path: '/x.json',
       model: 'fake-v1',
       promptVersion: 'flashcards/v1',
+      status: 'approved',
     });
     await db.insert(flashcards).values([
       {
@@ -260,6 +261,7 @@ describe('getDashboardSummary', () => {
       path: '/x.json',
       model: 'fake-v1',
       promptVersion: 'flashcards/v1',
+      status: 'approved',
     });
     await db.insert(flashcards).values({
       id: randomUUID(),
@@ -403,6 +405,7 @@ describe('getOnboarding (first-run checklist)', () => {
       path: '/d.json',
       model: 'fake-v1',
       promptVersion: 'flashcards/v1',
+      status: 'approved',
     });
     await db.insert(flashcards).values({
       id: randomUUID(),

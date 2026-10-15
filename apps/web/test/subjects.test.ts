@@ -170,6 +170,7 @@ describe('listSubjectSummaries — aggregation and archived filtering', () => {
       path: '/x.json',
       model: 'fake-v1',
       promptVersion: 'flashcards/v1',
+      status: 'approved',
     });
     await db.insert(flashcards).values([
       {
