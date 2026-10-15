@@ -482,3 +482,34 @@ Non ancora:
 - pill ×N sugli argomenti: il dato non è disponibile;
 - lo stato "In generazione" è solo locale alla pagina, non persiste dopo il ricaricamento;
 - slice 5-6 (Lacune/Piano, Sessione).
+
+## Aggiornamento — vista mobile di Lacune e Piano, slice 5 (2026-10-15)
+
+Sotto 768 px la tab Lacune passa a
+[`apps/web/src/components/coverage-mobile/`](../../apps/web/src/components/coverage-mobile/), montata in
+[`MobileTabContent.tsx`](../../apps/web/src/components/subject-mobile/MobileTabContent.tsx) al posto di
+`CoveragePanel`. Il desktop resta invariato. Logica pura in
+[`coverageMobile.ts`](../../apps/web/src/lib/coverageMobile.ts).
+
+- **Da colmare per primo**: card in evidenza con l'argomento prioritario.
+- **Filtri** Tutte / Deboli / Senza flashcard / Senza materiale, con conteggi.
+- **Card argomento**: materiale, card, mastery, menzioni negli esami.
+- **Azioni** verso flussi esistenti:
+  - Carica materiale (`?tab=materiale`);
+  - Genera flashcard (sheet con stima, scope sull'argomento);
+  - Ripassa le card (`/ripasso?materia=&argomento=`);
+  - Fai un drill: apre il `GenerateSheet` della slice 4 con l'argomento preselezionato tramite la nuova
+    prop `initialTopicId` ([`GenerateSheet.tsx`](../../apps/web/src/components/simulation-mobile/GenerateSheet.tsx)).
+- **Temi d'esame senza argomento**: disclosure separata.
+
+Il Piano mobile è descritto in [F6](F6-planner-calendario.md) ("vista mobile del piano").
+
+Test: unit [`coverageMobile.test.ts`](../../apps/web/test/coverageMobile.test.ts); e2e
+[`materia-lacune-piano.mobile.spec.ts`](../../apps/web/e2e/materia-lacune-piano.mobile.spec.ts) e
+[`materia-lacune-piano-desktop.spec.ts`](../../apps/web/e2e/materia-lacune-piano-desktop.spec.ts), con seed in
+[`e2e/fixtures/lacune-piano-seed.ts`](../../apps/web/e2e/fixtures/lacune-piano-seed.ts).
+`materia.mobile.spec.ts` ora usa `/review` come sottorotta con header globale.
+
+Non ancora: ritmo e minuti del piano modificabili da mobile (si cambiano rigenerando la bozza); cerca e
+menu nell'header del piano; il fallimento del worker durante la generazione non è rilevabile (spinner fino a
+60 s, come su desktop).

@@ -20,6 +20,7 @@ export function GenerateSheet({
   onOpenChange,
   onStarted,
   returnFocusRef,
+  initialTopicId,
 }: {
   slug: string;
   mode: GenerateMode;
@@ -30,6 +31,8 @@ export function GenerateSheet({
   /** Called after the job is enqueued, with a label for the "in generazione" row. */
   onStarted: (label: string) => void;
   returnFocusRef: RefObject<HTMLElement | null>;
+  /** Topic preselected in drill mode (e.g. from the Lacune tab). */
+  initialTopicId?: string | undefined;
 }) {
   const drill = mode === 'drill_argomento';
   const topicId = useId();
@@ -76,7 +79,7 @@ export function GenerateSheet({
 
   useEffect(() => {
     if (open) {
-      setDrillTopic('');
+      setDrillTopic(initialTopicId ?? '');
       generate.reset();
     }
   }, [open]);
