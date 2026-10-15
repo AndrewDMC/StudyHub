@@ -12,11 +12,39 @@ export const KIND_LABELS: Record<ExamDto['kind'], string> = {
   progetto: 'Progetto',
 };
 
-async function fetchExams(slug: string): Promise<ExamDto[]> {
+export async function fetchExams(slug: string): Promise<ExamDto[]> {
   const res = await fetch(`/api/subjects/${slug}/exams`);
   const body = await res.json();
   if (!res.ok) throw new Error(body.error?.message ?? 'Impossibile caricare gli esami');
   return body.exams as ExamDto[];
+}
+
+export interface CreateExamInput {
+  title: string;
+  kind: ExamDto['kind'];
+  date: string;
+  durationMin?: number;
+  location?: string;
+  allowedMaterials?: string;
+}
+
+export async function createExam(slug: string, input: CreateExamInput): Promise<ExamDto> {
+  const res = await fetch(`/api/subjects/${slug}/exams`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error?.message ?? 'Creazione fallita');
+  return body.exam as ExamDto;
+}
+
+export async function deleteExam(slug: string, id: string): Promise<void> {
+  const res = await fetch(`/api/subjects/${slug}/exams/${id}`, { method: 'DELETE' });
+  if (!res.ok && res.status !== 204) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error?.message ?? 'Eliminazione fallita');
+  }
 }
 
 export function ExamsPanel({ subjectSlug }: { subjectSlug: string }) {
@@ -34,22 +62,14 @@ export function ExamsPanel({ subjectSlug }: { subjectSlug: string }) {
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['exams', subjectSlug] });
 
   const createMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch(`/api/subjects/${subjectSlug}/exams`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title,
-          kind,
-          date: new Date(date).toISOString(),
-          ...(durationMin ? { durationMin: Number(durationMin) } : {}),
-          ...(allowedMaterials.trim() ? { allowedMaterials: allowedMaterials.trim() } : {}),
-        }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error?.message ?? 'Creazione fallita');
-      return body.exam as ExamDto;
-    },
+    mutationFn: () =>
+      createExam(subjectSlug, {
+        title,
+        kind,
+        date: new Date(date).toISOString(),
+        ...(durationMin ? { durationMin: Number(durationMin) } : {}),
+        ...(allowedMaterials.trim() ? { allowedMaterials: allowedMaterials.trim() } : {}),
+      }),
     onSuccess: () => {
       setTitle('');
       setDate('');
@@ -60,13 +80,7 @@ export function ExamsPanel({ subjectSlug }: { subjectSlug: string }) {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await fetch(`/api/subjects/${subjectSlug}/exams/${id}`, { method: 'DELETE' });
-      if (!res.ok && res.status !== 204) {
-        const body = await res.json().catch(() => null);
-        throw new Error(body?.error?.message ?? 'Eliminazione fallita');
-      }
-    },
+    mutationFn: (id: string) => deleteExam(subjectSlug, id),
     onSuccess: invalidate,
   });
 

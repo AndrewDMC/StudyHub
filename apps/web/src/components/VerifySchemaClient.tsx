@@ -12,8 +12,10 @@ import type {
   UpdateSchemaNodeRequest,
 } from '@studyhub/contracts';
 import { Button } from '@/components/ui/button';
+import { useIsMobile } from '@/lib/useIsMobile';
+import { VerifyMobile } from './document-mobile/VerifyMobile';
 
-const NODE_KINDS = [
+export const NODE_KINDS = [
   'concetto',
   'definizione',
   'formula',
@@ -33,14 +35,14 @@ async function fetchDocument(slug: string, documentId: string): Promise<Document
   return body.document as DocumentDto;
 }
 
-async function fetchBlocks(slug: string, documentId: string): Promise<SchemaBlockDto[]> {
+export async function fetchBlocks(slug: string, documentId: string): Promise<SchemaBlockDto[]> {
   const res = await fetch(`/api/subjects/${slug}/documents/${documentId}/schema-blocks`);
   const body = await res.json();
   if (!res.ok) throw new Error(body.error?.message ?? 'Impossibile caricare i blocchi');
   return body.blocks as SchemaBlockDto[];
 }
 
-async function fetchGraph(slug: string, documentId: string): Promise<SchemaGraphDto> {
+export async function fetchGraph(slug: string, documentId: string): Promise<SchemaGraphDto> {
   const res = await fetch(`/api/subjects/${slug}/documents/${documentId}/schema-graph`);
   const body = await res.json();
   if (!res.ok) throw new Error(body.error?.message ?? 'Impossibile caricare il grafo');
@@ -82,7 +84,7 @@ async function patchNode(
   return body.node as SchemaNodeDto;
 }
 
-async function retranscribe(slug: string, documentId: string): Promise<void> {
+export async function retranscribe(slug: string, documentId: string): Promise<void> {
   const res = await fetch(`/api/subjects/${slug}/documents/${documentId}/transcribe`, {
     method: 'POST',
   });
@@ -241,7 +243,14 @@ function NodeRow({
   );
 }
 
-export function VerifySchemaClient({
+/** Below md verification is the single-column mobile screen; one branch mounted. */
+export function VerifySchemaClient(props: { subjectSlug: string; documentId: string }) {
+  const isMobile = useIsMobile();
+  if (isMobile === null) return <div className="p-4 text-sm text-fg-muted">Caricamento…</div>;
+  return isMobile ? <VerifyMobile {...props} /> : <VerifySchemaDesktop {...props} />;
+}
+
+function VerifySchemaDesktop({
   subjectSlug,
   documentId,
 }: {

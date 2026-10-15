@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { DocumentDeletionImpact, DocumentDto } from '@studyhub/contracts';
 import { Button } from '@/components/ui/button';
@@ -38,12 +38,24 @@ export function DeleteDocumentButton({
   subjectSlug,
   doc,
   onDeleted,
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger,
 }: {
   subjectSlug: string;
   doc: DocumentDto;
   onDeleted?: (documentId: string) => void;
+  /** Controlled mode (mobile kebab): the caller owns the dialog state. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [innerOpen, setInnerOpen] = useState(false);
+  const open = controlledOpen ?? innerOpen;
+  const setOpen = (next: boolean) => {
+    setInnerOpen(next);
+    onOpenChange?.(next);
+  };
   const queryClient = useQueryClient();
 
   const impactQuery = useQuery({
@@ -64,20 +76,26 @@ export function DeleteDocumentButton({
     },
   });
 
+  useEffect(() => {
+    if (controlledOpen) mutation.reset();
+  }, [controlledOpen]);
+
   const impact = impactQuery.data;
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => {
-          mutation.reset();
-          setOpen(true);
-        }}
-        className="text-[11px] text-fg-muted underline-offset-2 hover:text-danger hover:underline"
-      >
-        Elimina
-      </button>
+      {!hideTrigger && (
+        <button
+          type="button"
+          onClick={() => {
+            mutation.reset();
+            setOpen(true);
+          }}
+          className="text-[11px] text-fg-muted underline-offset-2 hover:text-danger hover:underline"
+        >
+          Elimina
+        </button>
+      )}
 
       <Dialog open={open} onOpenChange={(next) => !mutation.isPending && setOpen(next)}>
         <DialogContent className="max-w-md">

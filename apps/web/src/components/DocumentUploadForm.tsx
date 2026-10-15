@@ -22,19 +22,11 @@ const TYPE_LABELS: Record<DocumentType, string> = {
   altro: 'Altro',
 };
 
-export function DocumentUploadForm({
-  subjectSlug,
-  defaultType = 'appunti',
-}: {
-  subjectSlug: string;
-  defaultType?: DocumentType;
-}) {
-  const [type, setType] = useState<DocumentType>(defaultType);
-  const inputRef = useRef<HTMLInputElement>(null);
+/** Upload mutation shared by the desktop form and the mobile "Aggiungi materiale" card. */
+export function useDocumentUpload(subjectSlug: string) {
   const queryClient = useQueryClient();
-
   const mutation = useMutation({
-    mutationFn: async (files: FileList) => {
+    mutationFn: async ({ files, type }: { files: FileList | File[]; type: DocumentType }) => {
       const results = await Promise.allSettled(
         Array.from(files).map((file) => uploadOne(subjectSlug, type, file)),
       );
@@ -44,11 +36,33 @@ export function DocumentUploadForm({
       }
       return results;
     },
-    onSuccess: () => {
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['documents', subjectSlug] });
-      if (inputRef.current) inputRef.current.value = '';
     },
   });
+  return {
+    upload: (files: FileList | File[], type: DocumentType, options?: { onSettled?: () => void }) =>
+      mutation.mutate(
+        { files, type },
+        options?.onSettled ? { onSettled: options.onSettled } : undefined,
+      ),
+    isPending: mutation.isPending,
+    isError: mutation.isError,
+    error: mutation.error as Error | null,
+    reset: mutation.reset,
+  };
+}
+
+export function DocumentUploadForm({
+  subjectSlug,
+  defaultType = 'appunti',
+}: {
+  subjectSlug: string;
+  defaultType?: DocumentType;
+}) {
+  const [type, setType] = useState<DocumentType>(defaultType);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const mutation = useDocumentUpload(subjectSlug);
 
   return (
     <div className="rounded-[var(--radius-card)] border border-dashed border-border bg-bg-surface p-4">
@@ -76,7 +90,11 @@ export function DocumentUploadForm({
           disabled={mutation.isPending}
           onChange={(e) => {
             if (e.target.files && e.target.files.length > 0) {
-              mutation.mutate(e.target.files);
+              mutation.upload(e.target.files, type, {
+                onSettled: () => {
+                  if (inputRef.current) inputRef.current.value = '';
+                },
+              });
             }
           }}
           className="text-sm text-fg-secondary file:mr-3 file:rounded-[var(--radius-control)] file:border-0 file:bg-accent file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-accent-hover"
@@ -87,7 +105,7 @@ export function DocumentUploadForm({
 
       {mutation.isError && (
         <p role="alert" className="mt-2 text-xs text-danger">
-          {(mutation.error as Error).message}
+          {mutation.error?.message}
         </p>
       )}
     </div>

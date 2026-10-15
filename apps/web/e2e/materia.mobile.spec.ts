@@ -138,10 +138,9 @@ test.describe('Materia mobile — shell e Panoramica', () => {
         'aria-current',
         'page',
       );
-      await expect(filterGroup.getByRole('button', { name: chip, exact: true })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      );
+      await expect(
+        filterGroup.getByRole('button', { name: new RegExp(`^${chip}( \\d+)?$`) }),
+      ).toHaveAttribute('aria-pressed', 'true');
       await expect(filterGroup.locator('[aria-pressed="true"]')).toHaveCount(1);
     }
 

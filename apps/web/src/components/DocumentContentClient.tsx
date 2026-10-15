@@ -7,15 +7,21 @@ import { diffLines } from 'diff';
 import type { DocumentContentDto } from '@studyhub/contracts';
 import { Button } from '@/components/ui/button';
 import { ObsidianMarkdown } from '@/components/ObsidianMarkdown';
+import { useIsMobile } from '@/lib/useIsMobile';
+import { DocumentMobile } from './document-mobile/DocumentMobile';
 
-async function fetchContent(slug: string, documentId: string): Promise<DocumentContentDto> {
+export async function fetchContent(slug: string, documentId: string): Promise<DocumentContentDto> {
   const res = await fetch(`/api/subjects/${slug}/documents/${documentId}/content`);
   const body = await res.json();
   if (!res.ok) throw new Error(body.error?.message ?? 'Impossibile caricare il documento');
   return body as DocumentContentDto;
 }
 
-async function saveContent(slug: string, documentId: string, markdown: string): Promise<void> {
+export async function saveContent(
+  slug: string,
+  documentId: string,
+  markdown: string,
+): Promise<void> {
   const res = await fetch(`/api/subjects/${slug}/documents/${documentId}/content`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -27,7 +33,7 @@ async function saveContent(slug: string, documentId: string, markdown: string): 
   }
 }
 
-async function resolveConflict(
+export async function resolveConflict(
   slug: string,
   documentId: string,
   keep: 'mine' | 'new',
@@ -44,7 +50,7 @@ async function resolveConflict(
 }
 
 /** Line-based diff view — a re-ingest's fresh output (right) vs. the user's saved edit (left). */
-function ConflictDiff({ mine, theirs }: { mine: string; theirs: string }) {
+export function ConflictDiff({ mine, theirs }: { mine: string; theirs: string }) {
   const parts = diffLines(mine, theirs);
   return (
     <pre className="max-h-96 overflow-y-auto whitespace-pre-wrap rounded-[var(--radius-control)] border border-border bg-bg-inset p-3 font-mono text-xs">
@@ -66,13 +72,20 @@ function ConflictDiff({ mine, theirs }: { mine: string; theirs: string }) {
   );
 }
 
+/** Below md the text screen is the mobile one; one branch mounted (no double queries). */
+export function DocumentContentClient(props: { subjectSlug: string; documentId: string }) {
+  const isMobile = useIsMobile();
+  if (isMobile === null) return <div className="p-4 text-sm text-fg-muted">Caricamento…</div>;
+  return isMobile ? <DocumentMobile {...props} /> : <DocumentContentDesktop {...props} />;
+}
+
 /**
  * Editor for a document's canonical `content.md`, with the stickiness
  * conflict UI (docs/02-filesystem-e-dati.md §6.1): once edited here, a
  * re-ingest never overwrites the file silently — it shows both versions and
  * lets the user pick.
  */
-export function DocumentContentClient({
+function DocumentContentDesktop({
   subjectSlug,
   documentId,
 }: {
