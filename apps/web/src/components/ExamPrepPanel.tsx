@@ -373,7 +373,10 @@ export function ExamPrepPanel({
       </div>
 
       {trendsQuery.isSuccess && trendsQuery.data.length > 0 && (
-        <div className="mt-3 border-t border-border px-1 pt-2">
+        <section
+          aria-label="Andamento per argomento"
+          className="mt-3 border-t border-border px-1 pt-2"
+        >
           <h3 className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-fg-muted">
             Andamento per argomento
           </h3>
@@ -382,7 +385,7 @@ export function ExamPrepPanel({
               <TopicTrendRow key={t.topicId} trend={t} />
             ))}
           </ul>
-        </div>
+        </section>
       )}
 
       <div className="mt-3 border-t border-border pt-2">

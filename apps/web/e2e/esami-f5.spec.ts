@@ -67,10 +67,12 @@ test.describe('F5 — Esami & Simulazioni', () => {
         sourceRef: { docId: randomUUID(), page: 1, quote: 'q' },
       });
 
-      for (const [gradedAt, awarded] of [
-        ['2026-09-01T10:00:00Z', 4],
-        ['2026-09-15T10:00:00Z', 8],
+      const dayMs = 24 * 60 * 60 * 1000;
+      for (const [daysAgo, awarded] of [
+        [28, 4],
+        [14, 8],
       ] as const) {
+        const gradedAt = new Date(Date.now() - daysAgo * dayMs).toISOString();
         const attemptId = randomUUID();
         await db.insert(simulationAttempts).values({
           id: attemptId,
@@ -94,8 +96,10 @@ test.describe('F5 — Esami & Simulazioni', () => {
       }
 
       await page.goto(`/materie/${subject.slug}?tab=simulazioni`);
-      await expect(page.getByRole('heading', { name: 'Andamento per argomento' })).toBeVisible();
-      const row = page.getByRole('listitem').filter({ hasText: 'Carnot' }).first();
+      // Scoped to the trend region: TopicsPanel also lists "Carnot" as a listitem.
+      const trendBlock = page.getByRole('region', { name: 'Andamento per argomento' });
+      await expect(trendBlock).toBeVisible();
+      const row = trendBlock.getByRole('listitem').filter({ hasText: 'Carnot' });
       await expect(row).toContainText('80%');
       await expect(row).toContainText('+40');
     } finally {
