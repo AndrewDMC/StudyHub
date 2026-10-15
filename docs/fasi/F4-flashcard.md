@@ -66,6 +66,10 @@ Cosa c'è, con test reali:
 - **Coda giornaliera** (`GET .../review/queue`, `apps/web/src/lib/review.ts`): mix new/review con
   `cap`/`newLimit` configurabili, filtro `topicId`, esclude le card sospese.
   Correzione = criterio F4: una card "Easy" appena creata esce subito dalla coda odierna.
+  **Aggiornamento (2026-10-15)**: entrano in coda solo le card di mazzi `approved`: un mazzo generato
+  resta `draft` finché non passa la review queue di F3, e le sue card restano fuori anche da overview
+  del Ripasso, conteggi "da ripassare oggi" (Dashboard, Materie, azione suggerita) e statistiche.
+  Il filtro sta in `reviewableConditions()`.
 - **Sessione di ripasso reale**: `/materie/[slug]/review` a schermo intero — `Space` rivela,
   `1-4` valuta, `S` sospende. Ogni valutazione è una richiesta separata (`POST .../review/:cardId`)
   che aggiorna subito lo schedule e scrive una riga `reviews`: chiudere il browser a metà sessione

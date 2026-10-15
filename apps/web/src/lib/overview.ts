@@ -55,6 +55,7 @@ async function suggestedActions(
     .where(
       and(
         eq(artifacts.subjectId, subjectId),
+        eq(artifacts.status, 'approved'),
         eq(flashcards.suspended, false),
         or(
           eq(flashcards.state, 'new'),

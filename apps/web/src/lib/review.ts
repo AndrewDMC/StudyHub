@@ -101,11 +101,16 @@ export function endOfDay(now: Date): Date {
 }
 
 /**
- * Cards that can be reviewed at all: not suspended and not flagged as low quality (flagged cards
- * stay in the deck but never reach the queue, F4 "Rischi"). The caller joins `artifacts`.
+ * Cards that can be reviewed at all: in an approved deck (a `draft` deck is still waiting for the
+ * F3 review queue, F4 "Rischi"), not suspended and not flagged as low quality (flagged cards stay
+ * in the deck but never reach the queue). The caller joins `artifacts`.
  */
 export function reviewableConditions(): SQL[] {
-  return [eq(flashcards.suspended, false), isNull(flashcards.flaggedAt)];
+  return [
+    eq(artifacts.status, 'approved'),
+    eq(flashcards.suspended, false),
+    isNull(flashcards.flaggedAt),
+  ];
 }
 
 /**
