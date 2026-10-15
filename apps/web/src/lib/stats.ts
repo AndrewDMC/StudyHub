@@ -42,7 +42,8 @@ export async function getFlashcardStats(db: AnyDb, subjectSlug: string): Promise
     .select({ f: flashcards })
     .from(flashcards)
     .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
-    .where(eq(artifacts.subjectId, subject.id));
+    // A draft deck's cards are not reviewable yet (F3 review queue), so they are not counted.
+    .where(and(eq(artifacts.subjectId, subject.id), eq(artifacts.status, 'approved')));
   const all = joined.map((r) => r.f);
   // A flagged ("scadente") card is out of the queue, so it must be out of every number that
   // describes the queue too — counts, forecast, exam risk.

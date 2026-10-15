@@ -70,6 +70,7 @@ describe('getSubjectOverview', () => {
         path: '/x.json',
         model: 'fake-v1',
         promptVersion: 'flashcards/v1',
+        status: 'approved',
       });
       await db.insert(flashcards).values({
         id: randomUUID(),
@@ -233,6 +234,7 @@ describe('getSubjectOverview', () => {
         path: '/x.json',
         model: 'fake-v1',
         promptVersion: 'flashcards/v1',
+        status: 'approved',
       });
       await db.insert(flashcards).values({
         id: randomUUID(),
@@ -244,15 +246,13 @@ describe('getSubjectOverview', () => {
         state: 'new',
       });
       // drill
-      await db
-        .insert(topics)
-        .values({
-          id: randomUUID(),
-          subjectId: subject.id,
-          name: 'Debole',
-          slug: 'debole',
-          mastery: 0.1,
-        });
+      await db.insert(topics).values({
+        id: randomUUID(),
+        subjectId: subject.id,
+        name: 'Debole',
+        slug: 'debole',
+        mastery: 0.1,
+      });
       // verify
       await db.insert(documents).values({
         id: randomUUID(),
@@ -324,6 +324,7 @@ describe('getSubjectOverview', () => {
         path: '/x.json',
         model: 'fake-v1',
         promptVersion: 'flashcards/v1',
+        status: 'approved',
       });
       await db.insert(flashcards).values({
         id: randomUUID(),
@@ -401,6 +402,7 @@ describe('getSubjectOverview', () => {
         path: '/x.json',
         model: 'fake-v1',
         promptVersion: 'flashcards/v1',
+        status: 'approved',
       });
       const cardId = randomUUID();
       await db.insert(flashcards).values({

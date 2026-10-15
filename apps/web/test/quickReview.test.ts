@@ -17,13 +17,17 @@ import {
   undoReview,
 } from '../src/lib/review';
 import { getDashboardSummary } from '../src/lib/dashboard';
+import { approveDeck } from '../src/lib/generation';
+import { getSubjectOverview } from '../src/lib/overview';
+import { getFlashcardStats } from '../src/lib/stats';
+import { listSubjectSummaries } from '../src/lib/subjects';
 
 type Db = Awaited<ReturnType<typeof createTestDb>>;
 
 const NOW = new Date('2026-10-11T12:00:00.000Z');
 const HOUR = 3_600_000;
 
-async function seedDeck(db: Db, subjectId: string) {
+async function seedDeck(db: Db, subjectId: string, status: 'draft' | 'approved' = 'approved') {
   const deckId = randomUUID();
   await db.insert(artifacts).values({
     id: deckId,
@@ -33,6 +37,7 @@ async function seedDeck(db: Db, subjectId: string) {
     path: '/x',
     model: 'fake-v1',
     promptVersion: 'flashcards/v1',
+    status,
   });
   return deckId;
 }
@@ -219,6 +224,39 @@ describe('Ripasso rapido backend (docs/09-ripasso-mobile.md §B)', () => {
       const summary = await getDashboardSummary(db, today);
       expect(summary.dueCardsCount).toBe(1);
       expect(summary.subjects.find((s) => s.slug === a.slug)?.dueCardsCount).toBe(1);
+    });
+  });
+
+  describe('draft decks', () => {
+    it('keep their cards out of queues, overview and counts until the deck is approved', async () => {
+      // 6 approved cards and 3 still in a draft deck: the session must start from "1 / 6".
+      for (let i = 0; i < 6; i += 1) await seedCard(db, deckA);
+      const draft = await seedDeck(db, a.id, 'draft');
+      for (let i = 0; i < 3; i += 1) await seedCard(db, draft);
+
+      expect(await getQuickReviewQueue(db, {}, { now: NOW })).toHaveLength(6);
+      expect(await getReviewQueue(db, a.slug, { now: NOW })).toHaveLength(6);
+
+      const overview = await getReviewOverview(db, NOW);
+      expect(overview).toMatchObject({ totalDue: 6, totalCards: 6 });
+      expect(overview.subjects.find((s) => s.slug === a.slug)).toMatchObject({
+        due: 6,
+        cardCount: 6,
+      });
+
+      const summary = await getDashboardSummary(db, new Date().toISOString().slice(0, 10));
+      expect(summary.dueCardsCount).toBe(6);
+      const subjectRows = await listSubjectSummaries(db);
+      expect(subjectRows.find((s) => s.slug === a.slug)?.dueCardsToday).toBe(6);
+      expect((await getFlashcardStats(db, a.slug)).countsByState.new).toBe(6);
+      const { suggestedActions } = await getSubjectOverview(db, a.slug);
+      expect(suggestedActions.find((x) => x.kind === 'review')?.description).toBe(
+        '6 flashcard in scadenza',
+      );
+
+      await approveDeck(db, a.slug, draft);
+      expect(await getQuickReviewQueue(db, {}, { now: NOW })).toHaveLength(9);
+      expect((await getReviewOverview(db, NOW)).totalDue).toBe(9);
     });
   });
 
