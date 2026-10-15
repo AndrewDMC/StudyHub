@@ -4,8 +4,10 @@ import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import type { DocumentDto } from '@studyhub/contracts';
 import { ObsidianMarkdown } from '@/components/ObsidianMarkdown';
+import { useIsMobile } from '@/lib/useIsMobile';
+import { OriginalMobile } from './document-mobile/OriginalMobile';
 
-async function fetchDocument(slug: string, documentId: string): Promise<DocumentDto> {
+export async function fetchDocument(slug: string, documentId: string): Promise<DocumentDto> {
   const res = await fetch(`/api/subjects/${slug}/documents/${documentId}`);
   const body = await res.json();
   if (!res.ok) throw new Error(body.error?.message ?? 'Impossibile caricare il documento');
@@ -18,7 +20,7 @@ async function fetchText(url: string): Promise<string> {
   return res.text();
 }
 
-function MarkdownFile({ url, subjectSlug }: { url: string; subjectSlug: string }) {
+export function MarkdownFile({ url, subjectSlug }: { url: string; subjectSlug: string }) {
   const query = useQuery({ queryKey: ['documentFileText', url], queryFn: () => fetchText(url) });
   if (query.isLoading) return <p className="text-sm text-fg-muted">Caricamento…</p>;
   if (query.isError)
@@ -34,12 +36,19 @@ function MarkdownFile({ url, subjectSlug }: { url: string; subjectSlug: string }
   );
 }
 
+/** Below md the original is the full-screen mobile viewer; one branch mounted. */
+export function DocumentViewerClient(props: { subjectSlug: string; documentId: string }) {
+  const isMobile = useIsMobile();
+  if (isMobile === null) return <div className="p-4 text-sm text-fg-muted">Caricamento…</div>;
+  return isMobile ? <OriginalMobile {...props} /> : <DocumentViewerDesktop {...props} />;
+}
+
 /**
  * Read-only viewer of the *original* uploaded file (PDF / image / Markdown), streamed from
  * `/documents/:id/file`. Distinct from `DocumentContentClient`, which edits the extracted
  * canonical `content.md`.
  */
-export function DocumentViewerClient({
+function DocumentViewerDesktop({
   subjectSlug,
   documentId,
 }: {

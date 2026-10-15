@@ -29,14 +29,14 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-async function fetchTopics(slug: string): Promise<TopicDto[]> {
+export async function fetchTopics(slug: string): Promise<TopicDto[]> {
   const res = await fetch(`/api/subjects/${slug}/topics`);
   const body = await res.json();
   if (!res.ok) throw new Error(body.error?.message ?? 'Impossibile caricare gli argomenti');
   return body.topics as TopicDto[];
 }
 
-async function setDocumentTopics(
+export async function setDocumentTopics(
   slug: string,
   documentId: string,
   topicIds: string[],

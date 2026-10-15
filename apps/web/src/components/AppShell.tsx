@@ -9,8 +9,11 @@ import { MobileMoreMenu } from './MobileMoreMenu';
 import { MobileTabBar } from './MobileTabBar';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  // Below md the subject page itself (not its sub-routes) brings its own header: the global one goes.
-  const inSubject = /^\/materie\/[^/]+\/?$/.test(usePathname() ?? '');
+  // Below md the subject page and the redesigned document routes (testo, originale, verifica)
+  // bring their own header: the global one goes.
+  const inSubject = /^\/materie\/[^/]+(\/documenti\/[^/]+(\/(originale|verifica))?)?\/?$/.test(
+    usePathname() ?? '',
+  );
   return (
     <div className="flex h-dvh w-full bg-bg-base text-fg-primary">
       <aside

@@ -1,3 +1,5 @@
+import type { DocumentType } from '@studyhub/core/browser';
+
 export const MOBILE_TABS = [
   'panoramica',
   'materiale',
@@ -60,6 +62,12 @@ export function tabLinks(slug: string): TabLink[] {
     { key: 'lacune', label: 'Lacune', href: `${base}?tab=lacune` },
     { key: 'piano', label: 'Piano', href: `${base}/piano` },
   ];
+}
+
+/** Filter chip that contains a given document type (slide lives under Altro). */
+export function materialFilterForType(type: DocumentType): MaterialFilter {
+  if (type === 'appunti' || type === 'schemi' || type === 'esami') return type;
+  return 'altro';
 }
 
 /** Href for a Materiale filter chip (`tutti` = no `filtro` parameter). */

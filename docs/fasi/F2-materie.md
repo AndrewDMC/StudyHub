@@ -373,3 +373,26 @@ Sotto 768 px (`md`) la pagina materia monta una vista dedicata invece del layout
 
 Non ancora: ridisegno mobile di Materiale/Documento, Flashcard/Ripasso, Simulazioni/Esame, Lacune/Piano
 e Sessione (slice 2-6). Nello sheet mancano il campo "Chiedi", il tile "Esercizi" e la selezione degli argomenti.
+
+## Aggiornamento — vista mobile di `/materie/[slug]`, slice 2 (2026-10-15)
+
+Sotto 768 px il tab "Materiale" e le schermate di documento passano alle viste dedicate in
+[`apps/web/src/components/document-mobile/`](../../apps/web/src/components/document-mobile/).
+Il desktop non cambia.
+
+- **Materiale**: card "Aggiungi materiale" (Scatta / Scegli file), chip di filtro con conteggi, righe con
+  pill di stato (Pronto, Estrazione, Da verificare, Errore — mappatura in
+  [`apps/web/src/lib/documentStatus.ts`](../../apps/web/src/lib/documentStatus.ts)) che portano a Documento,
+  Verifica o Originale. Modalità "Seleziona" per lo scope dell'Assistente. Sezione "Esami in programma" con sheet.
+- **Documento**: header, switch Testo | Originale, pill degli argomenti, banner di conflitto, CTA
+  "Genera flashcard" / "Studialo ora".
+- **Originale**: viewer a schermo intero, tab bar nascosta. Pagina e zoom via frammenti `#page=&zoom=`;
+  su iOS questi frammenti vengono ignorati.
+- **Verifica**: progresso, stati Verificato / Incerto / Illeggibile, "Segna tutto verificato" con PATCH
+  in sequenza.
+- **Sheet generico** [`subject-mobile/BottomSheet.tsx`](../../apps/web/src/components/subject-mobile/BottomSheet.tsx),
+  ora usato anche dall'Assistente (`AssistantSheet.tsx`).
+- L'header globale di `AppShell` è nascosto anche su testo, originale e verifica del documento.
+
+Non ancora: slice 3-6; il suggerimento AI del tipo di documento su mobile. Per i nodi Incerto/Illeggibile
+ci sono ancora due PATCH, da ridurre a una dopo la PR #20.
