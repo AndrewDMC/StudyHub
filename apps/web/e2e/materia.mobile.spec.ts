@@ -186,7 +186,9 @@ test.describe('Materia mobile — shell e Panoramica', () => {
       .getByRole('link', { name: /^Ripassa \d+ card$/ });
     await expect(review).toHaveText('Ripassa 3 card');
     await review.click();
-    await expect(page).toHaveURL(new RegExp(`/materie/${ctx.slug}/review$`), { timeout: 20_000 });
+    await expect(page).toHaveURL(new RegExp(`/ripasso\\?materia=${ctx.slug}$`), {
+      timeout: 20_000,
+    });
   });
 
   for (const [trigger, label] of [

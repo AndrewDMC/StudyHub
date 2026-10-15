@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, X } from 'lucide-react';
 
 export const iconButton =
   'flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-control)] text-fg-secondary hover:text-fg-primary disabled:opacity-40';
@@ -15,6 +15,8 @@ export function DocHeader({
   subtitle,
   center,
   actions,
+  backLabel = 'Torna al materiale',
+  backIcon = 'back',
 }: {
   backHref: string;
   title?: string | undefined;
@@ -22,12 +24,15 @@ export function DocHeader({
   /** Replaces the title block (Originale puts the Testo | Originale switch here). */
   center?: ReactNode;
   actions?: ReactNode;
+  backLabel?: string;
+  backIcon?: 'back' | 'close';
 }) {
+  const BackIcon = backIcon === 'close' ? X : ArrowLeft;
   return (
     <div className="sticky top-0 z-10 border-b border-border bg-bg-surface pt-[env(safe-area-inset-top)]">
       <div className="flex h-[52px] items-center gap-1 px-1">
-        <Link href={backHref} aria-label="Torna al materiale" className={iconButton}>
-          <ArrowLeft className="h-5 w-5" aria-hidden="true" />
+        <Link href={backHref} aria-label={backLabel} className={iconButton}>
+          <BackIcon className="h-5 w-5" aria-hidden="true" />
         </Link>
         {center ?? (
           <div className="min-w-0 flex-1 px-1">

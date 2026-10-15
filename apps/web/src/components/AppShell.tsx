@@ -11,9 +11,10 @@ import { MobileTabBar } from './MobileTabBar';
 export function AppShell({ children }: { children: React.ReactNode }) {
   // Below md the subject page and the redesigned document routes (testo, originale, verifica)
   // bring their own header: the global one goes.
-  const inSubject = /^\/materie\/[^/]+(\/documenti\/[^/]+(\/(originale|verifica))?)?\/?$/.test(
-    usePathname() ?? '',
-  );
+  const inSubject =
+    /^\/materie\/[^/]+(\/documenti\/[^/]+(\/(originale|verifica))?|\/artifacts\/[^/]+)?\/?$/.test(
+      usePathname() ?? '',
+    );
   return (
     <div className="flex h-dvh w-full bg-bg-base text-fg-primary">
       <aside

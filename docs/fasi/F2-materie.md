@@ -396,3 +396,41 @@ Il desktop non cambia.
 
 Non ancora: slice 3-6; il suggerimento AI del tipo di documento su mobile. Per i nodi Incerto/Illeggibile
 ci sono ancora due PATCH, da ridurre a una dopo la PR #20.
+
+## Aggiornamento — vista mobile di `/materie/[slug]`, slice 3 (2026-10-15)
+
+Sotto 768 px la tab "Flashcard" passa alla vista dedicata
+[`apps/web/src/components/flashcard-mobile/`](../../apps/web/src/components/flashcard-mobile/)
+(`FlashcardMobile.tsx`). Il desktop non cambia: `FlashcardListPanel` e `StatsPanel` restano come erano.
+
+- **Ripasso di oggi**: hero con CTA verso `/ripasso?materia=<slug>`; link ai mazzi in bozza da approvare;
+  previsione dei prossimi 30 giorni; ritenzione reale a confronto con quella prevista, con frasi neutre.
+- **Lista card**: ricerca, filtro per argomento, "Mostra altre". Il tap apre lo sheet di dettaglio con
+  Modifica, Sospendi, Riattiva, Rimuovi segnalazione ed Elimina.
+- **Strumenti del mazzo e calibrazione**: disclosure che monta i pannelli desktop così come sono.
+- **Revisione mobile** su `/materie/[slug]/artifacts/[id]`
+  ([`ArtifactReviewMobile.tsx`](../../apps/web/src/components/flashcard-mobile/ArtifactReviewMobile.tsx)):
+  Tieni e Scarta sono segni locali; la card scartata viene eliminata solo all'approvazione del mazzo.
+  Le card non marcate vengono approvate, come su desktop. Modifica salva subito. Le azioni sono
+  disabilitate durante l'approvazione e su un mazzo già approvato.
+- **Shell**: [`AppShell.tsx`](../../apps/web/src/components/AppShell.tsx) nasconde l'header globale anche su
+  `/materie/[slug]/artifacts/[id]`.
+- **Verifica**: [`VerifyMobile.tsx`](../../apps/web/src/components/document-mobile/VerifyMobile.tsx) fa una
+  sola PATCH per Incerto/Illeggibile (chiude il punto aperto della slice 2, dopo la PR #20).
+- **Ripasso** ([`quick-review/`](../../apps/web/src/components/quick-review/), riuso con `?materia=`):
+  - link "Fonte" nella sessione;
+  - con il deep link di materia, "Torna alla materia" porta a `/materie/<slug>?tab=flashcard`;
+  - l'uscita attende lo svuotamento dell'outbox e resta su `/ripasso` se c'è un errore di invio;
+  - alla chiusura si invalidano le query della materia.
+
+Logica pura in [`apps/web/src/lib/flashcardMobile.ts`](../../apps/web/src/lib/flashcardMobile.ts).
+Test: e2e [`materia-flashcard.mobile.spec.ts`](../../apps/web/e2e/materia-flashcard.mobile.spec.ts) (15 test),
+[`materia-flashcard-desktop.spec.ts`](../../apps/web/e2e/materia-flashcard-desktop.spec.ts) (verifica che il
+desktop non cambi), unit [`flashcardMobile.test.ts`](../../apps/web/test/flashcardMobile.test.ts).
+
+Non ancora:
+
+- scadenza per riga e stima "~14 min" nella lista: `FlashcardDto` non ha `dueAt`;
+- confidenza pre-risposta nel ripasso (omessa, come in [`docs/09-ripasso-mobile.md`](../09-ripasso-mobile.md));
+- il passo "Quanto sei sicuro?" del design, omesso per la stessa ragione;
+- slice 4-6 (Simulazioni/Esame, Lacune/Piano, Sessione).

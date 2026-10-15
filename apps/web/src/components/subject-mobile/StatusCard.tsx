@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import type { ExamDto } from '@studyhub/contracts';
+import { reviewHref } from '@/lib/quickReview';
 import { REVIEW_OVERVIEW_KEY, fetchReviewOverview } from '@/lib/reviewOverview';
 import { StartTaskButton } from '../StartTaskButton';
 import { KIND_LABELS as EXAM_KIND_LABELS } from '../ExamsPanel';
@@ -86,11 +87,11 @@ export function StatusCard({
             Ripassa
           </span>
         ) : review.isError ? (
-          <Link href={`/materie/${slug}/review`} className={primaryCta}>
+          <Link href={reviewHref(slug)} className={primaryCta}>
             Ripassa
           </Link>
         ) : due > 0 ? (
-          <Link href={`/materie/${slug}/review`} className={primaryCta}>
+          <Link href={reviewHref(slug)} className={primaryCta}>
             Ripassa {due} card
           </Link>
         ) : (

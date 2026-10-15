@@ -170,6 +170,7 @@ export function QuickReviewHome({
   onStart,
   starting,
   startError,
+  backHref,
 }: {
   overview: ReviewOverviewDto | undefined;
   isLoading: boolean;
@@ -180,6 +181,8 @@ export function QuickReviewHome({
   onStart: (scope: ReviewScope) => void;
   starting: boolean;
   startError: string | null;
+  /** Deep link of a subject: where "Torna alla materia" leads when the session is empty. */
+  backHref?: string | undefined;
 }) {
   // First subject with something due starts open; afterwards the user's toggles win.
   const [toggled, setToggled] = useState<Record<string, boolean>>({});
@@ -300,6 +303,14 @@ export function QuickReviewHome({
             <p role="alert" className="mb-2 text-center text-xs text-danger">
               {startError}
             </p>
+          )}
+          {startError && backHref && (
+            <Link
+              href={backHref}
+              className="mb-2 flex min-h-11 items-center justify-center text-sm font-medium text-accent"
+            >
+              Torna alla materia
+            </Link>
           )}
           {totalDue > 0 ? (
             <button

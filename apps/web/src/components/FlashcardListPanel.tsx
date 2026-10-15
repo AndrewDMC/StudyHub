@@ -12,7 +12,7 @@ import type {
 import { bulkCards, deleteCard, fetchDecks, fetchTags, updateCard } from '@/lib/deckEditorClient';
 import { DeckToolsPanel } from './DeckToolsPanel';
 
-interface Filters {
+export interface Filters {
   topicId: string;
   state: string;
   deckId: string;
@@ -21,7 +21,7 @@ interface Filters {
   flagged: boolean;
 }
 
-async function fetchPage(
+export async function fetchPage(
   slug: string,
   filters: Filters,
   cursor: string | undefined,
@@ -40,7 +40,7 @@ async function fetchPage(
   return body.page as FlashcardPageDto;
 }
 
-const STATE_LABELS: Record<string, string> = {
+export const STATE_LABELS: Record<string, string> = {
   new: 'Nuova',
   learning: 'In apprendimento',
   review: 'In ripasso',
