@@ -513,3 +513,28 @@ Test: unit [`coverageMobile.test.ts`](../../apps/web/test/coverageMobile.test.ts
 Non ancora: ritmo e minuti del piano modificabili da mobile (si cambiano rigenerando la bozza); cerca e
 menu nell'header del piano; il fallimento del worker durante la generazione non è rilevabile (spinner fino a
 60 s, come su desktop).
+
+## Aggiornamento — vista mobile di `/materie/[slug]/sessione/[sessionId]`, slice 6 (2026-10-15)
+
+Con questa slice il flusso materia mobile è completo (slice 1–6). Le voci "Sessione" nelle sezioni delle slice 1–5 sono
+chiuse qui. Sotto 768 px la pagina di sessione monta
+[`SessionMobile`](../../apps/web/src/components/session-mobile/) al posto di `SessionDesktop`; il desktop non cambia.
+Logica pura in [`sessionMobile.ts`](../../apps/web/src/lib/sessionMobile.ts), fetcher in
+[`sessionApi.ts`](../../apps/web/src/lib/sessionApi.ts).
+
+- **Sessione**: header con indietro alla materia e tipo di task; striscia timer pomodoro; tab "Punti chiave ed esercizi" /
+  "Chiedi all'AI"; punti chiave con fonti in sheet; esercizi con risposta, correzione AI, soluzione, autovalutazione;
+  sheet Argomenti per le sessioni senza documenti; conferma prima di "Termina".
+- **Chiusura**: minuti di studio, giusti / da rivedere, flashcard dai punti chiave, drill con gli esercizi sbagliati che
+  hanno una fonte, "Alla materia", "Prossima task".
+- **Shell**: [`AppShell.tsx`](../../apps/web/src/components/AppShell.tsx) nasconde l'header globale anche su `/sessione/[id]`.
+- Test: e2e [`materia-sessione.mobile.spec.ts`](../../apps/web/e2e/materia-sessione.mobile.spec.ts) e
+  [`materia-sessione-desktop.spec.ts`](../../apps/web/e2e/materia-sessione-desktop.spec.ts), seed in
+  [`e2e/fixtures/sessione-seed.ts`](../../apps/web/e2e/fixtures/sessione-seed.ts); unit
+  [`sessionMobile.test.ts`](../../apps/web/test/sessionMobile.test.ts). Con `AI_PROVIDER=fake` correzione, chat, flashcard
+  e drill girano in-process.
+
+Non ancora (mobile):
+
+- mood "Com'è andata?", selezione per-item delle flashcard, modalità Libero / Salta e durate del timer, selettore del
+  modello della chat, viewer del documento dentro la sessione, trascrizione nella chiusura.

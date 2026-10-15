@@ -71,7 +71,7 @@ async function streamMessage(
   }
 }
 
-function formatEur(value: number): string {
+export function formatEur(value: number): string {
   return `€ ${value.toFixed(value < 0.1 ? 4 : 2)}`;
 }
 
@@ -79,14 +79,14 @@ function formatEur(value: number): string {
  * An answer rendered as Markdown. Valid `[n]` markers become small buttons that open the cited page;
  * while the answer is still streaming (no citations yet) they stay as plain muted text.
  */
-function AnswerMarkdown({
+export function AnswerMarkdown({
   content,
   citations,
   onOpenCitation,
 }: {
   content: string;
   citations: SessionCitationDto[];
-  onOpenCitation: (citation: SessionCitationDto) => void;
+  onOpenCitation: (citation: SessionCitationDto, trigger: HTMLElement) => void;
 }) {
   const byRef = new Map(citations.map((c) => [c.ref, c]));
   const source = content.replace(/\[(\d+)\]/g, (match, n: string) =>
@@ -105,7 +105,7 @@ function AnswerMarkdown({
               return (
                 <button
                   type="button"
-                  onClick={() => onOpenCitation(citation)}
+                  onClick={(e) => onOpenCitation(citation, e.currentTarget)}
                   title={`${citation.documentName} · p. ${citation.page}`}
                   className="mx-0.5 rounded bg-accent/15 px-1 align-baseline text-xs font-medium text-accent hover:bg-accent/25"
                 >
@@ -182,54 +182,23 @@ function MessageBubble({
   );
 }
 
-/**
- * The tutor chat of a study session (docs/08-sessione-di-studio.md, phase 2). It answers only from the
- * session's material and cites it. Interactive while the session is active; once it ended it shows the
- * saved Markdown transcript instead, read-only.
- */
-export function SessionChat({
-  slug,
-  sessionId,
-  active,
-  documentNames,
-  focus,
-  onClearFocus,
-  onOpenCitation,
-}: {
-  slug: string;
-  sessionId: string;
-  active: boolean;
-  /** Document id → name, to label the selected passage. */
-  documentNames: Map<string, string>;
-  focus: SessionFocus | null;
-  onClearFocus: () => void;
-  onOpenCitation: (citation: SessionCitationDto) => void;
-}) {
+/** Chat query and SSE sending, shared by the desktop panel and the mobile one. */
+export function useSessionChat(
+  slug: string,
+  sessionId: string,
+  { focus, onClearFocus }: { focus: SessionFocus | null; onClearFocus: () => void },
+) {
   const queryClient = useQueryClient();
   const chatKey = ['sessionChat', slug, sessionId];
   const chat = useQuery({ queryKey: chatKey, queryFn: () => fetchChat(slug, sessionId) });
-  const transcript = useQuery({
-    queryKey: ['sessionTranscript', slug, sessionId],
-    queryFn: () => fetchTranscript(slug, sessionId),
-    enabled: !active,
-  });
-
   const [input, setInput] = useState('');
   const [model, setModel] = useState<string>(MODEL_OPTIONS[0].id);
   const [sending, setSending] = useState(false);
   const [pendingUser, setPendingUser] = useState<SessionMessageDto | null>(null);
   const [streamed, setStreamed] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const messages = chat.data?.messages ?? [];
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: 'end' });
-  }, [messages.length, streamed, pendingUser]);
-  useEffect(() => {
-    if (focus) inputRef.current?.focus();
-  }, [focus]);
 
   async function send() {
     const content = input.trim();
@@ -275,6 +244,72 @@ export function SessionChat({
       setStreamed('');
     }
   }
+
+  return {
+    chat,
+    messages,
+    input,
+    setInput,
+    model,
+    setModel,
+    sending,
+    pendingUser,
+    streamed,
+    error,
+    send,
+  };
+}
+
+/**
+ * The tutor chat of a study session (docs/08-sessione-di-studio.md, phase 2). It answers only from the
+ * session's material and cites it. Interactive while the session is active; once it ended it shows the
+ * saved Markdown transcript instead, read-only.
+ */
+export function SessionChat({
+  slug,
+  sessionId,
+  active,
+  documentNames,
+  focus,
+  onClearFocus,
+  onOpenCitation,
+}: {
+  slug: string;
+  sessionId: string;
+  active: boolean;
+  /** Document id → name, to label the selected passage. */
+  documentNames: Map<string, string>;
+  focus: SessionFocus | null;
+  onClearFocus: () => void;
+  onOpenCitation: (citation: SessionCitationDto) => void;
+}) {
+  const {
+    chat,
+    messages,
+    input,
+    setInput,
+    model,
+    setModel,
+    sending,
+    pendingUser,
+    streamed,
+    error,
+    send,
+  } = useSessionChat(slug, sessionId, { focus, onClearFocus });
+  const transcript = useQuery({
+    queryKey: ['sessionTranscript', slug, sessionId],
+    queryFn: () => fetchTranscript(slug, sessionId),
+    enabled: !active,
+  });
+
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ block: 'end' });
+  }, [messages.length, streamed, pendingUser]);
+  useEffect(() => {
+    if (focus) inputRef.current?.focus();
+  }, [focus]);
 
   const header = (
     <header className="flex items-center gap-2 border-b border-border px-3 py-2">

@@ -27,32 +27,23 @@ async function fetchBriefing(slug: string, sessionId: string): Promise<SessionBr
 }
 
 /** Minutes, rounded, never below 1 for a session that really ran (a 20 s test is not "0 min"). */
-const minutes = (ms: number) => (ms <= 0 ? 0 : Math.max(1, Math.round(ms / 60_000)));
+export const minutes = (ms: number) => (ms <= 0 ? 0 : Math.max(1, Math.round(ms / 60_000)));
 
-/**
- * What "Termina" proposes once a session is over (docs/08 §2): the study time against the plan, cards from
- * the key points and a drill from the exercises the student got wrong. Both actions are free (no AI call)
- * and idempotent — asking twice shows the same deck / drill.
- */
-export function SessionClosing({
-  slug,
-  sessionId,
-  session,
-  sessionKey,
-}: {
-  slug: string;
-  sessionId: string;
-  session: StudySessionDto;
-  sessionKey: readonly unknown[];
-}) {
+/** Briefing totals and the free deck / drill creation of a finished session; shared with the mobile closing. */
+export function useSessionClosing(
+  slug: string,
+  sessionId: string,
+  session: StudySessionDto,
+  sessionKey: readonly unknown[],
+) {
   const queryClient = useQueryClient();
   const briefing = useQuery({
     queryKey: ['sessionBriefing', slug, sessionId],
     queryFn: () => fetchBriefing(slug, sessionId),
   });
   const items = briefing.data?.items ?? [];
-  const keyPoints = items.filter((i) => i.kind === 'key_point').length;
-  const wrong = items.filter((i) => i.kind === 'exercise' && i.state === 'wrong').length;
+  const keyPointItems = items.filter((i) => i.kind === 'key_point');
+  const wrongItems = items.filter((i) => i.kind === 'exercise' && i.state === 'wrong');
   const answered = items.filter((i) => i.kind === 'exercise' && i.state !== 'open');
   const right = answered.filter((i) => i.state === 'correct').length;
 
@@ -77,6 +68,52 @@ export function SessionClosing({
   const deckId = session.flashcardDeckId;
   const drillId = session.drillId;
   const studied = minutes(session.activeMs);
+
+  return {
+    briefing,
+    items,
+    keyPoints: keyPointItems.length,
+    keyPointItems,
+    wrongItems,
+    answered,
+    right,
+    deck,
+    drill,
+    deckId,
+    drillId,
+    studied,
+  };
+}
+
+/**
+ * What "Termina" proposes once a session is over (docs/08 §2): the study time against the plan, cards from
+ * the key points and a drill from the exercises the student got wrong. Both actions are free (no AI call)
+ * and idempotent — asking twice shows the same deck / drill.
+ */
+export function SessionClosing({
+  slug,
+  sessionId,
+  session,
+  sessionKey,
+}: {
+  slug: string;
+  sessionId: string;
+  session: StudySessionDto;
+  sessionKey: readonly unknown[];
+}) {
+  const {
+    briefing,
+    keyPoints,
+    wrongItems,
+    answered,
+    right,
+    deck,
+    drill,
+    deckId,
+    drillId,
+    studied,
+  } = useSessionClosing(slug, sessionId, session, sessionKey);
+  const wrong = wrongItems.length;
 
   return (
     <section
