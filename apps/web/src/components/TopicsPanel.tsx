@@ -276,7 +276,6 @@ export function TopicsPanel({
   const jobRunning = extractJobId !== null && jobStatus !== 'succeeded' && jobStatus !== 'failed';
   useEffect(() => {
     if (jobStatus === 'succeeded') invalidate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobStatus]);
 
   const createMutation = useMutation({

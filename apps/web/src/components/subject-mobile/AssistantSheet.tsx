@@ -1,0 +1,335 @@
+'use client';
+
+import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Archive, ArchiveRestore, Check, Layers, ListTree, Pencil, Trash2, X } from 'lucide-react';
+import type { DocumentDto, SubjectDto, TopicDto } from '@studyhub/contracts';
+import { useSelection } from '@/lib/selection';
+import { MODEL_OPTIONS } from '../ModelPicker';
+import { enqueue, fetchEstimate, formatCost, scopeKey, type ScopeInput } from '../GenerationPanel';
+import { useSubjectActions } from '../SubjectActions';
+import { useSheetDrag } from './useSheetDrag';
+
+type GenKind = 'flashcards' | 'summary' | 'schema';
+
+const GEN_TILES: { kind: GenKind; label: string; verb: string; Icon: typeof Layers }[] = [
+  { kind: 'flashcards', label: 'Flashcard', verb: 'flashcard', Icon: Layers },
+  { kind: 'summary', label: 'Riassunto', verb: 'riassunto', Icon: Pencil },
+  { kind: 'schema', label: 'Schema', verb: 'schema', Icon: ListTree },
+];
+
+const rowClass =
+  'flex min-h-14 w-full items-center gap-3 rounded-[var(--radius-control)] px-3 text-left text-[15px] text-fg-primary hover:bg-bg-raised disabled:opacity-50';
+
+/**
+ * "Assistente" bottom sheet (docs/design/materia-mobile/Azioni.dc.html): generation scope + kind,
+ * estimated cost, and the subject's own actions. Reuses GenerationPanel's requests and
+ * SubjectActions' mutations — no AI logic of its own.
+ */
+export function AssistantSheet({
+  open,
+  onOpenChange,
+  slug,
+  subject,
+  documents,
+  topics,
+  onPickMaterial,
+  onEdit,
+  returnFocusRef,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  slug: string;
+  subject: SubjectDto;
+  documents: DocumentDto[];
+  topics: TopicDto[];
+  /** "+ Scegli": closes the sheet and takes the user to Materiale. */
+  onPickMaterial: () => void;
+  /** "Modifica materia": closes the sheet and opens the edit dialog. */
+  onEdit: () => void;
+  /** Element that opened the sheet: gets the focus back on close. */
+  returnFocusRef: RefObject<HTMLElement | null>;
+}) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const [kind, setKind] = useState<GenKind>('flashcards');
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [model] = useState<string>(MODEL_OPTIONS[1].id); // same default routing as GenerationPanel
+  const { docIds, topicIds } = useSelection();
+  const queryClient = useQueryClient();
+  const { isArchived, archiveMutation, deleteMutation } = useSubjectActions(subject);
+  const drag = useSheetDrag(() => onOpenChange(false));
+  const tileRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  useEffect(() => {
+    if (!open) setConfirmingDelete(false);
+    else drag.reset();
+  }, [open]);
+
+  // Same scope rules as GenerationPanel: explicit documents > topics > every parsed document.
+  const parsedDocIds = documents.filter((d) => d.status === 'parsed').map((d) => d.id);
+  const explicitDocIds = docIds.size > 0 ? parsedDocIds.filter((id) => docIds.has(id)) : [];
+  const useTopicScope = explicitDocIds.length === 0 && topicIds.size > 0;
+  const scope: ScopeInput = useTopicScope
+    ? { topicIds: [...topicIds] }
+    : { docIds: explicitDocIds.length > 0 ? explicitDocIds : parsedDocIds };
+  const scopeEmpty = 'docIds' in scope ? scope.docIds.length === 0 : scope.topicIds.length === 0;
+
+  const estimate = useQuery({
+    queryKey: ['generation-estimate', slug, model, scopeKey(scope)],
+    queryFn: () => fetchEstimate(slug, scope, model),
+    enabled: open && !scopeEmpty,
+  });
+
+  const generate = useMutation({
+    mutationFn: () => enqueue(slug, kind, scope, model),
+    onSuccess: () => {
+      setTimeout(() => queryClient.invalidateQueries({ queryKey: ['artifacts', slug] }), 3000);
+    },
+  });
+
+  const activeTile = GEN_TILES.find((t) => t.kind === kind) ?? GEN_TILES[0]!;
+  const costEntry = estimate.data?.perKind[kind];
+
+  const onTileKeyDown = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const delta =
+      e.key === 'ArrowRight' || e.key === 'ArrowDown'
+        ? 1
+        : e.key === 'ArrowLeft' || e.key === 'ArrowUp'
+          ? -1
+          : 0;
+    if (delta === 0) return;
+    e.preventDefault();
+    const next = (index + delta + GEN_TILES.length) % GEN_TILES.length;
+    setKind(GEN_TILES[next]!.kind);
+    tileRefs.current[next]?.focus();
+  };
+
+  const selectedTopics = topics.filter((t) => topicIds.has(t.id));
+  const actionError = (archiveMutation.error ?? deleteMutation.error) as Error | null;
+
+  return (
+    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="anim-sheet-overlay fixed inset-0 z-[60] bg-black/60" />
+        <DialogPrimitive.Content
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            closeRef.current?.focus();
+          }}
+          onCloseAutoFocus={(e) => {
+            e.preventDefault();
+            returnFocusRef.current?.focus();
+          }}
+          style={{
+            transform: drag.offset ? `translateY(${drag.offset}px)` : undefined,
+            transition: drag.dragging ? 'none' : undefined,
+          }}
+          className="anim-sheet fixed inset-x-0 bottom-0 z-[60] max-h-[min(760px,90dvh)] overflow-y-auto rounded-t-[var(--radius-modal)] border-t border-border-strong bg-bg-surface px-4 pb-[calc(env(safe-area-inset-bottom)+16px)] pt-2 text-fg-primary outline-none"
+        >
+          {confirmingDelete ? (
+            <div className="pt-2">
+              <DialogPrimitive.Title className="text-lg font-semibold">
+                Sposta nel cestino
+              </DialogPrimitive.Title>
+              <DialogPrimitive.Description className="mt-2 text-sm text-fg-secondary">
+                Sposta <code className="break-all font-mono">{subject.folderPath}</code> in{' '}
+                <code className="font-mono">.trash/</code>. Confermi?
+              </DialogPrimitive.Description>
+              <div className="mt-4 flex gap-2">
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={() => setConfirmingDelete(false)}
+                  className="min-h-11 flex-1 rounded-[var(--radius-control)] border border-border-strong text-sm"
+                >
+                  Annulla
+                </button>
+                <button
+                  type="button"
+                  disabled={deleteMutation.isPending}
+                  onClick={() => deleteMutation.mutate()}
+                  className="min-h-11 flex-1 rounded-[var(--radius-control)] border border-danger text-sm font-medium text-danger disabled:opacity-50"
+                >
+                  Sì, sposta nel cestino
+                </button>
+              </div>
+              {deleteMutation.isError && (
+                <p role="alert" className="mt-2 text-xs text-danger">
+                  {(deleteMutation.error as Error).message}
+                </p>
+              )}
+            </div>
+          ) : (
+            <>
+              <div {...drag.handlers} className="touch-none">
+                <div
+                  aria-hidden="true"
+                  className="mx-auto mb-2 h-1 w-10 rounded-full bg-border-strong"
+                />
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 pt-1">
+                    <DialogPrimitive.Title className="text-lg font-semibold">
+                      Assistente
+                    </DialogPrimitive.Title>
+                    <DialogPrimitive.Description className="text-[13px] text-fg-secondary">
+                      Lavora sul materiale selezionato
+                    </DialogPrimitive.Description>
+                  </div>
+                  <button
+                    ref={closeRef}
+                    type="button"
+                    aria-label="Chiudi"
+                    onClick={() => onOpenChange(false)}
+                    className="-mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-control)] text-fg-secondary hover:text-fg-primary"
+                  >
+                    <X className="h-5 w-5" aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
+
+              <div
+                role="group"
+                aria-label="Materiale selezionato"
+                className="mt-3 flex flex-wrap gap-2"
+              >
+                {selectedTopics.map((t) => (
+                  <span
+                    key={t.id}
+                    className="flex min-h-9 items-center rounded-full border border-accent bg-accent-subtle px-3 text-[13px]"
+                  >
+                    {t.name}
+                  </span>
+                ))}
+                {docIds.size > 0 && (
+                  <span className="flex min-h-9 items-center rounded-full border border-accent bg-accent-subtle px-3 text-[13px]">
+                    {docIds.size} {docIds.size === 1 ? 'documento' : 'documenti'}
+                  </span>
+                )}
+                {docIds.size === 0 && selectedTopics.length === 0 && (
+                  <span className="flex min-h-9 items-center rounded-full border border-border px-3 text-[13px] text-fg-secondary">
+                    Tutti i documenti pronti ({parsedDocIds.length})
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={onPickMaterial}
+                  className="flex min-h-11 items-center rounded-full border border-dashed border-border-strong px-3 text-[13px] text-fg-secondary"
+                >
+                  + Scegli
+                </button>
+              </div>
+
+              <div
+                role="radiogroup"
+                aria-label="Cosa generare"
+                className="mt-4 grid grid-cols-3 gap-2"
+              >
+                {GEN_TILES.map((tile, i) => {
+                  const selected = tile.kind === kind;
+                  return (
+                    <button
+                      key={tile.kind}
+                      ref={(el) => {
+                        tileRefs.current[i] = el;
+                      }}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      tabIndex={selected ? 0 : -1}
+                      onClick={() => setKind(tile.kind)}
+                      onKeyDown={(e) => onTileKeyDown(e, i)}
+                      className={`relative flex min-h-[72px] flex-col items-center justify-center gap-1 rounded-[var(--radius-card)] border text-[13px] ${
+                        selected
+                          ? 'border-accent bg-accent-subtle text-fg-primary'
+                          : 'border-border bg-bg-raised text-fg-secondary'
+                      }`}
+                    >
+                      <tile.Icon
+                        className={`h-5 w-5 ${selected ? 'text-accent' : ''}`}
+                        aria-hidden="true"
+                      />
+                      {tile.label}
+                      {selected && (
+                        <Check
+                          className="absolute right-1.5 top-1.5 h-3.5 w-3.5 text-accent"
+                          aria-hidden="true"
+                        />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <p className="mt-3 text-[13px] text-fg-secondary">
+                {scopeEmpty
+                  ? 'Nessun documento con testo estratto. Carica un PDF e attendi lo stato "Pronto".'
+                  : estimate.isLoading
+                    ? 'Stima in corso…'
+                    : estimate.isError || !costEntry
+                      ? 'Stima costo non disponibile.'
+                      : `Costo stimato: ${formatCost(costEntry.costEur)}`}
+              </p>
+              <button
+                type="button"
+                disabled={scopeEmpty || generate.isPending}
+                onClick={() => generate.mutate()}
+                className="mt-2 min-h-11 w-full rounded-[var(--radius-control)] bg-accent text-sm font-semibold text-bg-base disabled:opacity-50"
+              >
+                {generate.isPending ? 'Avvio…' : `Genera ${activeTile.verb}`}
+              </button>
+              {generate.isError && (
+                <p role="alert" className="mt-2 text-xs text-danger">
+                  {(generate.error as Error).message}
+                </p>
+              )}
+              {generate.isSuccess && (
+                <p role="status" className="mt-2 text-[13px] text-ok">
+                  Job avviato — l&apos;elenco si aggiorna a breve.
+                </p>
+              )}
+
+              <h3 className="mb-1 mt-5 text-xs font-medium uppercase tracking-[0.06em] text-fg-muted">
+                Materia
+              </h3>
+              <div className="flex flex-col">
+                <button type="button" onClick={onEdit} className={rowClass}>
+                  <Pencil className="h-5 w-5 text-fg-secondary" aria-hidden="true" />
+                  Modifica materia
+                </button>
+                <button
+                  type="button"
+                  disabled={archiveMutation.isPending}
+                  onClick={() =>
+                    archiveMutation.mutate(!isArchived, { onSuccess: () => onOpenChange(false) })
+                  }
+                  className={rowClass}
+                >
+                  {isArchived ? (
+                    <ArchiveRestore className="h-5 w-5 text-fg-secondary" aria-hidden="true" />
+                  ) : (
+                    <Archive className="h-5 w-5 text-fg-secondary" aria-hidden="true" />
+                  )}
+                  {isArchived ? 'Ripristina' : 'Archivia'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDelete(true)}
+                  className={`${rowClass} text-danger`}
+                >
+                  <Trash2 className="h-5 w-5" aria-hidden="true" />
+                  Sposta nel cestino
+                </button>
+              </div>
+              {actionError && (
+                <p role="alert" className="mt-2 text-xs text-danger">
+                  {actionError.message}
+                </p>
+              )}
+            </>
+          )}
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
+  );
+}

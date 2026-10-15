@@ -408,3 +408,37 @@ body {
   text-decoration: underline dotted;
   text-underline-offset: 3px;
 }
+
+/* Bottom sheets (materia mobile "Assistente"): slide up/down, fade the backdrop. */
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+@keyframes sheet-out {
+  to {
+    transform: translateY(100%);
+  }
+}
+@keyframes sheet-overlay-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes sheet-overlay-out {
+  to {
+    opacity: 0;
+  }
+}
+.anim-sheet[data-state='open'] {
+  animation: sheet-in 220ms var(--ease-standard);
+}
+.anim-sheet[data-state='closed'] {
+  animation: sheet-out 220ms var(--ease-standard) forwards;
+}
+.anim-sheet-overlay[data-state='open'] {
+  animation: sheet-overlay-in 220ms var(--ease-standard);
+}
+.anim-sheet-overlay[data-state='closed'] {
+  animation: sheet-overlay-out 220ms var(--ease-standard) forwards;
+}

@@ -7,9 +7,8 @@ import type { SubjectDto } from '@studyhub/contracts';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { EditSubjectForm } from './EditSubjectForm';
 
-export function SubjectActions({ subject }: { subject: SubjectDto }) {
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [editing, setEditing] = useState(false);
+/** Archive/restore and trash mutations of a subject, shared by the desktop buttons and the mobile sheet. */
+export function useSubjectActions(subject: SubjectDto) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const isArchived = subject.archivedAt !== null;
@@ -45,6 +44,14 @@ export function SubjectActions({ subject }: { subject: SubjectDto }) {
       router.push('/materie');
     },
   });
+
+  return { isArchived, archiveMutation, deleteMutation };
+}
+
+export function SubjectActions({ subject }: { subject: SubjectDto }) {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const { isArchived, archiveMutation, deleteMutation } = useSubjectActions(subject);
 
   return (
     <div className="flex flex-wrap items-center gap-2">
