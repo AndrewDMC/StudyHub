@@ -19,60 +19,9 @@ import { formatClock, PomodoroPanel, usePomodoro } from '@/components/PomodoroTi
 import { SessionBriefing } from '@/components/SessionBriefing';
 import { SessionClosing } from '@/components/SessionClosing';
 import { SessionChat } from '@/components/SessionChat';
-
-async function readJson<T>(res: Response, fallback: string): Promise<T> {
-  const body = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(body?.error?.message ?? fallback);
-  return body as T;
-}
-
-async function fetchSession(slug: string, id: string): Promise<StudySessionDto> {
-  const body = await readJson<{ session: StudySessionDto }>(
-    await fetch(`/api/subjects/${slug}/sessions/${id}`),
-    'Impossibile caricare la sessione',
-  );
-  return body.session;
-}
-
-async function patchSession(
-  slug: string,
-  id: string,
-  patch: UpdateSessionRequest,
-): Promise<StudySessionDto> {
-  const body = await readJson<{ session: StudySessionDto }>(
-    await fetch(`/api/subjects/${slug}/sessions/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch),
-    }),
-    'Aggiornamento della sessione fallito',
-  );
-  return body.session;
-}
-
-async function postEnd(
-  slug: string,
-  id: string,
-  totals: { activeMs: number; pomodoros: number },
-): Promise<StudySessionDto> {
-  const body = await readJson<{ session: StudySessionDto }>(
-    await fetch(`/api/subjects/${slug}/sessions/${id}/end`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(totals),
-    }),
-    'Impossibile terminare la sessione',
-  );
-  return body.session;
-}
-
-async function fetchTopics(slug: string): Promise<TopicDto[]> {
-  const body = await readJson<{ topics: TopicDto[] }>(
-    await fetch(`/api/subjects/${slug}/topics`),
-    'Impossibile caricare gli argomenti',
-  );
-  return body.topics;
-}
+import { SessionMobile } from '@/components/session-mobile/SessionMobile';
+import { useIsMobile } from '@/lib/useIsMobile';
+import { fetchSession, fetchTopics, patchSession, postEnd, readJson } from '@/lib/sessionApi';
 
 async function fetchContent(slug: string, documentId: string): Promise<DocumentContentDto> {
   return readJson<DocumentContentDto>(
@@ -346,7 +295,7 @@ function TopicPicker({
  * (phase 2) a tutor chat that answers only from that material and cites it and
  * (phase 3) key points and exercises generated on request.
  */
-export function SessionClient({ slug, sessionId }: { slug: string; sessionId: string }) {
+function SessionDesktop({ slug, sessionId }: { slug: string; sessionId: string }) {
   const queryClient = useQueryClient();
   const sessionKey = ['studySession', slug, sessionId];
   const query = useQuery({ queryKey: sessionKey, queryFn: () => fetchSession(slug, sessionId) });
@@ -599,5 +548,22 @@ export function SessionClient({ slug, sessionId }: { slug: string; sessionId: st
         </>
       )}
     </div>
+  );
+}
+
+/** Below `md` the session is a dedicated full-screen mobile flow; from `md` up the desktop page. */
+export function SessionClient({ slug, sessionId }: { slug: string; sessionId: string }) {
+  const isMobile = useIsMobile();
+  if (isMobile === null) {
+    return (
+      <p role="status" className="p-4 text-sm text-fg-muted">
+        Caricamento…
+      </p>
+    );
+  }
+  return isMobile ? (
+    <SessionMobile slug={slug} sessionId={sessionId} />
+  ) : (
+    <SessionDesktop slug={slug} sessionId={sessionId} />
   );
 }

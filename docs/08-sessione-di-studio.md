@@ -1,6 +1,6 @@
 # Sessione di studio — piano di implementazione
 
-> Stato: **fasi 1, 2, 3 e 4 implementate** (2026-09-29 / 2026-10-05 / 2026-10-06 / 2026-10-06). Vedi §10 per lo stato e §9 per le decisioni prese.
+> Stato: **fasi 1, 2, 3 e 4 implementate** (2026-09-29 / 2026-10-05 / 2026-10-06 / 2026-10-06), vista mobile 2026-10-15. Vedi §10 per lo stato e §9 per le decisioni prese.
 > Realizza anche il "pannello AI contestuale" rinviato da F2 (`packages/db/src/schema.ts`, commento su `exams`).
 
 ## 1. Cosa vuole l'utente, in una frase
@@ -177,6 +177,11 @@ testata della chat.
 - Stati empty, loading ed error (DoD): nessun documento taggato (con link "tagga i documenti"),
   briefing in corso (skeleton), briefing fallito ("riprova"), AI non configurata (spiegazione di
   `FakeProvider`).
+- **Vista mobile** (sotto 768 px, `useIsMobile`): `SessionClient` monta [`SessionMobile`](../apps/web/src/components/session-mobile/)
+  al posto di `SessionDesktop`, che resta invariato. Header con indietro alla materia, striscia del timer pomodoro e
+  due tab "Punti chiave ed esercizi" / "Chiedi all'AI". Non c'è il pannello materiale a fianco: i documenti si aprono
+  dalle fonti dei punti chiave. Le sessioni senza documenti aprono lo sheet Argomenti. "Termina" chiede conferma.
+  `AppShell` nasconde l'header globale su `/sessione/[id]`.
 
 ## 7. Fette di consegna (ognuna usabile da sola)
 
@@ -387,3 +392,26 @@ migrazione 0016).
 - Il fattore tempo non distingue il tipo di task (lettura, schemi…) né la materia: è un solo numero per persona. Le
   task `review`/`simulation` non aprono sessioni, quindi non lo alimentano.
 - Un esercizio `wrong` dopo la chiusura non può più cambiare stato; il drill si crea una volta sola per sessione.
+
+### Vista mobile — slice 6 (Sessione e Chiusura) — fatta
+
+- **Refactor senza cambi di comportamento**: fetcher in [`sessionApi.ts`](../apps/web/src/lib/sessionApi.ts); hook
+  `useSessionBriefing`, `useSessionChat`, `useSessionClosing` estratti dai componenti desktop; logica pura in
+  [`sessionMobile.ts`](../apps/web/src/lib/sessionMobile.ts).
+- **Timer**: riusa `usePomodoro`. L'heartbeat aggiorna anche la cache della sessione, così il rientro dal documento non
+  riporta indietro l'orologio; il tempo viene scritto allo smontaggio.
+- **Sessione**: punti chiave con fonti in sheet; esercizi con risposta, correzione AI, soluzione, autovalutazione e
+  "Spiegami meglio" verso la chat.
+- **Chiusura**: minuti di studio, giusti / da rivedere, "Crea N flashcard" dai punti chiave, "Crea il drill" solo con gli
+  esercizi sbagliati che hanno una fonte (altrimenti un messaggio), "Alla materia", "Prossima task" (prima task aperta di
+  oggi, esclusa quella della sessione; omessa se non c'è).
+- **Test**: unit [`sessionMobile.test.ts`](../apps/web/test/sessionMobile.test.ts); e2e
+  [`materia-sessione.mobile.spec.ts`](../apps/web/e2e/materia-sessione.mobile.spec.ts) (375×812) e
+  [`materia-sessione-desktop.spec.ts`](../apps/web/e2e/materia-sessione-desktop.spec.ts) (smoke desktop), seed in
+  [`e2e/fixtures/sessione-seed.ts`](../apps/web/e2e/fixtures/sessione-seed.ts). Con `AI_PROVIDER=fake` correzione, chat,
+  flashcard e drill girano in-process.
+
+**Non fatto / limiti (mobile)**
+
+- Omessi su mobile: mood "Com'è andata?", selezione per-item delle flashcard, modalità Libero / Salta e durate del
+  timer, selettore del modello della chat, viewer del documento dentro la sessione, trascrizione nella chiusura.

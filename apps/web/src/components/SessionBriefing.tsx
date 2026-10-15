@@ -18,7 +18,11 @@ import type {
 import { Button } from '@/components/ui/button';
 import { MODEL_OPTIONS, ModelPicker } from '@/components/ModelPicker';
 
-const DIFFICULTY_LABELS: Record<number, string> = { 1: 'Facile', 2: 'Media', 3: 'Difficile' };
+export const DIFFICULTY_LABELS: Record<number, string> = {
+  1: 'Facile',
+  2: 'Media',
+  3: 'Difficile',
+};
 
 async function readJson<T>(res: Response, fallback: string): Promise<T> {
   const body = await res.json().catch(() => null);
@@ -97,11 +101,11 @@ async function postGrade(slug: string, sessionId: string, itemId: string): Promi
 }
 
 /** €0 → "gratis" (FakeProvider, nessuna chiave configurata). */
-function formatCost(costEur: number): string {
+export function formatCost(costEur: number): string {
   return costEur === 0 ? 'gratis' : `~€${costEur.toFixed(4)}`;
 }
 
-function Markdown({ source }: { source: string }) {
+export function Markdown({ source }: { source: string }) {
   return (
     <div className="md-obsidian text-sm">
       <ReactMarkdown
@@ -315,30 +319,21 @@ function ExerciseCard({
   );
 }
 
-/**
- * Key points and exercises of a study session (docs/08-sessione-di-studio.md §5.2, decision 3):
- * nothing is generated until the student asks, with the model and the estimated cost in plain sight.
- * An exercise is either self-assessed after "Mostra la soluzione" (free) or graded by the AI (paid).
- */
-export function SessionBriefing({
+/** Briefing queries and mutations, shared by the desktop panel and the mobile one. */
+export function useSessionBriefing({
   slug,
   sessionId,
   active,
   hasDocuments,
-  onOpenCitation,
-  onAsk,
 }: {
   slug: string;
   sessionId: string;
   active: boolean;
   hasDocuments: boolean;
-  onOpenCitation: (citation: SessionItemCitationDto) => void;
-  onAsk: (focus: SessionFocus) => void;
 }) {
   const queryClient = useQueryClient();
   const key = ['sessionBriefing', slug, sessionId];
   const [model, setModel] = useState<string>(MODEL_OPTIONS[1].id); // sonnet: default routing (docs/03 §4)
-  const [view, setView] = useState<'key_point' | 'exercise'>('key_point');
 
   const query = useQuery({
     queryKey: key,
@@ -392,6 +387,66 @@ export function SessionBriefing({
     onSettled: () => queryClient.invalidateQueries({ queryKey: key }),
   });
 
+  const costLabel = estimate.data ? ` · ${formatCost(estimate.data.costEur)}` : '';
+
+  return {
+    query,
+    data,
+    items,
+    keyPoints,
+    exercises,
+    inFlight,
+    failed,
+    mode,
+    model,
+    setModel,
+    estimate,
+    start,
+    patch,
+    grade,
+    costLabel,
+  };
+}
+
+/**
+ * Key points and exercises of a study session (docs/08-sessione-di-studio.md §5.2, decision 3):
+ * nothing is generated until the student asks, with the model and the estimated cost in plain sight.
+ * An exercise is either self-assessed after "Mostra la soluzione" (free) or graded by the AI (paid).
+ */
+export function SessionBriefing({
+  slug,
+  sessionId,
+  active,
+  hasDocuments,
+  onOpenCitation,
+  onAsk,
+}: {
+  slug: string;
+  sessionId: string;
+  active: boolean;
+  hasDocuments: boolean;
+  onOpenCitation: (citation: SessionItemCitationDto) => void;
+  onAsk: (focus: SessionFocus) => void;
+}) {
+  const [view, setView] = useState<'key_point' | 'exercise'>('key_point');
+  const {
+    query,
+    data,
+    items,
+    keyPoints,
+    exercises,
+    inFlight,
+    failed,
+    mode,
+    model,
+    setModel,
+    estimate,
+    start,
+    patch,
+    grade,
+    costLabel,
+  } = useSessionBriefing({ slug, sessionId, active, hasDocuments });
+
   if (query.isLoading) return <p className="text-sm text-fg-muted">Caricamento…</p>;
   if (query.isError) {
     return (
@@ -401,7 +456,6 @@ export function SessionBriefing({
     );
   }
 
-  const costLabel = estimate.data ? ` · ${formatCost(estimate.data.costEur)}` : '';
   const generateControls = (
     <div className="space-y-2">
       <ModelPicker value={model} onChange={setModel} disabled={start.isPending || inFlight} />
