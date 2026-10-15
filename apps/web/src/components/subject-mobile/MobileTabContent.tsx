@@ -1,13 +1,11 @@
 'use client';
 
 import type { DocumentDto, TopicDto } from '@studyhub/contracts';
-import { StatsPanel } from '../StatsPanel';
-import { CalibrationPanel } from '../CalibrationPanel';
-import { FlashcardListPanel } from '../FlashcardListPanel';
-import { ExamPrepPanel } from '../ExamPrepPanel';
-import { CoveragePanel } from '../CoveragePanel';
+import { CoverageMobile } from '../coverage-mobile/CoverageMobile';
+import { FlashcardMobile } from '../flashcard-mobile/FlashcardMobile';
+import { SimulationsMobile } from '../simulation-mobile/SimulationsMobile';
 
-/** Flashcard / Simulazioni / Lacune: the desktop panels as they are (redesigned in later slices). */
+/** Flashcard / Simulazioni / Lacune (mobile screens). */
 export function MobileTabContent({
   slug,
   tab,
@@ -20,24 +18,10 @@ export function MobileTabContent({
   topics: TopicDto[];
 }) {
   if (tab === 'flashcard') {
-    return (
-      <div className="min-w-0 space-y-4">
-        <StatsPanel subjectSlug={slug} />
-        <CalibrationPanel subjectSlug={slug} />
-        <FlashcardListPanel subjectSlug={slug} topics={topics} />
-      </div>
-    );
+    return <FlashcardMobile slug={slug} topics={topics} />;
   }
   if (tab === 'simulazioni') {
-    return (
-      <div className="min-w-0">
-        <ExamPrepPanel subjectSlug={slug} documents={documents} />
-      </div>
-    );
+    return <SimulationsMobile slug={slug} documents={documents} topics={topics} />;
   }
-  return (
-    <div className="min-w-0">
-      <CoveragePanel subjectSlug={slug} />
-    </div>
-  );
+  return <CoverageMobile slug={slug} topics={topics} />;
 }

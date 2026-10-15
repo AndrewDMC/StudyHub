@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Flag, FileText, Pause, Pencil } from 'lucide-react';
 import type { FlashcardDto, ReviewQueueItemDto, UpdateFlashcardRequest } from '@studyhub/contracts';
+import { cardSourceHref } from '@/lib/quickReview';
 
 async function patchCard(
   card: ReviewQueueItemDto,
@@ -64,9 +65,7 @@ export function CardActionsSheet({
     }
   };
 
-  const sourceHref = card.sourceRef
-    ? `/api/subjects/${card.subjectSlug}/documents/${card.sourceRef.docId}/file#page=${card.sourceRef.page}`
-    : null;
+  const sourceHref = cardSourceHref(card);
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>

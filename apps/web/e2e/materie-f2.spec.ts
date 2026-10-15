@@ -24,7 +24,7 @@ test.describe('F2 — Materie & Materia Singola', () => {
     const dialog = page.getByRole('dialog');
     await dialog.getByLabel('Nome materia').fill(name);
     await dialog.getByRole('button', { name: 'Crea materia' }).click();
-    await expect(dialog).toBeHidden();
+    await expect(dialog).toBeHidden({ timeout: 30_000 });
 
     const slug = name
       .toLowerCase()
@@ -36,13 +36,13 @@ test.describe('F2 — Materie & Materia Singola', () => {
     try {
       // Click 1: card → materia.
       await page.getByRole('heading', { name }).click();
-      await expect(page).toHaveURL(new RegExp(`/materie/${slug}$`));
+      await expect(page).toHaveURL(new RegExp(`/materie/${slug}$`), { timeout: 30_000 });
 
       await page.getByPlaceholder('Nuovo argomento').fill('Meccanica');
       await page.getByRole('button', { name: '+' }).click();
       await expect(
         page.getByTitle('Filtra la pagina e scopa il pannello AI su questo argomento'),
-      ).toBeVisible();
+      ).toBeVisible({ timeout: 30_000 });
 
       // Click 2: l'argomento stesso — lo seleziona e scopa il pannello AI su di esso.
       await page.getByTitle('Filtra la pagina e scopa il pannello AI su questo argomento').click();

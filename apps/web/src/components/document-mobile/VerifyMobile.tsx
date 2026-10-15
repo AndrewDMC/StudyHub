@@ -96,10 +96,9 @@ export function VerifyMobile({
       if (state === 'verified') {
         await patchNode(slug, documentId, n.id, { ...base, verified: true });
       } else {
-        // TODO: reduce to a single PATCH `{ verified: false, confidence }` once the server fix
-        // (updateSchemaNode keeps the old confidence when `verified:false`) is on main.
-        await patchNode(slug, documentId, n.id, { ...base, verified: false });
         await patchNode(slug, documentId, n.id, {
+          ...base,
+          verified: false,
           confidence: state === 'uncertain' ? 'uncertain' : 'unreadable',
         });
       }

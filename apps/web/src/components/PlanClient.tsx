@@ -13,6 +13,8 @@ import type {
   TaskDto,
   TopicDto,
 } from '@studyhub/contracts';
+import { useIsMobile } from '@/lib/useIsMobile';
+import { PlanMobile } from './plan-mobile/PlanMobile';
 
 async function getJson<T>(url: string, key: string): Promise<T> {
   const res = await fetch(url);
@@ -607,7 +609,7 @@ function DiffPanel({ diff }: { diff: PlanDiffDto }) {
  * §9). This is a day-grouped list, not a calendar grid; moves go through a button, not a
  * pointer gesture (docs/fasi/F6-planner-calendario.md "Stato").
  */
-export function PlanClient({ slug }: { slug: string }) {
+function PlanDesktop({ slug }: { slug: string }) {
   const queryClient = useQueryClient();
   const [wizardOpen, setWizardOpen] = useState(false);
   // Only poll while we're actively waiting on a just-submitted generate_plan
@@ -865,4 +867,16 @@ export function PlanClient({ slug }: { slug: string }) {
       )}
     </div>
   );
+}
+
+export function PlanClient({ slug }: { slug: string }) {
+  const isMobile = useIsMobile();
+  if (isMobile === null) {
+    return (
+      <p role="status" className="p-4 text-sm text-fg-muted">
+        Caricamento…
+      </p>
+    );
+  }
+  return isMobile ? <PlanMobile slug={slug} /> : <PlanDesktop slug={slug} />;
 }

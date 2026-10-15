@@ -1,12 +1,12 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { MoreHorizontal, Undo2, X } from 'lucide-react';
+import { FileText, MoreHorizontal, Undo2, X } from 'lucide-react';
 import type { ReviewQueueItemDto } from '@studyhub/contracts';
 import { revealPlan } from '@/lib/cardText';
 import { formatInterval } from '@/lib/format';
 import { SUBJECT_COLOR_HEX } from '@/lib/subjectColors';
-import { RATINGS, RATING_LABELS, type Rating } from '@/lib/quickReview';
+import { RATINGS, RATING_LABELS, cardSourceHref, type Rating } from '@/lib/quickReview';
 import { CardText } from '../CardText';
 import { SwipeCard } from './SwipeCard';
 
@@ -49,6 +49,7 @@ export function QuickReviewSession({
   onMore: () => void;
 }) {
   const plan = revealPlan(card, revealed);
+  const sourceHref = cardSourceHref(card);
   const crumb = `${card.subjectName}${card.topicName ? ` · ${card.topicName}` : ''}`;
   const pct = total ? Math.round((done / total) * 100) : 0;
   const answerRef = useRef<HTMLDivElement>(null);
@@ -121,7 +122,20 @@ export function QuickReviewSession({
                 className="size-2 shrink-0 rounded-full"
                 style={{ background: SUBJECT_COLOR_HEX[card.subjectColor] }}
               />
-              <span className="truncate text-xs text-fg-secondary">{crumb}</span>
+              <span className="min-w-0 flex-1 truncate text-xs text-fg-secondary">{crumb}</span>
+              {sourceHref && (
+                <a
+                  href={sourceHref}
+                  target="_blank"
+                  rel="noopener"
+                  aria-label="Apri la fonte nel documento"
+                  onClick={(e) => e.stopPropagation()}
+                  className="-my-2 -mr-2 inline-flex min-h-11 shrink-0 items-center gap-1.5 px-2.5 text-[13px] text-fg-secondary"
+                >
+                  <FileText size={14} aria-hidden="true" />
+                  Fonte
+                </a>
+              )}
             </div>
             <div
               ref={answerRef}

@@ -10,11 +10,15 @@ export function QuickReviewSummary({
   summary,
   onRetryErrors,
   onHome,
+  homeLabel = 'Torna alle materie',
+  homePending = false,
 }: {
   title: string;
   summary: SessionSummary;
   onRetryErrors: () => void;
   onHome: () => void;
+  homeLabel?: string;
+  homePending?: boolean;
 }) {
   const max = Math.max(1, ...RATINGS.map((r) => summary.counts[r]));
   const tiles = [
@@ -102,9 +106,10 @@ export function QuickReviewSummary({
         <button
           type="button"
           onClick={onHome}
+          disabled={homePending}
           className="h-[52px] w-full rounded-[var(--radius-card)] border border-border-strong bg-bg-surface text-[15px] font-medium"
         >
-          Torna alle materie
+          {homePending ? 'Salvo…' : homeLabel}
         </button>
       </div>
     </>

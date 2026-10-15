@@ -300,3 +300,28 @@ disponibilità di ogni materia allo stesso modo), distinta da `tasks` come previ
 drag&drop col mouse, niente editing blackout dal Calendario), `starts_at`/`ends_at`, `plan commit` da
 CLI, Daily Task nella home, Fase A mai eseguita dal vivo (criteri "<60s" e "Google Calendar" non
 misurati), allocazione congiunta fra materie ancora unidirezionale.
+
+## Aggiornamento — vista mobile del piano (`/materie/[slug]/piano`)
+
+Sotto 768 px la pagina del piano passa a [`PlanMobile`](../../apps/web/src/components/plan-mobile/),
+montato da [`PlanClient.tsx`](../../apps/web/src/components/PlanClient.tsx) tramite `useIsMobile`. Il
+desktop (`PlanDesktop`) non cambia. Logica pura in [`apps/web/src/lib/planMobile.ts`](../../apps/web/src/lib/planMobile.ts).
+Nessun nuovo endpoint.
+
+- Header proprio con indietro alla materia e tab Piano attiva; [`AppShell.tsx`](../../apps/web/src/components/AppShell.tsx)
+  nasconde l'header globale anche su `/piano`.
+- Piano attivo: riepilogo (stato, scadenza, task fatte/totali, ritmo e minuti al giorno in sola lettura),
+  card "in ritardo" con Riassorbi / Ricalcola, fattibilità, striscia dei giorni con carico, task del giorno
+  con checkbox e sheet (fatta, salta, riapri, sposta di 1 giorno, riassorbi, fissa, elimina).
+- Bozza: Conferma / Scarta, Escludi un argomento. Stato vuoto con generazione della bozza.
+- I task "in ritardo" considerano anche la data, perché il drift aggrega tutti i piani attivi della materia.
+
+Non ancora:
+
+- ritmo e minuti modificabili sul piano attivo (nessuna route: si cambiano rigenerando la bozza);
+- cerca e menu (kebab) nell'header del piano;
+- il fallimento del worker durante la generazione non è rilevabile: lo spinner dura fino a 60 s, come su desktop.
+
+Test: unit [`planMobile.test.ts`](../../apps/web/test/planMobile.test.ts); e2e
+[`materia-lacune-piano.mobile.spec.ts`](../../apps/web/e2e/materia-lacune-piano.mobile.spec.ts) e
+[`materia-lacune-piano-desktop.spec.ts`](../../apps/web/e2e/materia-lacune-piano-desktop.spec.ts) (il desktop non cambi).

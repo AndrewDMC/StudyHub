@@ -275,3 +275,24 @@ export function enqueueUndo(ops: OutboxOp[], key: string, inFlightKey: string | 
   if (pending !== -1 && key !== inFlightKey) return ops.filter((_, i) => i !== pending);
   return [...ops, { kind: 'undo', key }];
 }
+
+/** The cited page of a card's source document, as the browser's PDF viewer opens it. */
+export function cardSourceHref(card: {
+  subjectSlug: string;
+  sourceRef: { docId: string; page: number } | null;
+}): string | null {
+  if (!card.sourceRef) return null;
+  return `/api/subjects/${card.subjectSlug}/documents/${card.sourceRef.docId}/file#page=${card.sourceRef.page}`;
+}
+
+/** Deep link into the quick review for one subject (and optionally one topic). */
+export function reviewHref(slug: string, topicId?: string): string {
+  return `/ripasso?materia=${slug}${topicId ? `&argomento=${topicId}` : ''}`;
+}
+
+/** Below md the desktop per-subject review links lead to the quick review; other hrefs stay. */
+export function toMobileReviewHref(href: string): string {
+  const match = /^\/materie\/([^/?#]+)\/review(?:\?topicId=([^&#]+))?$/.exec(href);
+  if (!match) return href;
+  return reviewHref(match[1]!, match[2]);
+}

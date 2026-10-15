@@ -186,7 +186,9 @@ test.describe('Materia mobile — shell e Panoramica', () => {
       .getByRole('link', { name: /^Ripassa \d+ card$/ });
     await expect(review).toHaveText('Ripassa 3 card');
     await review.click();
-    await expect(page).toHaveURL(new RegExp(`/materie/${ctx.slug}/review$`), { timeout: 20_000 });
+    await expect(page).toHaveURL(new RegExp(`/ripasso\\?materia=${ctx.slug}$`), {
+      timeout: 20_000,
+    });
   });
 
   for (const [trigger, label] of [
@@ -250,14 +252,23 @@ test.describe('Materia mobile — shell e Panoramica', () => {
     });
   }
 
-  test('Sulle sottorotte della materia (es. /piano) l’header globale resta visibile', async ({
+  test('Sulle sottorotte della materia (es. /review) l’header globale resta visibile', async ({
     page,
   }) => {
     test.setTimeout(90_000);
-    await page.goto(`/materie/${ctx.slug}/piano`);
+    await page.goto(`/materie/${ctx.slug}/review`);
     await expect(page.locator('header').filter({ hasText: 'StudyHub' })).toBeVisible({
       timeout: 20_000,
     });
+  });
+
+  test('Su /piano l’header globale è nascosto', async ({ page }) => {
+    test.setTimeout(90_000);
+    await page.goto(`/materie/${ctx.slug}/piano`);
+    await expect(page.getByRole('link', { name: 'Torna alla materia' })).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(page.locator('header').filter({ hasText: 'StudyHub' })).toBeHidden();
   });
 
   test('Lo swipe-down sullo sheet lo chiude; uno spostamento corto lo fa rientrare', async ({

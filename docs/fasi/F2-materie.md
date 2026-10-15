@@ -396,3 +396,120 @@ Il desktop non cambia.
 
 Non ancora: slice 3-6; il suggerimento AI del tipo di documento su mobile. Per i nodi Incerto/Illeggibile
 ci sono ancora due PATCH, da ridurre a una dopo la PR #20.
+
+## Aggiornamento — vista mobile di `/materie/[slug]`, slice 3 (2026-10-15)
+
+Sotto 768 px la tab "Flashcard" passa alla vista dedicata
+[`apps/web/src/components/flashcard-mobile/`](../../apps/web/src/components/flashcard-mobile/)
+(`FlashcardMobile.tsx`). Il desktop non cambia: `FlashcardListPanel` e `StatsPanel` restano come erano.
+
+- **Ripasso di oggi**: hero con CTA verso `/ripasso?materia=<slug>`; link ai mazzi in bozza da approvare;
+  previsione dei prossimi 30 giorni; ritenzione reale a confronto con quella prevista, con frasi neutre.
+- **Lista card**: ricerca, filtro per argomento, "Mostra altre". Il tap apre lo sheet di dettaglio con
+  Modifica, Sospendi, Riattiva, Rimuovi segnalazione ed Elimina.
+- **Strumenti del mazzo e calibrazione**: disclosure che monta i pannelli desktop così come sono.
+- **Revisione mobile** su `/materie/[slug]/artifacts/[id]`
+  ([`ArtifactReviewMobile.tsx`](../../apps/web/src/components/flashcard-mobile/ArtifactReviewMobile.tsx)):
+  Tieni e Scarta sono segni locali; la card scartata viene eliminata solo all'approvazione del mazzo.
+  Le card non marcate vengono approvate, come su desktop. Modifica salva subito. Le azioni sono
+  disabilitate durante l'approvazione e su un mazzo già approvato.
+- **Shell**: [`AppShell.tsx`](../../apps/web/src/components/AppShell.tsx) nasconde l'header globale anche su
+  `/materie/[slug]/artifacts/[id]`.
+- **Verifica**: [`VerifyMobile.tsx`](../../apps/web/src/components/document-mobile/VerifyMobile.tsx) fa una
+  sola PATCH per Incerto/Illeggibile (chiude il punto aperto della slice 2, dopo la PR #20).
+- **Ripasso** ([`quick-review/`](../../apps/web/src/components/quick-review/), riuso con `?materia=`):
+  - link "Fonte" nella sessione;
+  - con il deep link di materia, "Torna alla materia" porta a `/materie/<slug>?tab=flashcard`;
+  - l'uscita attende lo svuotamento dell'outbox e resta su `/ripasso` se c'è un errore di invio;
+  - alla chiusura si invalidano le query della materia.
+
+Logica pura in [`apps/web/src/lib/flashcardMobile.ts`](../../apps/web/src/lib/flashcardMobile.ts).
+Test: e2e [`materia-flashcard.mobile.spec.ts`](../../apps/web/e2e/materia-flashcard.mobile.spec.ts) (15 test),
+[`materia-flashcard-desktop.spec.ts`](../../apps/web/e2e/materia-flashcard-desktop.spec.ts) (verifica che il
+desktop non cambi), unit [`flashcardMobile.test.ts`](../../apps/web/test/flashcardMobile.test.ts).
+
+Non ancora:
+
+- scadenza per riga e stima "~14 min" nella lista: `FlashcardDto` non ha `dueAt`;
+- confidenza pre-risposta nel ripasso (omessa, come in [`docs/09-ripasso-mobile.md`](../09-ripasso-mobile.md));
+- il passo "Quanto sei sicuro?" del design, omesso per la stessa ragione;
+- slice 4-6 (Simulazioni/Esame, Lacune/Piano, Sessione).
+
+## Aggiornamento — vista mobile di Simulazioni, slice 4 (2026-10-15)
+
+Sotto 768 px le viste di simulazioni e tentativi passano ai componenti in
+[`apps/web/src/components/simulation-mobile/`](../../apps/web/src/components/simulation-mobile/). Il desktop
+non cambia; le route restano quelle di F5.
+
+- **Tab Simulazioni**: profilo d'esame, lista simulazioni con sheet Inizia / Riprendi / Rifai / Vedi la
+  correzione, generazione, andamento per argomento in disclosure.
+- **Esame** (`/materie/[slug]/simulations/[id]`): una domanda alla volta, timer sticky, chip per saltare
+  tra gli esercizi. Uscita e consegna passano da uno sheet di conferma; l'uscita usa `router.replace`.
+- **Risultati** (`/materie/[slug]/attempts/[id]/results`): punteggio, dettaglio per esercizio, seconda
+  opinione, drill sugli errori, stato "correzione in corso".
+- **Shell**: [`AppShell.tsx`](../../apps/web/src/components/AppShell.tsx) nasconde l'header globale anche su
+  queste due route.
+- **Hook e logica**: [`useExamAttempt.ts`](../../apps/web/src/lib/useExamAttempt.ts) è chiamato una sola volta
+  in `ExamModeClient`, così la rotazione dello schermo non riavvia il tentativo;
+  [`useAttemptResults.ts`](../../apps/web/src/lib/useAttemptResults.ts) per la pagina risultati; le funzioni
+  pure stanno in [`examAttemptLogic.ts`](../../apps/web/src/lib/examAttemptLogic.ts).
+- **Contratto**: `SimulationSummaryDto` ha `openAttemptId` (tentativo in corso non scaduto) e
+  `lastAttemptId` (ultimo consegnato o corretto; i tentativi scaduti contano come consegnati).
+
+**Robustezza** (vale anche per il desktop):
+
+- autosave fallito: il salvataggio torna in coda e l'uscita è bloccata con un errore;
+- consegna con errore di rete: resta riprovabile, e a tempo scaduto viene ritentata ogni 5 s;
+- timer calcolato dalla scadenza assoluta sul server, con flush del salvataggio su `visibilitychange`;
+- la consegna attende il salvataggio in volo;
+- `startOrResumeAttempt` è transazionale (`SELECT ... FOR UPDATE`), così due richieste concorrenti non
+  creano due tentativi.
+
+Verifica: e2e [`materia-simulazioni.mobile.spec.ts`](../../apps/web/e2e/materia-simulazioni.mobile.spec.ts)
+(8 test), [`materia-simulazioni-desktop.spec.ts`](../../apps/web/e2e/materia-simulazioni-desktop.spec.ts)
+(3 test; verifica che il desktop non cambi). Seed in
+[`e2e/fixtures/simulazioni-seed.ts`](../../apps/web/e2e/fixtures/simulazioni-seed.ts): la correzione AI è
+simulata scrivendo sul DB, perché il worker non gira negli e2e. Unit:
+[`simulationMobile.test.ts`](../../apps/web/test/simulationMobile.test.ts),
+[`examAttemptLogic.test.ts`](../../apps/web/test/examAttemptLogic.test.ts),
+[`examPrep.test.ts`](../../apps/web/test/examPrep.test.ts).
+
+Non ancora:
+
+- ora dell'ultimo salvataggio: il DTO non la espone;
+- foto del foglio: non implementata;
+- verdetto "Sufficiente" sugli argomenti: non implementato;
+- pill ×N sugli argomenti: il dato non è disponibile;
+- lo stato "In generazione" è solo locale alla pagina, non persiste dopo il ricaricamento;
+- slice 5-6 (Lacune/Piano, Sessione).
+
+## Aggiornamento — vista mobile di Lacune e Piano, slice 5 (2026-10-15)
+
+Sotto 768 px la tab Lacune passa a
+[`apps/web/src/components/coverage-mobile/`](../../apps/web/src/components/coverage-mobile/), montata in
+[`MobileTabContent.tsx`](../../apps/web/src/components/subject-mobile/MobileTabContent.tsx) al posto di
+`CoveragePanel`. Il desktop resta invariato. Logica pura in
+[`coverageMobile.ts`](../../apps/web/src/lib/coverageMobile.ts).
+
+- **Da colmare per primo**: card in evidenza con l'argomento prioritario.
+- **Filtri** Tutte / Deboli / Senza flashcard / Senza materiale, con conteggi.
+- **Card argomento**: materiale, card, mastery, menzioni negli esami.
+- **Azioni** verso flussi esistenti:
+  - Carica materiale (`?tab=materiale`);
+  - Genera flashcard (sheet con stima, scope sull'argomento);
+  - Ripassa le card (`/ripasso?materia=&argomento=`);
+  - Fai un drill: apre il `GenerateSheet` della slice 4 con l'argomento preselezionato tramite la nuova
+    prop `initialTopicId` ([`GenerateSheet.tsx`](../../apps/web/src/components/simulation-mobile/GenerateSheet.tsx)).
+- **Temi d'esame senza argomento**: disclosure separata.
+
+Il Piano mobile è descritto in [F6](F6-planner-calendario.md) ("vista mobile del piano").
+
+Test: unit [`coverageMobile.test.ts`](../../apps/web/test/coverageMobile.test.ts); e2e
+[`materia-lacune-piano.mobile.spec.ts`](../../apps/web/e2e/materia-lacune-piano.mobile.spec.ts) e
+[`materia-lacune-piano-desktop.spec.ts`](../../apps/web/e2e/materia-lacune-piano-desktop.spec.ts), con seed in
+[`e2e/fixtures/lacune-piano-seed.ts`](../../apps/web/e2e/fixtures/lacune-piano-seed.ts).
+`materia.mobile.spec.ts` ora usa `/review` come sottorotta con header globale.
+
+Non ancora: ritmo e minuti del piano modificabili da mobile (si cambiano rigenerando la bozza); cerca e
+menu nell'header del piano; il fallimento del worker durante la generazione non è rilevabile (spinner fino a
+60 s, come su desktop).

@@ -1,142 +1,20 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AttemptDto } from '@studyhub/contracts';
-
-const AUTOSAVE_DELAY_MS = 1500;
-
-function formatClock(totalSeconds: number): string {
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  const mm = String(m).padStart(2, '0');
-  const ss = String(s).padStart(2, '0');
-  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
-}
+import { useState } from 'react';
+import { useIsMobile } from '@/lib/useIsMobile';
+import { formatClock, useExamAttempt, type ExamAttemptState } from '@/lib/useExamAttempt';
+import { ExamMobile } from './simulation-mobile/ExamMobile';
 
 /**
  * Modalità Esame (docs/fasi/F5-esami-simulazioni.md): timer, one item at a
- * time or the whole paper, autosave, no AI help. The countdown is only a
- * display: its starting value comes from the server (`remainingSeconds`,
- * derived from the persisted start time), which also enforces the deadline —
- * so reopening the tab resumes with the right time and every saved answer.
+ * time or the whole paper, autosave, no AI help. The logic lives in `useExamAttempt`.
  */
-export function ExamModeClient({
-  subjectSlug,
-  simulationId,
-}: {
-  subjectSlug: string;
-  simulationId: string;
-}) {
-  const router = useRouter();
-  const [attempt, setAttempt] = useState<AttemptDto | null>(null);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [remaining, setRemaining] = useState(0);
+function ExamModeDesktop({ subjectSlug, exam }: { subjectSlug: string; exam: ExamAttemptState }) {
+  const { attempt, answers, remaining, saveState, error, submitError, onAnswerChange, submit } =
+    exam;
   const [index, setIndex] = useState(0);
   const [showAll, setShowAll] = useState(false);
-  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  const [error, setError] = useState<string | null>(null);
-  const pending = useRef<Record<string, string>>({});
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const submitted = useRef(false);
-
-  const goToResults = useCallback(
-    (attemptId: string) => router.push(`/materie/${subjectSlug}/attempts/${attemptId}/results`),
-    [router, subjectSlug],
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const res = await fetch(`/api/subjects/${subjectSlug}/simulations/${simulationId}/attempts`, {
-        method: 'POST',
-      });
-      const body = await res.json();
-      if (cancelled) return;
-      if (!res.ok) {
-        setError(body.error?.message ?? "Impossibile avviare l'esame");
-        return;
-      }
-      const a = body.attempt as AttemptDto;
-      setAttempt(a);
-      setAnswers(a.answers);
-      setRemaining(a.remainingSeconds);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [subjectSlug, simulationId]);
-
-  const flush = useCallback(async () => {
-    if (!attempt || Object.keys(pending.current).length === 0) return;
-    const batch = pending.current;
-    pending.current = {};
-    setSaveState('saving');
-    const res = await fetch(`/api/subjects/${subjectSlug}/attempts/${attempt.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ answers: batch }),
-    });
-    if (res.ok) {
-      setSaveState('saved');
-      return;
-    }
-    const body = await res.json().catch(() => null);
-    setSaveState('error');
-    setError(body?.error?.message ?? 'Salvataggio fallito');
-    if (res.status === 409) goToResults(attempt.id); // time is up server-side: it's already handed in
-  }, [attempt, subjectSlug, goToResults]);
-
-  const submit = useCallback(async () => {
-    if (!attempt || submitted.current) return;
-    submitted.current = true;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    await flush();
-    await fetch(`/api/subjects/${subjectSlug}/attempts/${attempt.id}/submit`, { method: 'POST' });
-    goToResults(attempt.id);
-  }, [attempt, flush, subjectSlug, goToResults]);
-
-  useEffect(() => {
-    if (!attempt) return;
-    if (attempt.status !== 'in_progress') {
-      goToResults(attempt.id);
-      return;
-    }
-    const tick = setInterval(() => setRemaining((r) => Math.max(0, r - 1)), 1000);
-    return () => clearInterval(tick);
-  }, [attempt, goToResults]);
-
-  useEffect(() => {
-    if (attempt?.status === 'in_progress' && remaining === 0) void submit();
-  }, [remaining, attempt, submit]);
-
-  // Closing the tab inside the autosave debounce window must not lose the last keystrokes:
-  // a keepalive request survives the page being torn down.
-  useEffect(() => {
-    if (!attempt) return;
-    const onPageHide = () => {
-      if (Object.keys(pending.current).length === 0) return;
-      void fetch(`/api/subjects/${subjectSlug}/attempts/${attempt.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ answers: pending.current }),
-        keepalive: true,
-      });
-      pending.current = {};
-    };
-    window.addEventListener('pagehide', onPageHide);
-    return () => window.removeEventListener('pagehide', onPageHide);
-  }, [attempt, subjectSlug]);
-
-  function onAnswerChange(itemId: string, value: string) {
-    setAnswers((prev) => ({ ...prev, [itemId]: value }));
-    pending.current[itemId] = value;
-    setSaveState('idle');
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => void flush(), AUTOSAVE_DELAY_MS);
-  }
 
   if (error && !attempt) {
     return (
@@ -246,7 +124,12 @@ export function ExamModeClient({
         )}
       </main>
 
-      <footer className="flex justify-end border-t border-border px-4 py-3 md:px-6">
+      <footer className="flex items-center justify-end gap-3 border-t border-border px-4 py-3 md:px-6">
+        {submitError && (
+          <p role="alert" className="text-xs text-danger">
+            {submitError}
+          </p>
+        )}
         <button
           type="button"
           onClick={() => {
@@ -259,5 +142,26 @@ export function ExamModeClient({
         </button>
       </footer>
     </div>
+  );
+}
+
+/**
+ * One branch mounted at a time, but one attempt: the hook lives here so that rotating the device
+ * across md swaps the view without starting the attempt again or losing the typed text.
+ */
+export function ExamModeClient(props: { subjectSlug: string; simulationId: string }) {
+  const isMobile = useIsMobile();
+  const exam = useExamAttempt({ ...props, navigation: isMobile ? 'replace' : 'push' });
+  if (isMobile === null) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-fg-muted">
+        Preparazione esame…
+      </div>
+    );
+  }
+  return isMobile ? (
+    <ExamMobile {...props} exam={exam} />
+  ) : (
+    <ExamModeDesktop subjectSlug={props.subjectSlug} exam={exam} />
   );
 }

@@ -265,6 +265,15 @@ File come da struttura sopra, più `components/quick-review/useReviewOutbox.ts` 
   "Nessuna flashcard ancora" con griglia tecnica e icona.
 - Haptics e badge della tab bar erano già in PR 4.
 
+### Nota: ripasso aperto dalla materia (slice 3 di F2, 2026-10-15)
+
+- Con `?materia=<slug>` il link "Torna alla materia" della sessione porta a `/materie/<slug>?tab=flashcard`
+  invece che a `/ripasso`. Il link "Fonte" compare nella sessione, accanto alla citazione già prevista in §4 C2.
+- L'uscita dalla sessione attende lo svuotamento dell'outbox; se resta un errore di invio, resta su `/ripasso`
+  con il toast invece di chiudere. Alla chiusura si invalidano le query della materia.
+- Il passo "Quanto sei sicuro?" del design resta omesso, come da decisione 3 in §1.
+- Dettagli in [`docs/fasi/F2-materie.md`](fasi/F2-materie.md) "Aggiornamento — slice 3".
+
 ---
 
 ## 5. Test

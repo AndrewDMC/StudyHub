@@ -105,15 +105,19 @@ export function QuickReviewClient({
   const router = useRouter();
   const queryClient = useQueryClient();
   const overview = useQuery({ queryKey: REVIEW_OVERVIEW_KEY, queryFn: fetchReviewOverview });
+  const deepSlug = deepLink?.scope.subjectSlug;
 
   const [limit, setLimit] = useState<SessionLimit>(DEFAULT_SESSION_LIMIT);
   const [screen, setScreen] = useState<Screen>('home');
-  const [scope, setScope] = useState<ReviewScope>({});
+  const [scope, setScope] = useState<ReviewScope>(deepLink?.scope ?? {});
+  // The deep link's subject only while the current session is still that subject's.
+  const linkSlug = deepSlug && scope.subjectSlug === deepSlug ? deepSlug : undefined;
   const [session, setSession] = useState<SessionState>(() => startSession([]));
   const [revealed, setRevealed] = useState(false);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const shownAtRef = useRef(Date.now());
   // Each card's intervals after its latest rating, for "Ripassa gli errori".
   const intervalsRef = useRef(new Map<string, RatingIntervals>());
@@ -121,7 +125,12 @@ export function QuickReviewClient({
   const refreshCounts = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: REVIEW_OVERVIEW_KEY });
     void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-  }, [queryClient]);
+    if (linkSlug) {
+      void queryClient.invalidateQueries({ queryKey: ['stats', linkSlug] });
+      void queryClient.invalidateQueries({ queryKey: ['flashcard-stats', linkSlug] });
+      void queryClient.invalidateQueries({ queryKey: ['flashcard-list', linkSlug] });
+    }
+  }, [queryClient, linkSlug]);
 
   const outbox = useReviewOutbox({
     onRated: (key, result) => {
@@ -187,12 +196,27 @@ export function QuickReviewClient({
     };
   }, [overlayOpen]);
 
-  const goHome = () => {
+  const finishExit = () => {
+    setLeaving(false);
     setScreen('home');
     setSheetOpen(false);
     refreshCounts();
-    if (deepLink) router.replace('/ripasso', { scroll: false });
+    if (linkSlug) router.replace(`/materie/${linkSlug}?tab=flashcard`);
+    else if (deepLink) router.replace('/ripasso', { scroll: false });
   };
+
+  // Unsent ratings live only in memory: wait for the queue to drain before leaving; on an error
+  // stay here with the toast and its "Riprova".
+  const goHome = () => {
+    if (outbox.status.error) return;
+    if (outbox.status.pending > 0) setLeaving(true);
+    else finishExit();
+  };
+  useEffect(() => {
+    if (!leaving) return;
+    if (outbox.status.error) setLeaving(false);
+    else if (outbox.status.pending === 0) finishExit();
+  }, [leaving, outbox.status.pending, outbox.status.error]);
 
   const rate = (rating: Rating) => {
     const card = currentCard(session);
@@ -272,6 +296,7 @@ export function QuickReviewClient({
           onStart={(s) => void start(s)}
           starting={starting}
           startError={startError}
+          backHref={linkSlug ? `/materie/${linkSlug}?tab=flashcard` : undefined}
         />
       </div>
 
@@ -313,6 +338,8 @@ export function QuickReviewClient({
               summary={summary}
               onRetryErrors={retryErrors}
               onHome={goHome}
+              homePending={leaving}
+              {...(linkSlug ? { homeLabel: 'Torna alla materia' } : {})}
             />
           ) : null}
         </div>

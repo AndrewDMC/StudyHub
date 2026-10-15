@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { AlertTriangle, CalendarDays, ChevronRight, Layers, Tag, Target } from 'lucide-react';
 import type { SuggestedActionDto } from '@studyhub/contracts';
+import { toMobileReviewHref } from '@/lib/quickReview';
 import { useOverview } from '../OverviewPanel';
 import { MobileSection, SectionEmpty, SectionError, SkeletonRows } from './SectionState';
 
@@ -52,7 +53,7 @@ export function NextActionsSection({ slug }: { slug: string }) {
             return (
               <li key={action.kind}>
                 <Link
-                  href={action.href}
+                  href={toMobileReviewHref(action.href)}
                   className="flex min-h-14 items-center gap-3 rounded-[var(--radius-card)] border border-border bg-bg-surface p-3"
                 >
                   <span

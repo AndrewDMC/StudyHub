@@ -1,94 +1,25 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import type { AttemptDto, AttemptItemResultDto } from '@studyhub/contracts';
 import { WEAK_RATIO_UI } from '@/lib/format';
-
-async function fetchAttempt(slug: string, id: string): Promise<AttemptDto> {
-  const res = await fetch(`/api/subjects/${slug}/attempts/${id}`);
-  const body = await res.json();
-  if (!res.ok) throw new Error(body.error?.message ?? 'Tentativo non trovato');
-  return body.attempt as AttemptDto;
-}
-
-async function fetchResults(slug: string, id: string): Promise<AttemptItemResultDto[]> {
-  const res = await fetch(`/api/subjects/${slug}/attempts/${id}/results`);
-  const body = await res.json();
-  if (!res.ok) throw new Error(body.error?.message ?? 'Risultati non disponibili');
-  return body.results as AttemptItemResultDto[];
-}
-
-async function requestSecondOpinion(slug: string, attemptId: string, itemId: string) {
-  const res = await fetch(
-    `/api/subjects/${slug}/attempts/${attemptId}/items/${itemId}/second-opinion`,
-    { method: 'POST' },
-  );
-  if (!res.ok) {
-    const body = await res.json().catch(() => null);
-    throw new Error(body?.error?.message ?? 'Richiesta seconda opinione fallita');
-  }
-}
+import { useAttemptResults } from '@/lib/useAttemptResults';
+import { useIsMobile } from '@/lib/useIsMobile';
+import { ResultsMobile } from './simulation-mobile/ResultsMobile';
 
 /**
  * Formative correction (docs/fasi/F5 Correzione): score per criterion, what
  * was missing, and always where to re-study — "Punteggio 6/10 — manca il
  * passaggio sul bilancio energetico (Appunti p. 73)", not just "6/10".
  */
-export function AttemptResultsClient({
+function AttemptResultsDesktop({
   subjectSlug,
   attemptId,
 }: {
   subjectSlug: string;
   attemptId: string;
 }) {
-  const attemptQuery = useQuery({
-    queryKey: ['attempt', attemptId],
-    queryFn: () => fetchAttempt(subjectSlug, attemptId),
-    // Grading runs in the worker: poll until it lands.
-    refetchInterval: (q) => (q.state.data?.status === 'graded' ? false : 3000),
-  });
-  const graded = attemptQuery.data?.status === 'graded';
-  const [pendingOpinions, setPendingOpinions] = useState<Set<string>>(new Set());
-  const resultsQuery = useQuery({
-    queryKey: ['attempt-results', attemptId],
-    queryFn: () => fetchResults(subjectSlug, attemptId),
-    enabled: graded,
-    // A requested second opinion also runs in the worker: keep polling while one is out.
-    refetchInterval: () => (pendingOpinions.size > 0 ? 3000 : false),
-  });
-
-  const secondOpinion = useMutation({
-    mutationFn: (itemId: string) => requestSecondOpinion(subjectSlug, attemptId, itemId),
-    onSuccess: (_data, itemId) => setPendingOpinions((s) => new Set(s).add(itemId)),
-  });
-
-  useEffect(() => {
-    if (!resultsQuery.isSuccess || pendingOpinions.size === 0) return;
-    const landed = [...pendingOpinions].filter(
-      (itemId) => resultsQuery.data.find((r) => r.itemId === itemId)?.secondOpinion,
-    );
-    if (landed.length === 0) return;
-    setPendingOpinions((s) => {
-      const next = new Set(s);
-      for (const itemId of landed) next.delete(itemId);
-      return next;
-    });
-    // Deliberately keyed on the fetched data only (a state updater must not re-run on its own writes).
-  }, [resultsQuery.data]);
-
-  const drill = useMutation({
-    mutationFn: async (topicId: string) => {
-      const res = await fetch(`/api/subjects/${subjectSlug}/simulations`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'drill_argomento', topicId }),
-      });
-      const body = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(body?.error?.message ?? 'Avvio drill fallito');
-    },
-  });
+  const { attemptQuery, resultsQuery, graded, pendingOpinions, secondOpinion, drill } =
+    useAttemptResults(subjectSlug, attemptId);
 
   const attempt = attemptQuery.data;
 
@@ -251,4 +182,13 @@ export function AttemptResultsClient({
       )}
     </div>
   );
+}
+
+/** One branch mounted at a time: the mobile results below md, the desktop ones above. */
+export function AttemptResultsClient(props: { subjectSlug: string; attemptId: string }) {
+  const isMobile = useIsMobile();
+  if (isMobile === null) {
+    return <p className="p-4 text-sm text-fg-muted">Caricamento…</p>;
+  }
+  return isMobile ? <ResultsMobile {...props} /> : <AttemptResultsDesktop {...props} />;
 }

@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FlashcardDto } from '@studyhub/contracts';
+import { useIsMobile } from '@/lib/useIsMobile';
+import { ArtifactReviewMobile } from './flashcard-mobile/ArtifactReviewMobile';
 
 async function fetchCards(slug: string, artifactId: string): Promise<FlashcardDto[]> {
   const res = await fetch(`/api/subjects/${slug}/artifacts/${artifactId}/flashcards`);
@@ -45,7 +47,7 @@ async function approveAll(slug: string, artifactId: string) {
  * ("40 card... citazione verificabile"); inline editing is a small
  * follow-up on the same `reviewFlashcard(action:'edit')` endpoint.
  */
-export function ArtifactReviewClient({
+function ArtifactReviewDesktop({
   subjectSlug,
   artifactId,
 }: {
@@ -160,4 +162,13 @@ export function ArtifactReviewClient({
       )}
     </div>
   );
+}
+
+/** One branch mounted at a time: the mobile review below md, the desktop one above. */
+export function ArtifactReviewClient(props: { subjectSlug: string; artifactId: string }) {
+  const isMobile = useIsMobile();
+  if (isMobile === null) {
+    return <p className="p-4 text-sm text-fg-muted">Caricamento…</p>;
+  }
+  return isMobile ? <ArtifactReviewMobile {...props} /> : <ArtifactReviewDesktop {...props} />;
 }
