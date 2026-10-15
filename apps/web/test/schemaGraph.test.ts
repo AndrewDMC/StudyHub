@@ -113,6 +113,36 @@ describe('schemaGraph', () => {
     expect(doc?.verificationStatus).toBe('verified');
   });
 
+  it('updateSchemaNode applies confidence together with verified: false in a single patch', async () => {
+    const updated = await updateSchemaNode(db, subjectSlug, documentId, nodeId, {
+      verified: false,
+      confidence: 'unreadable',
+    });
+    expect(updated.verifiedAt).toBeNull();
+    expect(updated.confidence).toBe('unreadable');
+
+    const [row] = await db.select().from(schemaNodes).where(eq(schemaNodes.id, nodeId));
+    expect(row?.confidence).toBe('unreadable');
+    expect(row?.verifiedAt).toBeNull();
+  });
+
+  it('updateSchemaNode keeps an explicit confidence over the default when verified: true', async () => {
+    const updated = await updateSchemaNode(db, subjectSlug, documentId, nodeId, {
+      verified: true,
+      confidence: 'uncertain',
+    });
+    expect(updated.verifiedAt).not.toBeNull();
+    expect(updated.confidence).toBe('uncertain');
+  });
+
+  it('updateSchemaNode keeps the stored confidence on verified: false without confidence', async () => {
+    const updated = await updateSchemaNode(db, subjectSlug, documentId, nodeId, {
+      verified: false,
+    });
+    expect(updated.verifiedAt).toBeNull();
+    expect(updated.confidence).toBe('ok');
+  });
+
   it('logs a transcription_correction when the label actually changes', async () => {
     await updateSchemaNode(db, subjectSlug, documentId, nodeId, {
       label: 'Primo principio corretto',

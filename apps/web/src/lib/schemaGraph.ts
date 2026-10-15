@@ -120,7 +120,9 @@ export async function updateSchemaNode(
     .where(and(eq(schemaNodes.id, nodeId), eq(schemaNodes.documentId, documentId)));
   if (!existing) throw new SchemaNodeNotFoundError(nodeId);
 
-  const { verified, ...rest } = patch;
+  // An explicit `confidence` always wins; `verified` only supplies the default
+  // ('ok' when confirming, the stored value otherwise).
+  const { verified, confidence, ...rest } = patch;
   const [updated] = await db
     .update(schemaNodes)
     .set({
@@ -128,9 +130,11 @@ export async function updateSchemaNode(
       ...(verified !== undefined
         ? {
             verifiedAt: verified ? new Date() : null,
-            confidence: verified ? 'ok' : existing.confidence,
+            confidence: confidence ?? (verified ? 'ok' : existing.confidence),
           }
-        : {}),
+        : confidence !== undefined
+          ? { confidence }
+          : {}),
       updatedAt: new Date(),
     })
     .where(eq(schemaNodes.id, nodeId))
