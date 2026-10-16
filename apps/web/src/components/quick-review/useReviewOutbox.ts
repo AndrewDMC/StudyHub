@@ -57,7 +57,11 @@ export function useReviewOutbox({
       const res = await fetch(`/api/subjects/${op.subjectSlug}/review/${op.cardId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rating: op.rating, elapsedMs: op.elapsedMs }),
+        body: JSON.stringify({
+          rating: op.rating,
+          elapsedMs: op.elapsedMs,
+          ...(op.confidence ? { confidence: op.confidence } : {}),
+        }),
         // Survives leaving the page right after the last rating.
         keepalive: true,
       });

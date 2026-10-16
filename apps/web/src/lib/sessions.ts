@@ -11,6 +11,7 @@ import {
 } from '@studyhub/db';
 import { resolveSessionScope } from '@studyhub/core';
 import type {
+  SessionMood,
   StartSessionRequest,
   StudySessionDto,
   UpdateSessionRequest,
@@ -176,7 +177,11 @@ export async function endSession(
   db: AnyDb,
   subjectSlug: string,
   sessionId: string,
-  final: { activeMs?: number | undefined; pomodoros?: number | undefined } = {},
+  final: {
+    activeMs?: number | undefined;
+    pomodoros?: number | undefined;
+    mood?: SessionMood | undefined;
+  } = {},
   /** Where the chat transcript is written; without it no file is produced (tests, CLI). */
   options: { dataRoot?: string } = {},
 ): Promise<StudySessionDto> {
@@ -192,6 +197,7 @@ export async function endSession(
       endedAt: new Date(),
       activeMs: Math.max(row.activeMs, final.activeMs ?? 0),
       pomodoros: Math.max(row.pomodoros, final.pomodoros ?? 0),
+      ...(final.mood !== undefined ? { mood: final.mood } : {}),
     })
     .where(eq(studySessions.id, row.id))
     .returning();
@@ -216,6 +222,24 @@ export async function endSession(
     }
   }
   return toDto(db, ended, await loadTask(db, row.taskId));
+}
+
+/** Saves (or clears with `null`) how the session went; only once it is over, since the closing comes after "Termina". */
+export async function setSessionMood(
+  db: AnyDb,
+  subjectSlug: string,
+  sessionId: string,
+  mood: SessionMood | null,
+): Promise<StudySessionDto> {
+  const subject = await requireSubject(db, subjectSlug);
+  const row = await requireSession(db, subject.id, sessionId);
+  if (row.status !== 'ended') throw new ConflictError('Termina prima la sessione.');
+  const [updated] = await db
+    .update(studySessions)
+    .set({ mood })
+    .where(eq(studySessions.id, row.id))
+    .returning();
+  return toDto(db, updated, await loadTask(db, row.taskId));
 }
 
 async function toDto(db: AnyDb, row: StudySession, task: TaskRow | null): Promise<StudySessionDto> {
@@ -292,5 +316,6 @@ async function toDto(db: AnyDb, row: StudySession, task: TaskRow | null): Promis
     transcriptPath: row.transcriptPath,
     flashcardDeckId: row.flashcardDeckId,
     drillId: row.drillId,
+    mood: row.mood ?? null,
   };
 }

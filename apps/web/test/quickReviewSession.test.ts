@@ -194,6 +194,8 @@ describe('scope and limits', () => {
     const overview: ReviewOverviewDto = {
       totalDue: 1,
       totalCards: 1,
+      estimatedMinutes: 1,
+      avgMsPerCard: 20000,
       nextDueAt: null,
       subjects: [
         {
@@ -202,6 +204,7 @@ describe('scope and limits', () => {
           color: 'violet',
           nextExam: null,
           due: 1,
+          estimatedMinutes: 1,
           cardCount: 1,
           topics: [
             {

@@ -19,7 +19,7 @@ import {
 import { resolveSubjectSubpath, toIsoDate } from '@studyhub/core';
 import type { SessionDeckResult, SessionDrillResult } from '@studyhub/contracts';
 import { SubjectNotFoundError } from './errors';
-import { ConflictError, NotFoundError } from './examPrep';
+import { ConflictError, InvalidRequestError, NotFoundError } from './examPrep';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyDb = any;
@@ -72,6 +72,8 @@ export async function createKeyPointDeck(
   dataRoot: string,
   slug: string,
   sessionId: string,
+  /** Only these key points become cards; omitted = all of them. Ignored if the deck already exists. */
+  itemIds?: string[],
 ): Promise<SessionDeckResult> {
   const { subject, session } = await requireEndedSession(db, slug, sessionId);
 
@@ -94,7 +96,15 @@ export async function createKeyPointDeck(
     }
   }
 
-  const points = await loadItems(db, session.id, 'key_point');
+  let points = await loadItems(db, session.id, 'key_point');
+  if (itemIds && itemIds.length > 0) {
+    const wanted = new Set(itemIds);
+    const known = new Set(points.map((p) => p.id));
+    if ([...wanted].some((id) => !known.has(id))) {
+      throw new InvalidRequestError('Alcuni punti chiave non appartengono a questa sessione.');
+    }
+    points = points.filter((p) => wanted.has(p.id));
+  }
   if (points.length === 0) {
     throw new ConflictError('Questa sessione non ha punti chiave da trasformare in flashcard.');
   }

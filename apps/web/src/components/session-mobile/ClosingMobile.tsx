@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Check, ChevronDown, X } from 'lucide-react';
+import { ChevronDown, X } from 'lucide-react';
 import type { StudySessionDto } from '@studyhub/contracts';
 import { ObsidianMarkdown } from '@/components/ObsidianMarkdown';
 import { Markdown } from '@/components/SessionBriefing';
@@ -17,6 +17,7 @@ import {
   sessionTitle,
 } from '@/lib/sessionMobile';
 import { iconButton } from '../document-mobile/DocHeader';
+import { MoodPicker } from './MoodPicker';
 import { cardClass, primaryButton, secondaryButton } from '../simulation-mobile/styles';
 import { useTodayTasks } from '../subject-mobile/queries';
 import { SectionError, SkeletonRows } from '../subject-mobile/SectionState';
@@ -103,6 +104,24 @@ export function ClosingMobile({
   const next = pickNextTask(tasks.data ?? [], session.taskId);
   const loading = briefing.isLoading;
 
+  // Key points chosen for the deck: all by default; ids already unticked stay unticked when the briefing refetches.
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const toggleKeyPoint = (id: string) =>
+    setExcluded((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  const selectedIds = keyPointItems.filter((i) => !excluded.has(i.id)).map((i) => i.id);
+
+  // Move focus to the deck link when the deck appears because of the user's action, not on first render.
+  const deckLinkRef = useRef<HTMLAnchorElement>(null);
+  const hadDeck = useRef(Boolean(deckId));
+  useEffect(() => {
+    if (deckId && !hadDeck.current) deckLinkRef.current?.focus();
+    hadDeck.current = Boolean(deckId);
+  }, [deckId]);
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-bg-base">
       <div className="sticky top-0 z-10 shrink-0 border-b border-border bg-bg-surface pt-[env(safe-area-inset-top)]">
@@ -150,6 +169,14 @@ export function ClosingMobile({
           ) : null}
         </section>
 
+        <MoodPicker
+          slug={slug}
+          sessionId={sessionId}
+          session={session}
+          sessionKey={sessionKey}
+          labelClass={labelClass}
+        />
+
         {briefing.isError ? (
           <SectionError
             message={(briefing.error as Error).message}
@@ -158,6 +185,7 @@ export function ClosingMobile({
         ) : (
           <>
             <section
+              data-testid="closing-deck"
               aria-labelledby="closing-deck"
               aria-busy={loading || undefined}
               className={`${cardClass} flex flex-col gap-2 p-4`}
@@ -169,10 +197,11 @@ export function ClosingMobile({
                 <SkeletonRows count={2} />
               ) : deckId ? (
                 <>
-                  <p className="text-sm text-ok">
+                  <p role="status" className="text-sm text-ok">
                     Mazzo creato{deck.data ? ` · ${deck.data.cardCount} carte` : ''}.
                   </p>
                   <Link
+                    ref={deckLinkRef}
                     href={`/materie/${slug}/artifacts/${deckId}`}
                     className={`${secondaryButton} min-h-11`}
                   >
@@ -188,31 +217,44 @@ export function ClosingMobile({
                 </p>
               ) : (
                 <>
-                  <ul>
+                  <fieldset className="m-0 min-w-0 border-0 p-0" data-testid="keypoint-list">
+                    <legend className="sr-only">Punti chiave da trasformare in flashcard</legend>
                     {keyPointItems.map((item) => (
-                      <li
+                      <label
                         key={item.id}
-                        className="flex gap-2 border-t border-border py-2 text-[15px] first:border-t-0"
+                        data-testid="keypoint-row"
+                        className="flex min-h-[52px] cursor-pointer items-start gap-3 py-2.5 text-[15px] [&+&]:border-t [&+&]:border-border"
                       >
-                        <Check
-                          className="mt-1 h-4 w-4 shrink-0 text-fg-secondary"
-                          aria-hidden="true"
+                        <input
+                          type="checkbox"
+                          data-testid="keypoint-check"
+                          checked={!excluded.has(item.id)}
+                          disabled={deck.isPending}
+                          onChange={() => toggleKeyPoint(item.id)}
+                          className="mt-0.5 size-5 shrink-0 accent-[var(--accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                         />
-                        <span className="line-clamp-3 min-w-0 break-words">{item.title}</span>
-                      </li>
+                        <span className="min-w-0 break-words">{item.title}</span>
+                      </label>
                     ))}
-                  </ul>
-                  <p className="text-xs text-fg-secondary">
-                    {keyPoints} {keyPoints === 1 ? 'carta' : 'carte'}, ciascuna con la sua fonte.
-                    Gratis. Il mazzo resta in bozza finché non lo approvi.
+                  </fieldset>
+                  {selectedIds.length === 0 && (
+                    <p id="keypoint-empty" className="text-xs text-warn">
+                      Seleziona almeno un punto chiave.
+                    </p>
+                  )}
+                  <p data-testid="keypoint-hint" className="text-xs text-fg-secondary">
+                    {selectedIds.length} {selectedIds.length === 1 ? 'carta' : 'carte'}, ciascuna
+                    con la sua fonte. Gratis. Il mazzo resta in bozza finché non lo approvi.
                   </p>
                   <button
                     type="button"
-                    disabled={deck.isPending}
-                    onClick={() => deck.mutate()}
+                    data-testid="create-deck"
+                    disabled={selectedIds.length === 0 || deck.isPending}
+                    aria-describedby={selectedIds.length === 0 ? 'keypoint-empty' : undefined}
+                    onClick={() => deck.mutate(selectedIds)}
                     className={`${primaryButton} mt-1 min-h-12`}
                   >
-                    {deck.isPending ? 'Creo il mazzo…' : `Crea ${keyPoints} flashcard`}
+                    {deck.isPending ? 'Creo il mazzo…' : `Crea ${selectedIds.length} flashcard`}
                   </button>
                 </>
               )}

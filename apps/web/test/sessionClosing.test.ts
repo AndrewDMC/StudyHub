@@ -22,7 +22,7 @@ import {
 import { createSubject } from '../src/lib/subjects';
 import { endSession, startSession } from '../src/lib/sessions';
 import { createDrillFromWrongExercises, createKeyPointDeck } from '../src/lib/sessionClosing';
-import { ConflictError, startOrResumeAttempt } from '../src/lib/examPrep';
+import { ConflictError, InvalidRequestError, startOrResumeAttempt } from '../src/lib/examPrep';
 
 describe('session closing (flashcards from key points, drill from wrong exercises)', () => {
   let dataRoot: string;
@@ -97,6 +97,43 @@ describe('session closing (flashcards from key points, drill from wrong exercise
   });
 
   describe('createKeyPointDeck', () => {
+    it('builds the deck only from the selected key points', async () => {
+      await addItem('key_point', 0, 'Fubini');
+      await addItem('key_point', 1, 'Tonelli');
+      await addItem('key_point', 2, 'Lebesgue');
+      await endSession(db, slug, sessionId);
+      const rows = await db
+        .select()
+        .from(sessionItems)
+        .where(eq(sessionItems.sessionId, sessionId));
+      const pick = rows.filter((r) => r.title !== 'Tonelli').map((r) => r.id);
+
+      const deck = await createKeyPointDeck(db, dataRoot, slug, sessionId, pick);
+      expect(deck.created).toBe(true);
+      expect(deck.cardCount).toBe(2);
+      const cards = await db.select().from(flashcards).where(eq(flashcards.deckId, deck.deckId));
+      expect(cards.map((c) => c.front).sort()).toEqual(['Fubini', 'Lebesgue']);
+    });
+
+    it('rejects ids that are foreign to the session or not key points', async () => {
+      await addItem('key_point', 0, 'Fubini');
+      await addItem('exercise', 1, 'Esercizio');
+      await endSession(db, slug, sessionId);
+      const rows = await db
+        .select()
+        .from(sessionItems)
+        .where(eq(sessionItems.sessionId, sessionId));
+      const exercise = rows.find((r) => r.kind === 'exercise')!;
+      const keyPoint = rows.find((r) => r.kind === 'key_point')!;
+
+      await expect(
+        createKeyPointDeck(db, dataRoot, slug, sessionId, [randomUUID()]),
+      ).rejects.toBeInstanceOf(InvalidRequestError);
+      await expect(
+        createKeyPointDeck(db, dataRoot, slug, sessionId, [keyPoint.id, exercise.id]),
+      ).rejects.toBeInstanceOf(InvalidRequestError);
+    });
+
     it('refuses while the session is still running', async () => {
       await addItem('key_point', 0, 'Fubini');
       await expect(createKeyPointDeck(db, dataRoot, slug, sessionId)).rejects.toThrow(

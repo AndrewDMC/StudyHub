@@ -71,6 +71,14 @@ export class ConflictError extends Error {
   }
 }
 
+/** A well-formed request whose content is wrong for this resource (e.g. ids that don't belong to it): 400. */
+export class InvalidRequestError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidRequestError';
+  }
+}
+
 /** A rejected photo upload: 400 for a bad file, 413 for an oversized one. */
 export class AttemptPhotoError extends Error {
   readonly status: 400 | 413;

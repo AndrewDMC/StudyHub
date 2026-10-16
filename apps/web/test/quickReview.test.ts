@@ -217,6 +217,51 @@ describe('Ripasso rapido backend (docs/09-ripasso-mobile.md §B)', () => {
       ).toHaveLength(1);
     });
 
+    describe('estimated minutes', () => {
+      async function addReviews(cardId: string, count: number, elapsedMs: number) {
+        for (let i = 0; i < count; i += 1) {
+          await db.insert(reviews).values({
+            id: randomUUID(),
+            flashcardId: cardId,
+            rating: 3,
+            elapsedMs,
+            reviewedAt: new Date(NOW.getTime() - (i + 1) * 1000),
+            newStability: 3,
+          });
+        }
+      }
+      const later = new Date('2026-10-20T08:00:00.000Z');
+
+      it('uses 20 s per card without enough history', async () => {
+        for (let i = 0; i < 6; i += 1) await seedCard(db, deckA);
+        const cardId = await seedCard(db, deckB, reviewed(NOW, later));
+        await addReviews(cardId, 9, 1000); // one short of the threshold
+        const overview = await getReviewOverview(db, NOW);
+        expect(overview.avgMsPerCard).toBe(20_000);
+        expect(overview.totalDue).toBe(6);
+        expect(overview.estimatedMinutes).toBe(2); // 120 s
+        expect(overview.subjects[0]!.estimatedMinutes).toBe(2);
+        expect(overview.subjects[1]!.estimatedMinutes).toBe(0);
+      });
+
+      it('follows the real average, ignoring outliers and clamping', async () => {
+        for (let i = 0; i < 12; i += 1) await seedCard(db, deckA);
+        const cardId = await seedCard(db, deckB, reviewed(NOW, later));
+        await addReviews(cardId, 10, 30_000);
+        await addReviews(cardId, 3, 20 * 60_000); // forgotten tab: excluded
+        const overview = await getReviewOverview(db, NOW);
+        expect(overview.avgMsPerCard).toBe(30_000);
+        expect(overview.estimatedMinutes).toBe(6); // 12 * 30 s
+        expect(overview.subjects[0]!.estimatedMinutes).toBe(6);
+
+        await db.delete(reviews);
+        await addReviews(cardId, 10, 200); // too fast: clamped to 3 s
+        const fast = await getReviewOverview(db, NOW);
+        expect(fast.avgMsPerCard).toBe(3_000);
+        expect(fast.estimatedMinutes).toBe(1);
+      });
+    });
+
     it('drives the Dashboard count too, so flagged cards are no longer counted there', async () => {
       await seedCard(db, deckA);
       await seedCard(db, deckA, { flaggedAt: new Date() });

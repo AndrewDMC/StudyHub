@@ -243,6 +243,8 @@ export const ReviewOverviewSubjectDtoSchema = z.object({
   color: SubjectColorSchema,
   nextExam: z.object({ title: z.string(), date: z.string().datetime() }).nullable(),
   due: z.number().int().nonnegative(),
+  /** Minuti stimati per ripassare le `due` card ("~ N min"), dai tempi reali dell'utente. */
+  estimatedMinutes: z.number().int().nonnegative().default(0),
   cardCount: z.number().int().nonnegative(),
   topics: z.array(ReviewOverviewTopicDtoSchema),
 });
@@ -251,6 +253,10 @@ export type ReviewOverviewSubjectDto = z.infer<typeof ReviewOverviewSubjectDtoSc
 export const ReviewOverviewDtoSchema = z.object({
   totalDue: z.number().int().nonnegative(),
   totalCards: z.number().int().nonnegative(),
+  /** Minuti stimati per ripassare tutte le `totalDue` card. */
+  estimatedMinutes: z.number().int().nonnegative().default(0),
+  /** Tempo medio per card (ms) usato per la stima: dallo storico, o il default se è troppo corto. */
+  avgMsPerCard: z.number().int().positive().default(20000),
   /** Earliest future due date among cards not due today, for the "niente da ripassare" state. */
   nextDueAt: z.string().datetime().nullable(),
   subjects: z.array(ReviewOverviewSubjectDtoSchema),

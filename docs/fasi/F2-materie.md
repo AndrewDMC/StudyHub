@@ -431,8 +431,8 @@ desktop non cambi), unit [`flashcardMobile.test.ts`](../../apps/web/test/flashca
 Non ancora:
 
 - stima "~14 min" nella lista (la scadenza per riga è fatta in slice A, vedi sotto);
-- confidenza pre-risposta nel ripasso (omessa, come in [`docs/09-ripasso-mobile.md`](../09-ripasso-mobile.md));
-- il passo "Quanto sei sicuro?" del design, omesso per la stessa ragione;
+- confidenza pre-risposta nel ripasso (chiusa in slice B, vedi sotto);
+- il passo "Quanto sei sicuro?" del design (chiuso in slice B);
 - slice 4-6 (Simulazioni/Esame, Lacune/Piano, Sessione).
 
 ## Aggiornamento — vista mobile di Simulazioni, slice 4 (2026-10-15)
@@ -534,7 +534,7 @@ Logica pura in [`sessionMobile.ts`](../../apps/web/src/lib/sessionMobile.ts), fe
 
 Non ancora (mobile):
 
-- mood "Com'è andata?", selezione per-item delle flashcard, modalità Libero / Salta e durate del timer, viewer del
+- mood "Com'è andata?" e selezione per-item delle flashcard (chiusi in slice B), modalità Libero / Salta e durate del timer, viewer del
   documento dentro la sessione. Selettore del modello della chat e trascrizione nella chiusura: fatti in slice A.
 
 ## Aggiornamento — residui mobile, slice A (2026-10-16)
@@ -580,8 +580,8 @@ Non ancora:
 - foto del foglio, verdetto "Sufficiente" e conteggi ×N degli argomenti: fatti in slice E (vedi sotto);
 - modalità Pomodoro / Libero della sessione e suggerimento AI del tipo di documento su mobile: fatti in slice E (vedi sotto);
 - "Cerca" nell'header del Piano: omesso, non è nel design;
-- non richiesti: "Chiedi" ed "Esercizi" nello sheet Azioni; mood e selezione per-item nella Chiusura; confidenza e stima
-  minuti nel ripasso; modifica del ritmo del piano attivo da mobile.
+- non richiesti: "Chiedi" ed "Esercizi" nello sheet Azioni; modifica del ritmo del piano attivo da mobile.
+  Mood, selezione per-item, confidenza e stima minuti: chiusi in slice B.
 
 ## Aggiornamento — residui mobile, slice E (2026-10-16)
 
@@ -607,3 +607,28 @@ Non ancora:
 - il costo OCR di una run di correzione fallita non entra nel budget della run riuscita;
 - per rifare l'OCR di una foto con trascrizione fallita bisogna toglierla e ricaricarla;
 - le foto sono solo nell'esame mobile; HEIC non è accettato dal server (solo dove il browser lo converte in JPEG/PNG).
+
+## Aggiornamento — residui mobile, slice B (2026-10-16)
+
+Chiude i residui delle slice 3 e 6 su mood, flashcard dai punti chiave, stima e confidenza. Piano e spec in
+`.claude/work/materia-mobile-residui-b/` (non versionati).
+
+- **Chiusura, "Com'è andata?"** ([`MoodPicker.tsx`](../../apps/web/src/components/session-mobile/MoodPicker.tsx)):
+  Faticosa / Così così / Bene, salvataggio immediato; un secondo tap deseleziona. Colonna `study_sessions.mood`
+  (`'hard' | 'ok' | 'good'`, nullable, migrazione [`0025_session_mood.sql`](../../packages/db/drizzle/0025_session_mood.sql)),
+  `EndSessionRequest.mood?` in [`session.ts`](../../packages/contracts/src/session.ts). Route
+  `PATCH /api/subjects/[slug]/sessions/[sessionId]/mood`: 409 su sessione attiva, 404, 400.
+- **Chiusura, flashcard dai punti chiave** ([`ClosingMobile.tsx`](../../apps/web/src/components/session-mobile/ClosingMobile.tsx)):
+  checkbox per punto, tutte selezionate di default, bottone "Crea N flashcard". `POST .../sessions/[sessionId]/flashcards`
+  accetta `{ itemIds }` (1..200; id estranei → 400). Senza body il comportamento è quello di prima (usato dal desktop).
+  Se il mazzo esiste già non vengono aggiunte card.
+- **Ripasso, "~ N min"** ([`ReviewHeroCard.tsx`](../../apps/web/src/components/flashcard-mobile/ReviewHeroCard.tsx)):
+  stima dalla media dei tempi di ripasso, in [`reviewEstimate.ts`](../../packages/core/src/reviewEstimate.ts). Dettagli in
+  [docs/09](../09-ripasso-mobile.md) §"Residui mobile, slice B".
+- **Ripasso, "Quanto sei sicuro?"** ([`QuickReviewSession.tsx`](../../apps/web/src/components/quick-review/QuickReviewSession.tsx)):
+  Non lo so / Forse / Lo so, inviata nel grade. Vale anche su desktop, dove `/ripasso` è lo stesso componente.
+
+Non ancora:
+
+- il per-item vale solo per la Chiusura mobile; il desktop continua a creare le flashcard di tutti i punti chiave;
+- con meno di 10 review con tempo registrato la stima usa il default di 20 s per card.
