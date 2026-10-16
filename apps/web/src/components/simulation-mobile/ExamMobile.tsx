@@ -33,8 +33,17 @@ export function ExamMobile({
   exam: ExamAttemptState;
 }) {
   const router = useRouter();
-  const { attempt, answers, remaining, saveState, error, submitError, isSubmitting, expired } =
-    exam;
+  const {
+    attempt,
+    answers,
+    remaining,
+    saveState,
+    lastSavedAt,
+    error,
+    submitError,
+    isSubmitting,
+    expired,
+  } = exam;
   const [index, setIndex] = useState(0);
   const [exitOpen, setExitOpen] = useState(false);
   const [submitOpen, setSubmitOpen] = useState(false);
@@ -142,7 +151,9 @@ export function ExamMobile({
     saveState === 'saving'
       ? 'Salvataggio…'
       : saveState === 'saved'
-        ? 'Salvato'
+        ? lastSavedAt
+          ? `Salvato · ${new Date(lastSavedAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`
+          : 'Salvato'
         : saveFailed
           ? (error ?? 'Salvataggio fallito')
           : 'Le risposte si salvano da sole';

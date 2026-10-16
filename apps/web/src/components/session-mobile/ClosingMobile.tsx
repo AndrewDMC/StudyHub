@@ -1,10 +1,13 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Check, X } from 'lucide-react';
+import { Check, ChevronDown, X } from 'lucide-react';
 import type { StudySessionDto } from '@studyhub/contracts';
+import { ObsidianMarkdown } from '@/components/ObsidianMarkdown';
 import { Markdown } from '@/components/SessionBriefing';
+import { fetchTranscript } from '@/components/SessionChat';
 import { useSessionClosing } from '@/components/SessionClosing';
 import { StartTaskButton } from '@/components/StartTaskButton';
 import {
@@ -17,6 +20,60 @@ import { iconButton } from '../document-mobile/DocHeader';
 import { cardClass, primaryButton, secondaryButton } from '../simulation-mobile/styles';
 import { useTodayTasks } from '../subject-mobile/queries';
 import { SectionError, SkeletonRows } from '../subject-mobile/SectionState';
+
+/** Saved chat transcript, closed by default; omitted when the session had no questions. */
+function TranscriptDisclosure({ slug, sessionId }: { slug: string; sessionId: string }) {
+  const [open, setOpen] = useState(false);
+  const panelId = useId();
+  const transcript = useQuery({
+    queryKey: ['sessionTranscript', slug, sessionId],
+    queryFn: () => fetchTranscript(slug, sessionId),
+  });
+  if (transcript.isError) {
+    return (
+      <div role="alert" className="flex flex-col gap-2 text-sm text-danger">
+        Impossibile caricare la trascrizione
+        <button
+          type="button"
+          onClick={() => void transcript.refetch()}
+          className={`${secondaryButton} min-h-11`}
+        >
+          Riprova
+        </button>
+      </div>
+    );
+  }
+  if (!transcript.data) return null;
+  return (
+    <section>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={() => setOpen((v) => !v)}
+        className="flex min-h-11 w-full items-center justify-between gap-3 rounded-[var(--radius-card)] border border-border bg-bg-surface px-4 text-left text-sm font-medium text-fg-primary"
+      >
+        Trascrizione della chat
+        <ChevronDown
+          className={`size-4 shrink-0 text-fg-muted transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}
+          aria-hidden="true"
+        />
+      </button>
+      <div id={panelId} hidden={!open} className="mt-3 min-w-0">
+        {open && (
+          <>
+            <p className="mb-2 text-xs text-fg-muted">
+              Sessione terminata: questa è la trascrizione salvata, non più interattiva.
+            </p>
+            <div className="min-w-0 break-words text-sm leading-relaxed [&_.katex-display]:overflow-x-auto [&_pre]:overflow-x-auto [&_table]:block [&_table]:overflow-x-auto">
+              <ObsidianMarkdown source={transcript.data} subjectSlug={slug} />
+            </div>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
 
 const labelClass = 'text-xs font-semibold uppercase tracking-[0.06em] text-fg-secondary';
 
@@ -236,6 +293,7 @@ export function ClosingMobile({
             </section>
           </>
         )}
+        <TranscriptDisclosure slug={slug} sessionId={sessionId} />
       </div>
 
       <div className="grid shrink-0 grid-cols-2 gap-2 border-t border-border bg-bg-surface px-4 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3">

@@ -119,6 +119,8 @@ export const FlashcardDtoSchema = z.object({
   suspended: z.boolean(),
   tags: z.array(z.string()),
   flaggedAt: z.string().datetime().nullable(),
+  /** Next review due date; null when the card is new (never reviewed) or suspended. */
+  dueAt: z.string().datetime().nullable().default(null),
   createdAt: z.string().datetime(),
 });
 export type FlashcardDto = z.infer<typeof FlashcardDtoSchema>;

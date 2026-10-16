@@ -118,7 +118,11 @@ export function VerifyItemCard({
 
   return (
     <article
-      className="rounded-[var(--radius-card)] border bg-bg-surface p-3.5"
+      id={`verify-item-${item.id}`}
+      data-testid="verify-item"
+      tabIndex={-1}
+      data-state={item.state}
+      className="scroll-mt-24 rounded-[var(--radius-card)] border outline-none focus-visible:ring-2 focus-visible:ring-accent bg-bg-surface p-3.5"
       style={{
         borderColor: flagged ? `color-mix(in srgb, ${tone} 40%, var(--border))` : 'var(--border)',
       }}
@@ -143,7 +147,7 @@ export function VerifyItemCard({
         onBlur={() => {
           if (text !== item.text && text.trim() !== '') run.mutate(() => onSetText(text));
         }}
-        className="w-full min-w-0 rounded-[var(--radius-control)] border border-border bg-bg-inset p-2.5 text-[15px] text-fg-primary outline-none focus:border-accent"
+        className="w-full min-w-0 rounded-[var(--radius-control)] border border-border bg-bg-inset p-2.5 text-base text-fg-primary outline-none focus:border-accent"
       />
 
       {onSetKind && item.kind && (

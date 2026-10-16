@@ -10,6 +10,7 @@ import { SUBJECT_COLOR_HEX } from '@/lib/subjectColors';
 import { secondaryButton } from '../simulation-mobile/styles';
 import { SectionError, SkeletonRows } from '../subject-mobile/SectionState';
 import { todayIso } from '../subject-mobile/queries';
+import { AssistantHost } from '../subject-mobile/AssistantHost';
 import { DayStrip } from './DayStrip';
 import { DayTasks } from './DayTasks';
 import { DeletePlanSheet } from './DeletePlanSheet';
@@ -35,6 +36,8 @@ export function PlanMobile({ slug }: { slug: string }) {
   const [awaiting, setAwaiting] = useState<{ prevDraftId: string | null } | null>(null);
   const [timedOut, setTimedOut] = useState(false);
   const triggerRef = useRef<HTMLElement | null>(null);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const actionsButtonRef = useRef<HTMLButtonElement>(null);
 
   const q = usePlanQueries(slug, { awaitingDraft: awaiting !== null, selectedId });
   const mutations = usePlanMutations(slug);
@@ -124,7 +127,12 @@ export function PlanMobile({ slug }: { slug: string }) {
 
   return (
     <div className="flex min-h-full min-w-0 flex-col overflow-x-clip">
-      <PlanHeader slug={slug} subject={subject} />
+      <PlanHeader
+        slug={slug}
+        subject={subject}
+        onOpenActions={() => setActionsOpen(true)}
+        actionsButtonRef={actionsButtonRef}
+      />
       <div className="flex min-w-0 flex-col gap-5 p-4">
         {awaiting && (
           <p
@@ -342,6 +350,15 @@ export function PlanMobile({ slug }: { slug: string }) {
           })
         }
       />
+      {subject && (
+        <AssistantHost
+          slug={slug}
+          subject={subject}
+          open={actionsOpen}
+          onOpenChange={setActionsOpen}
+          returnFocusRef={actionsButtonRef}
+        />
+      )}
     </div>
   );
 }

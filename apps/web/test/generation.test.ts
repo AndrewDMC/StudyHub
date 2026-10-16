@@ -288,6 +288,20 @@ describe('artifacts + review queue', () => {
     expect(cards[0]?.front).toBe('Domanda?');
   });
 
+  it('listDeckFlashcards exposes dueAt: null when new or suspended, the due date once reviewed', async () => {
+    const due = new Date('2026-05-01T08:00:00Z');
+    expect((await listDeckFlashcards(db, subjectSlug, deckId))[0]?.dueAt).toBeNull();
+
+    await db
+      .update(flashcards)
+      .set({ state: 'review', dueAt: due })
+      .where(eq(flashcards.id, cardId));
+    expect((await listDeckFlashcards(db, subjectSlug, deckId))[0]?.dueAt).toBe(due.toISOString());
+
+    await db.update(flashcards).set({ suspended: true }).where(eq(flashcards.id, cardId));
+    expect((await listDeckFlashcards(db, subjectSlug, deckId))[0]?.dueAt).toBeNull();
+  });
+
   it('exportDeckCsv writes a header + one row per card, importable filename from the deck title', async () => {
     const { filename, csv } = await exportDeckCsv(db, subjectSlug, deckId);
     expect(filename).toBe('deck-di-prova.csv');

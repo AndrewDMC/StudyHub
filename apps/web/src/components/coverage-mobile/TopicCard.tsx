@@ -26,10 +26,13 @@ const pill = 'rounded-full border px-2.5 py-1 text-xs font-medium';
 export function TopicCard({
   slug,
   topic,
+  due,
   onOpenSheet,
 }: {
   slug: string;
   topic: CoverageTopicDto;
+  /** Cards due today in this topic; `undefined`/`null` while unknown. */
+  due?: number | null | undefined;
   onOpenSheet: (kind: SheetKind, topicId: string, trigger: HTMLElement) => void;
 }) {
   const titleId = useId();
@@ -87,13 +90,17 @@ export function TopicCard({
       {topic.message && (
         <p className="mt-3 break-words text-[13px] text-fg-secondary">{topic.message}</p>
       )}
-      {action && (
+      {action === 'review' && due === 0 && (
+        <p className="mt-3 text-[13px] text-fg-muted">Niente da ripassare oggi.</p>
+      )}
+      {action && !(action === 'review' && due === 0) && (
         <div className="mt-3">
           <TopicAction
             slug={slug}
             topic={topic}
             kind={action}
             variant="secondary"
+            due={due}
             onOpenSheet={onOpenSheet}
           />
         </div>

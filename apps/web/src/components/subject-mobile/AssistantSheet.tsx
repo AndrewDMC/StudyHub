@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Archive, ArchiveRestore, Check, Layers, ListTree, Pencil, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, Check, Layers, ListTree, Pencil, Trash2, X } from 'lucide-react';
 import type { DocumentDto, SubjectDto, TopicDto } from '@studyhub/contracts';
 import { useSelection } from '@/lib/selection';
 import { MODEL_OPTIONS } from '../ModelPicker';
 import { enqueue, fetchEstimate, formatCost, scopeKey, type ScopeInput } from '../GenerationPanel';
 import { useSubjectActions } from '../SubjectActions';
 import { BottomSheet } from './BottomSheet';
+import { SectionError, SkeletonRows } from './SectionState';
 
 type GenKind = 'flashcards' | 'summary' | 'schema';
 
@@ -36,6 +37,7 @@ export function AssistantSheet({
   onPickMaterial,
   onEdit,
   returnFocusRef,
+  loadState,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -49,11 +51,13 @@ export function AssistantSheet({
   onEdit: () => void;
   /** Element that opened the sheet: gets the focus back on close. */
   returnFocusRef: RefObject<HTMLElement | null>;
+  /** Documents still loading or failed (only the Piano host loads them lazily): replaces the generation part. */
+  loadState?: { loading: boolean; error: string | null; onRetry: () => void } | undefined;
 }) {
   const [kind, setKind] = useState<GenKind>('flashcards');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [model] = useState<string>(MODEL_OPTIONS[1].id); // same default routing as GenerationPanel
-  const { docIds, topicIds } = useSelection();
+  const { docIds, topicIds, toggleTopic, setDocIds } = useSelection();
   const queryClient = useQueryClient();
   const { isArchived, archiveMutation, deleteMutation } = useSubjectActions(subject);
   const tileRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -101,7 +105,6 @@ export function AssistantSheet({
     tileRefs.current[next]?.focus();
   };
 
-  const selectedTopics = topics.filter((t) => topicIds.has(t.id));
   const actionError = (archiveMutation.error ?? deleteMutation.error) as Error | null;
 
   return (
@@ -144,101 +147,149 @@ export function AssistantSheet({
         </div>
       ) : (
         <>
-          <div
-            role="group"
-            aria-label="Materiale selezionato"
-            className="mt-3 flex flex-wrap gap-2"
-          >
-            {selectedTopics.map((t) => (
-              <span
-                key={t.id}
-                className="flex min-h-9 items-center rounded-full border border-accent bg-accent-subtle px-3 text-[13px]"
+          {loadState?.loading ? (
+            <div role="status" aria-busy="true" className="mt-3">
+              <span className="sr-only">Carico i documenti…</span>
+              <SkeletonRows count={3} />
+            </div>
+          ) : loadState?.error ? (
+            <div className="mt-3">
+              <SectionError message={loadState.error} onRetry={loadState.onRetry} />
+            </div>
+          ) : (
+            <>
+              <div
+                role="group"
+                aria-label="Materiale selezionato"
+                className="mt-3 flex flex-wrap gap-x-2 gap-y-0"
               >
-                {t.name}
-              </span>
-            ))}
-            {docIds.size > 0 && (
-              <span className="flex min-h-9 items-center rounded-full border border-accent bg-accent-subtle px-3 text-[13px]">
-                {docIds.size} {docIds.size === 1 ? 'documento' : 'documenti'}
-              </span>
-            )}
-            {docIds.size === 0 && selectedTopics.length === 0 && (
-              <span className="flex min-h-9 items-center rounded-full border border-border px-3 text-[13px] text-fg-secondary">
-                Tutti i documenti pronti ({parsedDocIds.length})
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={onPickMaterial}
-              className="flex min-h-11 items-center rounded-full border border-dashed border-border-strong px-3 text-[13px] text-fg-secondary"
-            >
-              + Scegli
-            </button>
-          </div>
-
-          <div role="radiogroup" aria-label="Cosa generare" className="mt-4 grid grid-cols-3 gap-2">
-            {GEN_TILES.map((tile, i) => {
-              const selected = tile.kind === kind;
-              return (
+                {topics.map((t) => {
+                  const selected = topicIds.has(t.id);
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => toggleTopic(t.id)}
+                      className="flex min-h-11 items-center"
+                    >
+                      <span
+                        className={`flex min-h-9 items-center gap-1 rounded-full border px-3 text-[13px] ${
+                          selected
+                            ? 'border-accent bg-accent-subtle text-fg-primary'
+                            : 'border-border text-fg-secondary'
+                        }`}
+                      >
+                        {selected && (
+                          <Check className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
+                        )}
+                        {t.name}
+                      </span>
+                    </button>
+                  );
+                })}
+                {explicitDocIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setDocIds(new Set())}
+                    aria-label={`${explicitDocIds.length} ${explicitDocIds.length === 1 ? 'documento selezionato' : 'documenti selezionati'}: tocca per toglierli`}
+                    className="flex min-h-11 items-center"
+                  >
+                    <span className="flex min-h-9 items-center gap-1 rounded-full border border-accent bg-accent-subtle px-3 text-[13px]">
+                      {explicitDocIds.length}{' '}
+                      {explicitDocIds.length === 1 ? 'documento' : 'documenti'}
+                      <X className="h-3.5 w-3.5" aria-hidden="true" />
+                    </span>
+                  </button>
+                )}
+                {explicitDocIds.length === 0 && topicIds.size === 0 && (
+                  <span className="flex min-h-9 items-center self-center rounded-full border border-border px-3 text-[13px] text-fg-secondary">
+                    Tutti i documenti pronti ({parsedDocIds.length})
+                  </span>
+                )}
                 <button
-                  key={tile.kind}
-                  ref={(el) => {
-                    tileRefs.current[i] = el;
-                  }}
                   type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  tabIndex={selected ? 0 : -1}
-                  onClick={() => setKind(tile.kind)}
-                  onKeyDown={(e) => onTileKeyDown(e, i)}
-                  className={`relative flex min-h-[72px] flex-col items-center justify-center gap-1 rounded-[var(--radius-card)] border text-[13px] ${
-                    selected
-                      ? 'border-accent bg-accent-subtle text-fg-primary'
-                      : 'border-border bg-bg-raised text-fg-secondary'
-                  }`}
+                  onClick={onPickMaterial}
+                  className="flex min-h-11 items-center rounded-full border border-dashed border-border-strong px-3 text-[13px] text-fg-secondary"
                 >
-                  <tile.Icon
-                    className={`h-5 w-5 ${selected ? 'text-accent' : ''}`}
-                    aria-hidden="true"
-                  />
-                  {tile.label}
-                  {selected && (
-                    <Check
-                      className="absolute right-1.5 top-1.5 h-3.5 w-3.5 text-accent"
-                      aria-hidden="true"
-                    />
-                  )}
+                  + Scegli
                 </button>
-              );
-            })}
-          </div>
+              </div>
+              {explicitDocIds.length > 0 && topicIds.size > 0 && (
+                <p className="mt-1 text-xs text-fg-muted">
+                  Hai scelto dei documenti: gli argomenti selezionati non vengono usati.
+                </p>
+              )}
 
-          <p className="mt-3 text-[13px] text-fg-secondary">
-            {scopeEmpty
-              ? 'Nessun documento con testo estratto. Carica un PDF e attendi lo stato "Pronto".'
-              : estimate.isLoading
-                ? 'Stima in corso…'
-                : estimate.isError || !costEntry
-                  ? 'Stima costo non disponibile.'
-                  : `Costo stimato: ${formatCost(costEntry.costEur)}`}
-          </p>
-          <button
-            type="button"
-            disabled={scopeEmpty || generate.isPending}
-            onClick={() => generate.mutate()}
-            className="mt-2 min-h-11 w-full rounded-[var(--radius-control)] bg-accent text-sm font-semibold text-bg-base disabled:opacity-50"
-          >
-            {generate.isPending ? 'Avvio…' : `Genera ${activeTile.verb}`}
-          </button>
-          {generate.isError && (
-            <p role="alert" className="mt-2 text-xs text-danger">
-              {(generate.error as Error).message}
-            </p>
-          )}
-          {generate.isSuccess && (
-            <p role="status" className="mt-2 text-[13px] text-ok">
-              Job avviato — l&apos;elenco si aggiorna a breve.
-            </p>
+              <div
+                role="radiogroup"
+                aria-label="Cosa generare"
+                className="mt-4 grid grid-cols-3 gap-2"
+              >
+                {GEN_TILES.map((tile, i) => {
+                  const selected = tile.kind === kind;
+                  return (
+                    <button
+                      key={tile.kind}
+                      ref={(el) => {
+                        tileRefs.current[i] = el;
+                      }}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      tabIndex={selected ? 0 : -1}
+                      onClick={() => setKind(tile.kind)}
+                      onKeyDown={(e) => onTileKeyDown(e, i)}
+                      className={`relative flex min-h-[72px] flex-col items-center justify-center gap-1 rounded-[var(--radius-card)] border text-[13px] ${
+                        selected
+                          ? 'border-accent bg-accent-subtle text-fg-primary'
+                          : 'border-border bg-bg-raised text-fg-secondary'
+                      }`}
+                    >
+                      <tile.Icon
+                        className={`h-5 w-5 ${selected ? 'text-accent' : ''}`}
+                        aria-hidden="true"
+                      />
+                      {tile.label}
+                      {selected && (
+                        <Check
+                          className="absolute right-1.5 top-1.5 h-3.5 w-3.5 text-accent"
+                          aria-hidden="true"
+                        />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <p className="mt-3 text-[13px] text-fg-secondary">
+                {scopeEmpty
+                  ? 'Nessun documento con testo estratto. Carica un PDF e attendi lo stato "Pronto".'
+                  : estimate.isLoading
+                    ? 'Stima in corso…'
+                    : estimate.isError || !costEntry
+                      ? 'Stima costo non disponibile.'
+                      : `Costo stimato: ${formatCost(costEntry.costEur)}`}
+              </p>
+              <button
+                type="button"
+                disabled={scopeEmpty || generate.isPending}
+                onClick={() => generate.mutate()}
+                className="mt-2 min-h-11 w-full rounded-[var(--radius-control)] bg-accent text-sm font-semibold text-bg-base disabled:opacity-50"
+              >
+                {generate.isPending ? 'Avvio…' : `Genera ${activeTile.verb}`}
+              </button>
+              {generate.isError && (
+                <p role="alert" className="mt-2 text-xs text-danger">
+                  {(generate.error as Error).message}
+                </p>
+              )}
+              {generate.isSuccess && (
+                <p role="status" className="mt-2 text-[13px] text-ok">
+                  Job avviato — l&apos;elenco si aggiorna a breve.
+                </p>
+              )}
+            </>
           )}
 
           <h3 className="mb-1 mt-5 text-xs font-medium uppercase tracking-[0.06em] text-fg-muted">

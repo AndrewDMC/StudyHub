@@ -41,6 +41,7 @@ function card(id: string, over: Partial<ReviewQueueItemDto> = {}): ReviewQueueIt
     suspended: false,
     tags: [],
     flaggedAt: null,
+    dueAt: null,
     createdAt: new Date(NOW).toISOString(),
     subjectSlug: 'bd',
     subjectName: 'Basi di Dati',

@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { ArrowRight, X } from 'lucide-react';
 import type { SessionCitationDto, SessionFocus, StudySessionDto } from '@studyhub/contracts';
 import { AnswerMarkdown, formatEur, useSessionChat } from '@/components/SessionChat';
+import { MODEL_OPTIONS } from '../ModelPicker';
 import { fieldClass } from '../simulation-mobile/styles';
 import { SectionError, SkeletonRows } from '../subject-mobile/SectionState';
 import type { SourceRef } from './SourceSheet';
@@ -27,8 +28,19 @@ export function ChatMobile({
   /** The panel stays mounted while hidden, so a streaming answer and the typed text survive a tab switch. */
   visible: boolean;
 }) {
-  const { chat, messages, input, setInput, sending, pendingUser, streamed, error, send } =
-    useSessionChat(slug, sessionId, { focus, onClearFocus });
+  const {
+    chat,
+    messages,
+    input,
+    setInput,
+    model,
+    setModel,
+    sending,
+    pendingUser,
+    streamed,
+    error,
+    send,
+  } = useSessionChat(slug, sessionId, { focus, onClearFocus });
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const documentNames = new Map(session.documents.map((d) => [d.id, d.name]));
@@ -207,6 +219,24 @@ export function ChatMobile({
           >
             <ArrowRight className="h-[18px] w-[18px]" aria-hidden="true" />
           </button>
+        </div>
+        <div className="flex items-center gap-2">
+          <label htmlFor="chat-model" className="shrink-0 text-xs text-fg-secondary">
+            Modello
+          </label>
+          <select
+            id="chat-model"
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            disabled={sending}
+            className={`${fieldClass} min-w-0 flex-1 py-0 disabled:opacity-60`}
+          >
+            {MODEL_OPTIONS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+          </select>
         </div>
       </form>
     </div>

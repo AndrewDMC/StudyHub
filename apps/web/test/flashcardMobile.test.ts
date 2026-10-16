@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   deckCardsLabel,
   draftDecksLabel,
+  formatCardDue,
   forecastPeak,
   plainCardText,
   retentionMessage,
@@ -69,5 +70,31 @@ describe('flashcardMobile', () => {
     expect(cardSourceHref({ subjectSlug: 'mat', sourceRef: { docId: 'd', page: 3 } })).toBe(
       '/api/subjects/mat/documents/d/file#page=3',
     );
+  });
+});
+
+describe('formatCardDue', () => {
+  // Same day boundary as the server queue: end of the UTC day.
+  const now = Date.parse('2026-06-10T15:00:00Z');
+
+  it('shows a dash for new or suspended cards', () => {
+    expect(formatCardDue(null, now)).toBe('—');
+  });
+
+  it('says "oggi" until the end of the UTC day, and for overdue cards', () => {
+    expect(formatCardDue('2026-06-10T23:59:59.000Z', now)).toBe('oggi');
+    expect(formatCardDue('2026-06-02T08:00:00.000Z', now)).toBe('oggi');
+  });
+
+  it('straddles UTC midnight regardless of the local timezone', () => {
+    // 22:30Z is already 00:30 of the next day in Europe/Rome, but still "oggi" for the queue.
+    expect(formatCardDue('2026-06-10T22:30:00.000Z', now)).toBe('oggi');
+    expect(formatCardDue('2026-06-11T00:00:00.000Z', now)).toBe('domani');
+    expect(formatCardDue('2026-06-11T23:59:59.000Z', now)).toBe('domani');
+  });
+
+  it('counts the following UTC days', () => {
+    expect(formatCardDue('2026-06-12T00:00:00.000Z', now)).toBe('tra 2 g');
+    expect(formatCardDue('2026-06-16T09:00:00.000Z', now)).toBe('tra 6 g');
   });
 });

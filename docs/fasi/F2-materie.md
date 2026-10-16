@@ -430,7 +430,7 @@ desktop non cambi), unit [`flashcardMobile.test.ts`](../../apps/web/test/flashca
 
 Non ancora:
 
-- scadenza per riga e stima "~14 min" nella lista: `FlashcardDto` non ha `dueAt`;
+- stima "~14 min" nella lista (la scadenza per riga è fatta in slice A, vedi sotto);
 - confidenza pre-risposta nel ripasso (omessa, come in [`docs/09-ripasso-mobile.md`](../09-ripasso-mobile.md));
 - il passo "Quanto sei sicuro?" del design, omesso per la stessa ragione;
 - slice 4-6 (Simulazioni/Esame, Lacune/Piano, Sessione).
@@ -476,7 +476,6 @@ simulata scrivendo sul DB, perché il worker non gira negli e2e. Unit:
 
 Non ancora:
 
-- ora dell'ultimo salvataggio: il DTO non la espone;
 - foto del foglio: non implementata;
 - verdetto "Sufficiente" sugli argomenti: non implementato;
 - pill ×N sugli argomenti: il dato non è disponibile;
@@ -510,8 +509,7 @@ Test: unit [`coverageMobile.test.ts`](../../apps/web/test/coverageMobile.test.ts
 [`e2e/fixtures/lacune-piano-seed.ts`](../../apps/web/e2e/fixtures/lacune-piano-seed.ts).
 `materia.mobile.spec.ts` ora usa `/review` come sottorotta con header globale.
 
-Non ancora: ritmo e minuti del piano modificabili da mobile (si cambiano rigenerando la bozza); cerca e
-menu nell'header del piano; il fallimento del worker durante la generazione non è rilevabile (spinner fino a
+Non ancora: ritmo e minuti del piano modificabili da mobile (si cambiano rigenerando la bozza); il fallimento del worker durante la generazione non è rilevabile (spinner fino a
 60 s, come su desktop).
 
 ## Aggiornamento — vista mobile di `/materie/[slug]/sessione/[sessionId]`, slice 6 (2026-10-15)
@@ -536,5 +534,51 @@ Logica pura in [`sessionMobile.ts`](../../apps/web/src/lib/sessionMobile.ts), fe
 
 Non ancora (mobile):
 
-- mood "Com'è andata?", selezione per-item delle flashcard, modalità Libero / Salta e durate del timer, selettore del
-  modello della chat, viewer del documento dentro la sessione, trascrizione nella chiusura.
+- mood "Com'è andata?", selezione per-item delle flashcard, modalità Libero / Salta e durate del timer, viewer del
+  documento dentro la sessione. Selettore del modello della chat e trascrizione nella chiusura: fatti in slice A.
+
+## Aggiornamento — residui mobile, slice A (2026-10-16)
+
+Rifiniture della vista mobile della materia. Il desktop non cambia. Spec e piano in `.claude/work/materia-mobile-residui/`
+(non versionati).
+
+- **Sheet Azioni** ([`AssistantSheet.tsx`](../../apps/web/src/components/subject-mobile/AssistantSheet.tsx)): argomenti
+  selezionabili, che restringono lo scope `topicIds` di generazione e stima. Se ci sono documenti selezionati, vincono:
+  compaiono un avviso e una pill per toglierli.
+- **Flashcard**: scadenza per riga ("oggi", "domani", "tra N g", "—") da `FlashcardDto.dueAt`, con il giorno UTC del
+  server ([`flashcardMobile.ts`](../../apps/web/src/lib/flashcardMobile.ts), `formatCardDue`).
+- **Esame**: "Salvato · HH:MM" nell'header, con l'ora dell'ultimo salvataggio riuscito
+  ([`useExamAttempt.ts`](../../apps/web/src/lib/useExamAttempt.ts)).
+- **Righe simulazione** ([`SimulationRow.tsx`](../../apps/web/src/components/simulation-mobile/SimulationRow.tsx)):
+  "Corretta · ieri", "Corretta · 5 giorni fa" da `lastGradedAt`; punteggio dell'ultimo tentativo corretto.
+- **Lacune** ([`TopicAction.tsx`](../../apps/web/src/components/coverage-mobile/TopicAction.tsx)): "Ripassa N card" per
+  argomento da `ReviewOverviewTopicDto.due`. Con 0 card l'azione non c'è e la card dice "Niente da ripassare oggi.".
+- **Piano**: kebab "Azioni della materia" nell'header, che apre lo sheet Azioni
+  ([`AssistantHost.tsx`](../../apps/web/src/components/subject-mobile/AssistantHost.tsx)). La selezione è locale alla pagina Piano.
+- **Chat sessione** ([`ChatMobile.tsx`](../../apps/web/src/components/session-mobile/ChatMobile.tsx)): select del modello,
+  con le opzioni del desktop.
+- **Chiusura** ([`ClosingMobile.tsx`](../../apps/web/src/components/session-mobile/ClosingMobile.tsx)): disclosure
+  "Trascrizione della chat", non mostrata se la sessione non ha messaggi.
+- **Verifica** ([`VerifyMobile.tsx`](../../apps/web/src/components/document-mobile/VerifyMobile.tsx)): "Prossimo incerto"
+  porta lo scroll e il focus sul blocco incerto o illeggibile successivo, in ciclo.
+- **Documento** ([`DocumentActionsSheet.tsx`](../../apps/web/src/components/document-mobile/DocumentActionsSheet.tsx)):
+  "Esporta .canvas" nel menu, solo se il documento ha un grafo.
+
+Contratto ([`generation.ts`](../../packages/contracts/src/generation.ts), [`simulation.ts`](../../packages/contracts/src/simulation.ts)):
+
+- `FlashcardDto.dueAt: string | null`: ISO, `null` per card nuove o sospese. Assente nel JSON (cache vecchia) = trattino.
+- `SimulationSummaryDto.lastGradedAt: string | null`: data della correzione dell'ultimo tentativo corretto.
+- `SimulationSummaryDto.lastScoreRatio` è ora il punteggio dell'ultimo tentativo corretto, non più il migliore.
+  Il campo duplicato `lastAttemptScoreRatio` è stato rimosso.
+
+Test: unit `formatCardDue`, `simulationSubtitle`, `dueAt` in `generation`/`review`, `lastGradedAt`; e2e
+[`materia-residui.mobile.spec.ts`](../../apps/web/e2e/materia-residui.mobile.spec.ts) (12 test). Le asserzioni su "Salvato"
+in [`materia-simulazioni.mobile.spec.ts`](../../apps/web/e2e/materia-simulazioni.mobile.spec.ts) ora accettano "Salvato · HH:MM".
+
+Non ancora:
+
+- foto del foglio nell'esame; verdetto "Sufficiente" sugli argomenti; conteggi ×N degli argomenti ricorrenti (slice E);
+- modalità Pomodoro / Libero della sessione e suggerimento AI del tipo di documento su mobile (slice E);
+- "Cerca" nell'header del Piano: omesso, non è nel design;
+- non richiesti: "Chiedi" ed "Esercizi" nello sheet Azioni; mood e selezione per-item nella Chiusura; confidenza e stima
+  minuti nel ripasso; modifica del ritmo del piano attivo da mobile.

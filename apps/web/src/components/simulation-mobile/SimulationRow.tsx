@@ -6,13 +6,14 @@ import { formatDocDate } from '@/lib/documentStatus';
 import { formatPoints, ratioTone, scoreFromRatio, simulationStatus } from '@/lib/simulationMobile';
 import { toneBg } from './styles';
 
-/** "Pronta · 6 esercizi · 180 min" / "Corretta · creata ieri" / "In corso · …". */
+/** "Pronta · 6 esercizi · 180 min" / "Corretta · ieri" / "In corso · …". */
 export function simulationSubtitle(sim: SimulationSummaryDto): string {
   const { label } = simulationStatus(sim);
   const format = `${sim.itemCount} esercizi · ${sim.timeBudgetMin} min`;
   if (sim.openAttemptId || sim.attemptCount === 0 || sim.lastScoreRatio === null) {
     return `${label} · ${format}`;
   }
+  if (sim.lastGradedAt) return `${label} · ${formatDocDate(sim.lastGradedAt)}`;
   return `${label} · creata ${formatDocDate(sim.createdAt)}`;
 }
 
@@ -29,7 +30,9 @@ export function SimulationRow({
   const subtitle = simulationSubtitle(sim);
   const accessible = [
     `${sim.title}, ${subtitle}`,
-    score ? `miglior punteggio ${formatPoints(score.awarded)} su ${formatPoints(score.max)}` : null,
+    score
+      ? `punteggio dell'ultimo tentativo ${formatPoints(score.awarded)} su ${formatPoints(score.max)}`
+      : null,
   ]
     .filter(Boolean)
     .join(', ');

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image as ImageIcon } from 'lucide-react';
@@ -11,6 +11,7 @@ import { SectionEmpty, SectionError } from '../subject-mobile/SectionState';
 import { DocHeader, iconButton } from './DocHeader';
 import { VerifyEdges } from './VerifyEdges';
 import {
+  STATE_LABEL,
   VerifyItemCard,
   type ChosenState,
   type VerifyItem,
@@ -62,6 +63,9 @@ export function VerifyMobile({
   const [confirmingAll, setConfirmingAll] = useState(false);
   const [failedCount, setFailedCount] = useState(0);
   const [failedTotal, setFailedTotal] = useState(0);
+  const [jumpStatus, setJumpStatus] = useState('');
+  // Id of the last block "Prossimo incerto" landed on.
+  const cursor = useRef<string | null>(null);
 
   const invalidate = () =>
     Promise.all([
@@ -121,6 +125,23 @@ export function VerifyMobile({
   const unresolved = items.filter((i) => i.item.state !== 'verified');
   const illegibleCount = unresolved.filter((i) => i.item.state === 'illegible').length;
   const done = total - unresolved.length;
+  const flagged = items.filter((i) => i.item.state === 'uncertain' || i.item.state === 'illegible');
+
+  // Scrolls to and focuses the next unverified uncertain/illegible block, wrapping around.
+  const goToNext = () => {
+    if (flagged.length === 0) return;
+    const from = items.findIndex((i) => i.item.id === cursor.current);
+    const target = flagged.find((f) => items.indexOf(f) > from) ?? flagged[0]!;
+    const el = document.getElementById(`verify-item-${target.item.id}`);
+    if (!el) return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    el.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });
+    el.focus({ preventScroll: true });
+    cursor.current = target.item.id;
+    setJumpStatus(
+      `Blocco ${items.indexOf(target) + 1} di ${total}: ${STATE_LABEL[target.item.state]}`,
+    );
+  };
   const pct = total === 0 ? 0 : Math.round((done / total) * 100);
 
   // Sequential on purpose: each PATCH recomputes blockedBlocks/verificationStatus without a
@@ -233,6 +254,19 @@ export function VerifyMobile({
             <p className="mt-2 text-[13px] text-fg-secondary">
               Controlla il testo letto dall&apos;AI: i blocchi incerti finiscono nelle flashcard
               solo dopo la tua conferma.
+            </p>
+            {flagged.length > 0 && (
+              <button
+                type="button"
+                onClick={goToNext}
+                className="mt-3 min-h-11 w-full rounded-[var(--radius-control)] border border-border-strong bg-bg-raised text-sm font-medium"
+              >
+                Prossimo incerto
+                <span className="sr-only"> ({flagged.length} da controllare)</span>
+              </button>
+            )}
+            <p role="status" className="sr-only">
+              {jumpStatus}
             </p>
           </div>
         )}

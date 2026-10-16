@@ -19,6 +19,7 @@ export function TopicAction({
   kind,
   variant,
   className = '',
+  due,
   onOpenSheet,
 }: {
   slug: string;
@@ -26,10 +27,13 @@ export function TopicAction({
   kind: TopicActionKind;
   variant: 'primary' | 'secondary';
   className?: string;
+  /** Cards due today in this topic (review only): `null`/absent = unknown, keeps the generic label. */
+  due?: number | null | undefined;
   onOpenSheet: (kind: SheetKind, topicId: string, trigger: HTMLElement) => void;
 }) {
   const cls = `${variant === 'primary' ? `${primaryButton} text-sm` : secondaryButton} min-h-11 ${className}`;
-  const label = ACTION_LABELS[kind];
+  if (kind === 'review' && due === 0) return null;
+  const label = kind === 'review' && due != null ? `Ripassa ${due} card` : ACTION_LABELS[kind];
   if (kind === 'upload' || kind === 'review') {
     const href = kind === 'upload' ? materialHref(slug, 'tutti') : reviewHref(slug, topic.topicId);
     return (

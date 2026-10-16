@@ -173,7 +173,7 @@ test.describe('Materia mobile — Simulazioni, Esame e Risultati', () => {
 
     // Risposta + autosave (debounce 1,5 s)
     await page.getByLabel('La tua risposta').fill('rendimento = 1 - Tc/Th');
-    await expect(page.getByText('Salvato', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/^Salvato · \d{2}:\d{2}$/)).toBeVisible({ timeout: 15_000 });
     await expect(
       strip.getByRole('button', { name: 'Esercizio 1, con risposta, corrente' }),
     ).toBeVisible();
@@ -242,7 +242,7 @@ test.describe('Materia mobile — Simulazioni, Esame e Risultati', () => {
     await page.getByRole('link', { name: 'Inizia la simulazione' }).click();
     await expect(page.getByLabel('La tua risposta')).toBeVisible({ timeout: 30_000 });
     await page.getByLabel('La tua risposta').fill('una risposta');
-    await expect(page.getByText('Salvato', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/^Salvato · \d{2}:\d{2}$/)).toBeVisible({ timeout: 15_000 });
 
     const strip = page.getByRole('group', { name: 'Esercizi' });
     await strip.getByRole('button', { name: /^Esercizio 3/ }).click();

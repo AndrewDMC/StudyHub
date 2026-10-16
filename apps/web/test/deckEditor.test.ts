@@ -237,4 +237,28 @@ describe('deck editor', () => {
     await db.update(artifacts).set({ status: 'draft' }).where(eq(artifacts.id, a.id));
     await expect(mergeDecks(db, slug, a.id, b.id)).rejects.toBeInstanceOf(ConflictError);
   });
+
+  it('exposes dueAt only for scheduled, non-suspended cards (null for new and suspended)', async () => {
+    const deck = await createDeck(db, slug, 'Scadenze');
+    const mk = (front: string) =>
+      createFlashcard(db, slug, { deckId: deck.id, type: 'basic', front, back: 'b' });
+    const fresh = await mk('nuova');
+    const scheduled = await mk('programmata');
+    const paused = await mk('sospesa');
+    const due = new Date('2026-06-12T09:00:00.000Z');
+    await db
+      .update(flashcards)
+      .set({ state: 'review', dueAt: due })
+      .where(eq(flashcards.id, scheduled.id));
+    await db
+      .update(flashcards)
+      .set({ state: 'review', dueAt: due, suspended: true })
+      .where(eq(flashcards.id, paused.id));
+
+    expect(scheduled.dueAt).toBeNull(); // created as new
+    const byId = new Map((await listFlashcards(db, slug)).items.map((c) => [c.id, c]));
+    expect(byId.get(fresh.id)!.dueAt).toBeNull();
+    expect(byId.get(scheduled.id)!.dueAt).toBe(due.toISOString());
+    expect(byId.get(paused.id)!.dueAt).toBeNull();
+  });
 });
