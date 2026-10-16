@@ -577,8 +577,33 @@ in [`materia-simulazioni.mobile.spec.ts`](../../apps/web/e2e/materia-simulazioni
 
 Non ancora:
 
-- foto del foglio nell'esame; verdetto "Sufficiente" sugli argomenti; conteggi ×N degli argomenti ricorrenti (slice E);
-- modalità Pomodoro / Libero della sessione e suggerimento AI del tipo di documento su mobile (slice E);
+- foto del foglio, verdetto "Sufficiente" e conteggi ×N degli argomenti: fatti in slice E (vedi sotto);
+- modalità Pomodoro / Libero della sessione e suggerimento AI del tipo di documento su mobile: fatti in slice E (vedi sotto);
 - "Cerca" nell'header del Piano: omesso, non è nel design;
 - non richiesti: "Chiedi" ed "Esercizi" nello sheet Azioni; mood e selezione per-item nella Chiusura; confidenza e stima
   minuti nel ripasso; modifica del ritmo del piano attivo da mobile.
+
+## Aggiornamento — residui mobile, slice E (2026-10-16)
+
+Chiude i residui delle slice 4 e 6 rimasti aperti dopo la slice A. Il desktop cambia solo nel verdetto
+dei Risultati e nelle etichette dei modelli. Piano e decisioni in `.claude/work/materia-mobile-residui-e/`
+(non versionati).
+
+- **Verdetto dei Risultati** (mobile e desktop): "Sufficiente" da 60% dei punti, "Insufficiente" sotto.
+  Soglia fissa `PASS_RATIO` e `isPassing` in [`scoring.ts`](../../packages/core/src/scoring.ts); le costanti 0.6
+  duplicate la importano, senza cambiare comportamento. Tentativo non ancora corretto: nessun verdetto.
+- **Argomenti ricorrenti del profilo d'esame**: pill con il conteggio, "Integrali ×6" (profilo `exam_profile/v2`).
+  I profili salvati con stringhe restano validi, senza ×.
+- **Foto del foglio nell'esame mobile**: "Scatta foto" / "Scegli dalla galleria", max 4 per esercizio. Foto
+  compresse nel browser prima dell'invio. Dettagli server e OCR in [F5](F5-esami-simulazioni.md).
+- **Sessione mobile**: sheet Timer con modalità Pomodoro / Libero, "Salta al riposo" e durate, come il desktop
+  ([`TimerStrip.tsx`](../../apps/web/src/components/session-mobile/TimerStrip.tsx)).
+- **Materiale mobile**: chip "Suggerito: … · Applica / Ignora" quando il tipo suggerito è diverso da quello attuale.
+- **Etichette modelli**: "(default)" sul modello realmente usato di default in ogni contesto
+  ([`ModelPicker.tsx`](../../apps/web/src/components/ModelPicker.tsx), prop `defaultId`). Nessun default cambiato.
+
+Non ancora:
+
+- il costo OCR di una run di correzione fallita non entra nel budget della run riuscita;
+- per rifare l'OCR di una foto con trascrizione fallita bisogna toglierla e ricaricarla;
+- le foto sono solo nell'esame mobile; HEIC non è accettato dal server (solo dove il browser lo converte in JPEG/PNG).

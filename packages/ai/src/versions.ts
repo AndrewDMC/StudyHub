@@ -19,7 +19,7 @@ export const DISTILL_HANDWRITING_PROFILE_PROMPT_VERSION = loadPrompt(
   'distill_handwriting_profile',
   1,
 ).promptVersion;
-export const EXAM_PROFILE_PROMPT_VERSION = loadPrompt('exam_profile', 1).promptVersion;
+export const EXAM_PROFILE_PROMPT_VERSION = loadPrompt('exam_profile', 2).promptVersion;
 export const SIMULATION_PROMPT_VERSION = loadPrompt('simulation', 2).promptVersion;
 export const GRADING_PROMPT_VERSION = loadPrompt('grading', 1).promptVersion;
 export const ESTIMATE_TOPICS_PROMPT_VERSION = loadPrompt('estimate_topics', 2).promptVersion;

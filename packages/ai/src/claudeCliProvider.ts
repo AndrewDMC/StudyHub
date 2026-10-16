@@ -346,7 +346,7 @@ export class ClaudeCliProvider implements AiProvider {
     input: ExamProfilePromptInput,
     model: string,
   ): Promise<GeneratedWithMeta<ExamProfile>> {
-    const { text: system, promptVersion } = loadPrompt('exam_profile', 1);
+    const { text: system, promptVersion } = loadPrompt('exam_profile', 2);
     const pageImages = input.pageImages ?? [];
     const userPrompt =
       pageImages.length > 0
@@ -490,7 +490,7 @@ export class ClaudeCliProvider implements AiProvider {
   private async callWithSchema<T>(
     system: string,
     userPrompt: string,
-    schema: z.ZodType<T>,
+    schema: z.ZodType<T, z.ZodTypeDef, unknown>,
     model: string,
     /** Widens the default no-tools sandbox — only `transcribeSchema` needs this, to read the image. */
     toolAccess?: { allowedTools: string; addDir: string },

@@ -11,6 +11,7 @@ import type {
   TopicDto,
   TopicTrendDto,
 } from '@studyhub/contracts';
+import { formatRecurringTopic } from '@/lib/format';
 import { ModelPicker, MODEL_OPTIONS } from './ModelPicker';
 
 export async function getJson<T>(url: string, key: string): Promise<T> {
@@ -291,7 +292,7 @@ export function ExamPrepPanel({
             </p>
             {profile.profile.recurringTopics.length > 0 && (
               <p className="text-fg-muted">
-                Ricorrenti: {profile.profile.recurringTopics.join(', ')}
+                Ricorrenti: {profile.profile.recurringTopics.map(formatRecurringTopic).join(', ')}
               </p>
             )}
             {profile.edited && <p className="text-[11px] text-info">Modificato a mano</p>}
@@ -308,7 +309,12 @@ export function ExamPrepPanel({
           <ProfileEditor slug={subjectSlug} profile={profile} onDone={() => setEditing(false)} />
         )}
 
-        <ModelPicker value={model} onChange={setModel} disabled={generate.isPending} />
+        <ModelPicker
+          value={model}
+          onChange={setModel}
+          disabled={generate.isPending}
+          defaultId={MODEL_OPTIONS[2].id}
+        />
 
         <label className="flex items-center gap-1.5 text-[11px] text-fg-muted">
           <input

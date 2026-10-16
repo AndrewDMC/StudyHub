@@ -407,7 +407,12 @@ export function TopicsPanel({
 
       {readyDocIds.length > 0 && (
         <div className="mt-2">
-          <ModelPicker value={model} onChange={setModel} disabled={extractMutation.isPending} />
+          <ModelPicker
+            value={model}
+            onChange={setModel}
+            disabled={extractMutation.isPending}
+            defaultId={MODEL_OPTIONS[0].id}
+          />
         </div>
       )}
       <button

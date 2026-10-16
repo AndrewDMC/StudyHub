@@ -4,7 +4,7 @@ import { useEffect, useId, useState, type RefObject } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import type { DocumentDto, TopicDto } from '@studyhub/contracts';
 import { fetchEstimate, formatCost, postJson, type SimScope } from '../ExamPrepPanel';
-import { MODEL_OPTIONS } from '../ModelPicker';
+import { MODEL_OPTIONS, modelLabel } from '../ModelPicker';
 import { BottomSheet } from '../subject-mobile/BottomSheet';
 import { fieldClass, primaryButton, secondaryButton } from './styles';
 
@@ -148,7 +148,7 @@ export function GenerateSheet({
           >
             {MODEL_OPTIONS.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.label}
+                {modelLabel(m, MODEL_OPTIONS[2].id)}
               </option>
             ))}
           </select>

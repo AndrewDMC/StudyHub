@@ -6,6 +6,7 @@ import { ActiveSession } from './ActiveSession';
 import { ClosingMobile } from './ClosingMobile';
 import { EndSheet } from './EndSheet';
 import { SessionHeader } from './SessionHeader';
+import { TimerSheet } from './TimerSheet';
 import { TimerStrip } from './TimerStrip';
 import { useSessionRun } from './useSessionRun';
 
@@ -17,7 +18,9 @@ export function SessionMobile({ slug, sessionId }: { slug: string; sessionId: st
   const run = useSessionRun(slug, sessionId);
   const { session, query, active, timer, shownMs, patchTopics, end, tasks } = run;
   const [endOpen, setEndOpen] = useState(false);
+  const [timerOpen, setTimerOpen] = useState(false);
   const endRef = useRef<HTMLButtonElement>(null);
+  const timerRef = useRef<HTMLButtonElement>(null);
 
   // Hides the tab bar (the global header goes via AppShell): the session is a full screen.
   useEffect(() => {
@@ -75,12 +78,18 @@ export function SessionMobile({ slug, sessionId }: { slug: string; sessionId: st
         }}
         endRef={endRef}
       />
-      <TimerStrip timer={timer} />
+      <TimerStrip timer={timer} onOpenSettings={() => setTimerOpen(true)} settingsRef={timerRef} />
       <ActiveSession
         slug={slug}
         sessionId={sessionId}
         session={session}
         patchTopics={patchTopics}
+      />
+      <TimerSheet
+        open={timerOpen}
+        onOpenChange={setTimerOpen}
+        timer={timer}
+        returnFocusRef={timerRef}
       />
       <EndSheet
         open={endOpen}

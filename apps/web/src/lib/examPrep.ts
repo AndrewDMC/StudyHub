@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { promises as fs } from 'node:fs';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   artifacts,
+  attemptAnswerPhotos,
   attemptItemResults,
   examProfiles,
   simulationAttempts,
@@ -9,22 +11,43 @@ import {
   simulations,
   subjects,
   topics,
+  type AttemptAnswerPhotoRow,
   type ExamProfileRow,
   type SimulationAttempt,
   type SimulationItemRow,
 } from '@studyhub/db';
-import { isExpired, remainingSeconds } from '@studyhub/core';
-import type {
-  AttemptDto,
-  AttemptItemResultDto,
-  ExamProfileDto,
-  GenerateSimulationJobInput,
-  SimulationSummaryDto,
-  TopicTrendDto,
-  UpdateExamProfileRequest,
+import {
+  assertRealpathWithinRoot,
+  ATTEMPT_PHOTO_MAX_BYTES,
+  ATTEMPT_PHOTO_MAX_PER_ITEM,
+  attemptPhotoExtension,
+  isExpired,
+  remainingSeconds,
+  resolveSubjectPath,
+  resolveSubjectSubpath,
+  sniffAttemptPhotoMime,
+} from '@studyhub/core';
+import {
+  type AttemptAnswerPhotoDto,
+  type AttemptDto,
+  type AttemptItemResultDto,
+  type ExamProfileDto,
+  type GenerateSimulationJobInput,
+  type SimulationSummaryDto,
+  type TopicTrendDto,
+  type UpdateExamProfileRequest,
 } from '@studyhub/contracts';
 import type { Queue } from 'bullmq';
 import { SubjectNotFoundError } from './errors';
+import {
+  isUuid,
+  loadPhotoMap,
+  loadPhotoRows,
+  photoRelPath,
+  photoToDto,
+  removePhotoFiles,
+  resolvePhotoPath,
+} from './attemptPhotos';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyDb = any;
@@ -48,6 +71,16 @@ export class ConflictError extends Error {
   }
 }
 
+/** A rejected photo upload: 400 for a bad file, 413 for an oversized one. */
+export class AttemptPhotoError extends Error {
+  readonly status: 400 | 413;
+  constructor(message: string, status: 400 | 413 = 400) {
+    super(message);
+    this.status = status;
+    this.name = 'AttemptPhotoError';
+  }
+}
+
 async function requireSubject(db: AnyDb, subjectSlug: string) {
   const [subject] = await db.select().from(subjects).where(eq(subjects.slug, subjectSlug));
   if (!subject) throw new SubjectNotFoundError(subjectSlug);
@@ -59,7 +92,13 @@ function profileToDto(row: ExamProfileRow): ExamProfileDto {
     id: row.id,
     subjectId: row.subjectId,
     sourceDocIds: row.sourceDocIds,
-    profile: row.profile,
+    // Rows saved before counts existed hold plain strings.
+    profile: {
+      ...row.profile,
+      recurringTopics: row.profile.recurringTopics.map((t) =>
+        typeof t === 'string' ? { name: t, count: null } : t,
+      ),
+    },
     edited: row.edited,
     model: row.model,
     promptVersion: row.promptVersion,
@@ -299,6 +338,7 @@ function attemptToDto(
   attempt: SimulationAttempt,
   items: SimulationItemRow[],
   now: Date,
+  photos: Record<string, AttemptAnswerPhotoDto[]> = {},
 ): AttemptDto {
   return {
     id: attempt.id,
@@ -322,6 +362,7 @@ function attemptToDto(
     totalAwarded: attempt.totalAwarded,
     totalMax: attempt.totalMax,
     weakTopics: attempt.weakTopics,
+    photos,
   };
 }
 
@@ -400,7 +441,7 @@ export async function startOrResumeAttempt(
       .returning();
     return created;
   });
-  return attemptToDto(attempt, items, now);
+  return attemptToDto(attempt, items, now, await loadPhotoMap(db, subjectSlug, attempt.id));
 }
 
 export async function getAttempt(
@@ -416,7 +457,12 @@ export async function getAttempt(
     await requireAttempt(db, subjectSlug, attemptId),
     now,
   );
-  return attemptToDto(attempt, await loadItems(db, attempt.simulationId), now);
+  return attemptToDto(
+    attempt,
+    await loadItems(db, attempt.simulationId),
+    now,
+    await loadPhotoMap(db, subjectSlug, attempt.id),
+  );
 }
 
 /** Autosave: merges answers into the stored ones. Rejected once the attempt is no longer in progress. */
@@ -452,7 +498,7 @@ export async function saveAnswers(
     .set({ answers: { ...attempt.answers, ...answers } })
     .where(eq(simulationAttempts.id, attemptId))
     .returning();
-  return attemptToDto(updated, items, now);
+  return attemptToDto(updated, items, now, await loadPhotoMap(db, subjectSlug, attemptId));
 }
 
 export async function submitAttempt(
@@ -469,7 +515,8 @@ export async function submitAttempt(
     now,
   );
   const items = await loadItems(db, attempt.simulationId);
-  if (attempt.status !== 'in_progress') return attemptToDto(attempt, items, now); // already submitted: no-op
+  const photos = await loadPhotoMap(db, subjectSlug, attemptId);
+  if (attempt.status !== 'in_progress') return attemptToDto(attempt, items, now, photos); // already submitted: no-op
 
   const [updated] = await db
     .update(simulationAttempts)
@@ -477,7 +524,7 @@ export async function submitAttempt(
     .where(and(eq(simulationAttempts.id, attemptId), eq(simulationAttempts.status, 'in_progress')))
     .returning();
   if (updated) await queue.add('grade_attempt', { attemptId }, { jobId: randomUUID() });
-  return attemptToDto(updated ?? attempt, items, now);
+  return attemptToDto(updated ?? attempt, items, now, photos);
 }
 
 /** Formative results (docs/fasi/F5 Correzione) — only once graded; solutions are revealed here. */
@@ -494,6 +541,7 @@ export async function getAttemptResults(
     .from(attemptItemResults)
     .where(eq(attemptItemResults.attemptId, attemptId));
 
+  const photoMap = await loadPhotoMap(db, subjectSlug, attemptId);
   return items.flatMap((item) => {
     const r = results.find((x) => x.itemId === item.id);
     if (!r) return [];
@@ -508,6 +556,7 @@ export async function getAttemptResults(
         criteria: r.criteria,
         missing: r.missing,
         solution: item.solution,
+        photos: photoMap[item.id] ?? [],
         sourceRef: r.sourceRef,
         secondOpinion:
           r.secondOpinionModel && r.secondOpinionAt
@@ -553,4 +602,176 @@ export async function enqueueSecondOpinion(
   const jobId = randomUUID();
   await queue.add('grade_item_second_opinion', { attemptId, itemId }, { jobId });
   return { jobId };
+}
+
+// ----------------------------------------------------------- answer photos
+
+/** Item of this attempt's simulation (and the attempt), or NotFound. Ids that are not UUIDs are NotFound. */
+async function requireAttemptItem(
+  db: AnyDb,
+  subjectSlug: string,
+  attemptId: string,
+  itemId: string,
+): Promise<SimulationAttempt> {
+  if (!isUuid(attemptId)) throw new NotFoundError('Tentativo');
+  const attempt = await requireAttempt(db, subjectSlug, attemptId);
+  if (!isUuid(itemId)) throw new NotFoundError('Esercizio');
+  const [item] = await db
+    .select({ id: simulationItems.id })
+    .from(simulationItems)
+    .where(
+      and(eq(simulationItems.id, itemId), eq(simulationItems.simulationId, attempt.simulationId)),
+    );
+  if (!item) throw new NotFoundError('Esercizio');
+  return attempt;
+}
+
+async function requireOpenAttemptItem(
+  db: AnyDb,
+  queue: JobQueue,
+  subjectSlug: string,
+  attemptId: string,
+  itemId: string,
+  now: Date,
+): Promise<SimulationAttempt> {
+  const attempt = await requireAttemptItem(db, subjectSlug, attemptId, itemId);
+  const checked = await expireIfDue(db, queue, attempt, now);
+  if (checked.status !== 'in_progress') {
+    throw new ConflictError(
+      'Tempo scaduto o esame già consegnato: le foto non sono più modificabili.',
+    );
+  }
+  return checked;
+}
+
+export async function listAttemptPhotos(
+  db: AnyDb,
+  subjectSlug: string,
+  attemptId: string,
+  itemId: string,
+): Promise<AttemptAnswerPhotoDto[]> {
+  await requireAttemptItem(db, subjectSlug, attemptId, itemId);
+  return (await loadPhotoRows(db, attemptId))
+    .filter((r) => r.itemId === itemId)
+    .map((r) => photoToDto(subjectSlug, r));
+}
+
+/** Attaches a photo of the handwritten answer to one item of an open attempt. */
+export async function addAttemptPhoto(
+  db: AnyDb,
+  queue: JobQueue,
+  dataRoot: string,
+  subjectSlug: string,
+  attemptId: string,
+  itemId: string,
+  bytes: Uint8Array,
+  now: Date = new Date(),
+): Promise<AttemptAnswerPhotoDto> {
+  await requireOpenAttemptItem(db, queue, subjectSlug, attemptId, itemId, now);
+  if (bytes.length === 0) throw new AttemptPhotoError('Il file è vuoto');
+  if (bytes.length > ATTEMPT_PHOTO_MAX_BYTES) {
+    throw new AttemptPhotoError(
+      `Foto troppo grande: massimo ${Math.round(ATTEMPT_PHOTO_MAX_BYTES / (1024 * 1024))} MB`,
+      413,
+    );
+  }
+  const mime = sniffAttemptPhotoMime(bytes);
+  if (!mime) {
+    throw new AttemptPhotoError('Formato non supportato: usa JPEG, PNG o WebP');
+  }
+  const id = randomUUID();
+  const segments = photoRelPath(attemptId, id, attemptPhotoExtension(mime));
+  const abs = resolveSubjectSubpath(subjectSlug, segments, dataRoot);
+  const dir = resolveSubjectSubpath(subjectSlug, segments.slice(0, -1), dataRoot);
+  await fs.mkdir(dir, { recursive: true });
+  await assertRealpathWithinRoot(dir, resolveSubjectPath(subjectSlug, dataRoot));
+  await fs.writeFile(abs, bytes);
+  try {
+    // Count + insert under a per-attempt advisory lock: concurrent uploads cannot both pass the cap.
+    const row: AttemptAnswerPhotoRow = await db.transaction(async (tx: AnyDb) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${attemptId}))`);
+      const existing = (await loadPhotoRows(tx, attemptId)).filter((r) => r.itemId === itemId);
+      if (existing.length >= ATTEMPT_PHOTO_MAX_PER_ITEM) {
+        throw new ConflictError(
+          `Hai già allegato ${ATTEMPT_PHOTO_MAX_PER_ITEM} foto a questo esercizio: eliminane una per aggiungerne altre.`,
+        );
+      }
+      const [created] = await tx
+        .insert(attemptAnswerPhotos)
+        .values({
+          id,
+          attemptId,
+          itemId,
+          relPath: segments.join('/'),
+          mime,
+          size: bytes.length,
+          createdAt: now,
+        })
+        .returning();
+      return created;
+    });
+    return photoToDto(subjectSlug, row);
+  } catch (err) {
+    await fs.unlink(abs).catch(() => {});
+    throw err;
+  }
+}
+
+async function requirePhoto(
+  db: AnyDb,
+  attemptId: string,
+  itemId: string,
+  photoId: string,
+): Promise<AttemptAnswerPhotoRow> {
+  if (!isUuid(photoId)) throw new NotFoundError('Foto');
+  const [row] = await db
+    .select()
+    .from(attemptAnswerPhotos)
+    .where(
+      and(
+        eq(attemptAnswerPhotos.id, photoId),
+        eq(attemptAnswerPhotos.attemptId, attemptId),
+        eq(attemptAnswerPhotos.itemId, itemId),
+      ),
+    );
+  if (!row) throw new NotFoundError('Foto');
+  return row;
+}
+
+/** Removes the row and the file. Only while the attempt is open. */
+export async function deleteAttemptPhoto(
+  db: AnyDb,
+  queue: JobQueue,
+  dataRoot: string,
+  subjectSlug: string,
+  attemptId: string,
+  itemId: string,
+  photoId: string,
+  now: Date = new Date(),
+): Promise<void> {
+  await requireOpenAttemptItem(db, queue, subjectSlug, attemptId, itemId, now);
+  const row = await requirePhoto(db, attemptId, itemId, photoId);
+  await db.delete(attemptAnswerPhotos).where(eq(attemptAnswerPhotos.id, row.id));
+  await removePhotoFiles(dataRoot, subjectSlug, [row.relPath]);
+}
+
+/** Bytes + mime of a stored photo (readable at any attempt status). */
+export async function readAttemptPhotoFile(
+  db: AnyDb,
+  dataRoot: string,
+  subjectSlug: string,
+  attemptId: string,
+  itemId: string,
+  photoId: string,
+): Promise<{ bytes: Uint8Array; mime: string }> {
+  await requireAttemptItem(db, subjectSlug, attemptId, itemId);
+  const row = await requirePhoto(db, attemptId, itemId, photoId);
+  try {
+    const path = await resolvePhotoPath(dataRoot, subjectSlug, row.relPath);
+    return { bytes: new Uint8Array(await fs.readFile(path)), mime: row.mime };
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT')
+      throw new NotFoundError('File della foto');
+    throw err;
+  }
 }

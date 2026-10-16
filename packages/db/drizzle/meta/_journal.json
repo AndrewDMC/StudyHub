@@ -162,6 +162,20 @@
       "when": 1790700600000,
       "tag": "0022_task_flashcards",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790700700000,
+      "tag": "0023_attempt_answer_photos",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790700800000,
+      "tag": "0024_attempt_photo_transcripts",
+      "breakpoints": true
     }
   ]
 }

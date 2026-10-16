@@ -9,7 +9,7 @@ import type {
   StudySessionDto,
   UpdateSessionItemRequest,
 } from '@studyhub/contracts';
-import { ModelPicker } from '@/components/ModelPicker';
+import { MODEL_OPTIONS, ModelPicker } from '@/components/ModelPicker';
 import { DIFFICULTY_LABELS, Markdown, useSessionBriefing } from '@/components/SessionBriefing';
 import { formatPageRanges } from '@/lib/sessionMobile';
 import { cardClass, primaryButton, secondaryButton } from '../simulation-mobile/styles';
@@ -339,7 +339,12 @@ export function BriefingMobile({
   const generateControls = (
     <div className="flex flex-col gap-2">
       <div className="[&_select]:min-h-11 [&_select]:text-sm">
-        <ModelPicker value={model} onChange={b.setModel} disabled={b.start.isPending || inFlight} />
+        <ModelPicker
+          value={model}
+          onChange={b.setModel}
+          disabled={b.start.isPending || inFlight}
+          defaultId={MODEL_OPTIONS[1].id}
+        />
       </div>
       <button
         type="button"

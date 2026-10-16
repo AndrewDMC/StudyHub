@@ -2,6 +2,8 @@
  * Which chunks of a study session the briefing model sees (docs/08-sessione-di-studio.md §5.2).
  * Pure — the caller loads the chunks and the task's planned pages, this only decides what fits.
  */
+import { PASS_RATIO } from './scoring.js';
+
 export const BRIEFING_KEY_POINTS = 6;
 export const BRIEFING_EXERCISES = 4;
 /** "Altri esercizi". */
@@ -9,7 +11,7 @@ export const BRIEFING_MORE_EXERCISES = 3;
 /** Roughly 12k tokens of material: enough for a session, cheap enough to run on request. */
 export const BRIEFING_MAX_CHARS = 48_000;
 /** An AI-graded exercise scoring at least this ratio counts as "correct" (same bar as a weak simulation item). */
-export const EXERCISE_PASS_RATIO = 0.6;
+export const EXERCISE_PASS_RATIO = PASS_RATIO;
 
 export interface BriefingChunk {
   docId: string;

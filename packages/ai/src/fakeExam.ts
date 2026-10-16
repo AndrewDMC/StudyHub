@@ -117,6 +117,7 @@ export function fakeExtractExamProfile(input: ExamProfilePromptInput): ExamProfi
 
   // Recurring = keywords appearing in the exercises of at least two different past exams,
   // minus exam boilerplate ("Esercizio", "10 punti", "Calcolare"…) that isn't a topic.
+  // `count` = in how many of those exams the keyword shows up (deterministic, no sampling).
   const docsPerKeyword = new Map<string, Set<string>>();
   for (const [docId, items] of byDoc) {
     for (const word of keywords(items.join(' ')).filter((w) => !EXAM_BOILERPLATE.has(w))) {
@@ -127,7 +128,7 @@ export function fakeExtractExamProfile(input: ExamProfilePromptInput): ExamProfi
     .filter(([, docs]) => docs.size >= Math.min(2, docCount))
     .sort((a, b) => b[1].size - a[1].size || a[0].localeCompare(b[0]))
     .slice(0, 5)
-    .map(([word]) => word);
+    .map(([word, docs]) => ({ name: word, count: docs.size }));
 
   return {
     itemCount,
@@ -259,7 +260,9 @@ export function fakeGenerateSimulation(input: SimulationPromptInput): Simulation
       solution: sentence,
       sourceRef: { docId: chunk.docId, page: chunk.page, quote: sentence },
       topicName:
-        input.mode === 'esame_completo' ? matchTopicName(sentence, input.topics) : (input.topicName ?? null),
+        input.mode === 'esame_completo'
+          ? matchTopicName(sentence, input.topics)
+          : (input.topicName ?? null),
     };
   });
 

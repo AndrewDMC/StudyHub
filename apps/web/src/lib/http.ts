@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { z, ZodTypeAny } from 'zod';
 import { formatError, SubjectNotFoundError } from './errors';
-import { ConflictError, NotFoundError } from './examPrep';
+import { AttemptPhotoError, ConflictError, NotFoundError } from './examPrep';
 
 export function errorResponse(err: unknown): NextResponse {
   if (err instanceof SubjectNotFoundError) {
@@ -14,6 +14,17 @@ export function errorResponse(err: unknown): NextResponse {
     return NextResponse.json(
       { error: { code: 'not_found', message: err.message } },
       { status: 404 },
+    );
+  }
+  if (err instanceof AttemptPhotoError) {
+    return NextResponse.json(
+      {
+        error: {
+          code: err.status === 413 ? 'file_too_large' : 'invalid_file',
+          message: err.message,
+        },
+      },
+      { status: err.status },
     );
   }
   if (err instanceof ConflictError) {

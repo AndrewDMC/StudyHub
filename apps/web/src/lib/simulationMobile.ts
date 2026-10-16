@@ -1,3 +1,4 @@
+import { isPassing } from '@studyhub/core/browser';
 import type { AttemptItemResultDto, ExamItemDto, SimulationSummaryDto } from '@studyhub/contracts';
 
 export type Tone = 'accent' | 'ok' | 'warn' | 'danger' | 'info';
@@ -39,11 +40,44 @@ export function scoreFromRatio(
   return { awarded: sim.lastScoreRatio * sim.totalPoints, max: sim.totalPoints };
 }
 
+/** An item counts as answered with text or with at least one attached photo. */
 export function answeredCount(
   items: Pick<ExamItemDto, 'id'>[],
   answers: Record<string, string>,
+  photoCounts: Record<string, number> = {},
 ): number {
-  return items.filter((i) => (answers[i.id] ?? '').trim().length > 0).length;
+  return items.filter(
+    (i) => (answers[i.id] ?? '').trim().length > 0 || (photoCounts[i.id] ?? 0) > 0,
+  ).length;
+}
+
+/** What to tell about the transcription of an item's photos in the results. */
+export function photoTranscriptNote(
+  photos: { transcriptStatus: 'ok' | 'illegible' | 'failed' | null }[],
+): { kind: 'ok' | 'unreadable'; text: string } | null {
+  if (photos.length === 0) return null;
+  const unreadable = photos.filter(
+    (p) => p.transcriptStatus === 'illegible' || p.transcriptStatus === 'failed',
+  ).length;
+  if (unreadable > 0) {
+    return {
+      kind: 'unreadable',
+      text: `Non è stato possibile leggere ${unreadable} foto: la correzione si basa sul testo scritto.`,
+    };
+  }
+  if (photos.every((p) => p.transcriptStatus === 'ok')) {
+    return {
+      kind: 'ok',
+      text: 'Il testo scritto nelle foto è stato trascritto per la correzione.',
+    };
+  }
+  return null;
+}
+
+/** Pass/fail verdict of a graded attempt; null while there is no usable score. */
+export function attemptVerdict(awarded: number | null, max: number | null): 'pass' | 'fail' | null {
+  if (awarded === null || max === null || max <= 0) return null;
+  return isPassing(awarded / max) ? 'pass' : 'fail';
 }
 
 /** Items scored under half of their maximum. */

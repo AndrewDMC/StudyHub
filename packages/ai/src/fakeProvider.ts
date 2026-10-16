@@ -38,6 +38,7 @@ import type {
   SummaryOutput,
   TopicEstimate,
 } from './schemas.js';
+import { basename } from 'node:path';
 import { estimateTokens } from './pricing.js';
 import { keywordCoverage, keywords, splitSentences, truncate } from './text.js';
 import { normalizeTopicName } from './topicMatch.js';
@@ -304,18 +305,29 @@ export class FakeProvider implements AiProvider {
     };
   }
 
-  /** Same "no honest pixel-reading offline" reasoning as transcribeSchema. */
+  /**
+   * No honest pixel-reading offline (same reasoning as transcribeSchema): documents and scanned
+   * pages get an empty, illegible reading rather than a fabricated one. The exception is a photo
+   * of a handwritten answer (`purpose: 'answer_photo'`): there a clearly marked placeholder, a pure
+   * function of the file name and mime, lets the grading flow be exercised without an API key.
+   */
   async ocrText(
-    _input: OcrTextPromptInput,
+    input: OcrTextPromptInput,
     _model: string,
   ): Promise<GeneratedWithMeta<OcrTextOutput>> {
-    const data: OcrTextOutput = {
-      text: '',
-      confidence: 'illegible',
-    };
+    const data: OcrTextOutput =
+      input.purpose === 'answer_photo'
+        ? {
+            text: `[Trascrizione simulata] ${basename(input.imagePath)} (${input.mime})`,
+            confidence: 'uncertain',
+          }
+        : { text: '', confidence: 'illegible' };
     return {
       data,
-      usage: { inputTokens: 0, outputTokens: 0 },
+      usage: {
+        inputTokens: 0,
+        outputTokens: input.purpose === 'answer_photo' ? estimateTokens(data.text) : 0,
+      },
       model: FAKE_MODEL,
       promptVersion: OCR_TEXT_PROMPT_VERSION,
     };

@@ -105,7 +105,11 @@ export async function getCoverageMap(db: AnyDb, subjectSlug: string): Promise<Co
       db,
       studyDocs.map((d) => d.id),
     ),
-    recurringTopics: profile?.profile.recurringTopics ?? [],
+    // Coverage only needs the names; the count is for display.
+    recurringTopics:
+      profile?.profile.recurringTopics.map((t: string | { name: string }) =>
+        typeof t === 'string' ? t : t.name,
+      ) ?? [],
   });
 
   return {

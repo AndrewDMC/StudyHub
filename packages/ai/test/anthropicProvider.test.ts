@@ -189,6 +189,40 @@ describe('AnthropicProvider — F5 capabilities against a mocked client', () => 
     expect(prompt.match(/<\/document>/g)).toHaveLength(1);
   });
 
+  it('extractExamProfile (exam_profile/v2) asks for { name, count } topics and upgrades legacy strings', async () => {
+    const profile = {
+      itemCount: 3,
+      durationMin: 120,
+      totalPoints: 30,
+      kindDistribution: { open: 1 },
+      avgMinutesPerItem: 40,
+      verbosity: 'media',
+      notes: '',
+    };
+    const create = vi.fn().mockResolvedValue(
+      toolUseResponse({
+        ...profile,
+        recurringTopics: ['entropia', { name: 'Carnot', count: 4 }],
+      }),
+    );
+    const provider = new AnthropicProvider({ client: { messages: { create } } as any });
+
+    const result = await provider.extractExamProfile(
+      { subjectName: 'Fisica 1', chunks: [{ docId, page: 1, text: 'Esercizio 1.' }] },
+      'claude-haiku-4-5-20251001',
+    );
+
+    expect(result.promptVersion).toBe('exam_profile/v2');
+    expect(result.data.recurringTopics).toEqual([
+      { name: 'entropia', count: null },
+      { name: 'Carnot', count: 4 },
+    ]);
+    const tool = create.mock.calls[0][0].tools[0];
+    const items = tool.input_schema.properties.recurringTopics.items;
+    expect(items.type).toBe('object');
+    expect(Object.keys(items.properties).sort()).toEqual(['count', 'name']);
+  });
+
   it('extractExamProfile sends the page images as image blocks before the text, and names them in the prompt', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'studyhub-ai-img-'));
     try {

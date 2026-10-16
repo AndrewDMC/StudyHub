@@ -509,7 +509,8 @@ export interface ExamProfileData {
   kindDistribution: Partial<Record<'open' | 'mcq' | 'numeric' | 'proof', number>>;
   avgMinutesPerItem: number;
   verbosity: 'breve' | 'media' | 'estesa';
-  recurringTopics: string[];
+  /** Plain strings are profiles saved before counts existed; `count: null` = unknown. */
+  recurringTopics: (string | { name: string; count: number | null })[];
   notes: string;
 }
 
@@ -618,6 +619,33 @@ export const attemptItemResults = pgTable('attempt_item_results', {
   secondOpinionMissing: jsonb('second_opinion_missing').$type<string[]>(),
   secondOpinionAt: timestamp('second_opinion_at', { withTimezone: true }),
 });
+
+/**
+ * Photos of handwritten answers attached to one item of an attempt. The file lives under the
+ * subject folder (`relPath`, relative to it); the cascade drops the rows only, so the lib deletes
+ * the files explicitly.
+ */
+export const attemptAnswerPhotos = pgTable(
+  'attempt_answer_photos',
+  {
+    id: uuid('id').primaryKey(),
+    attemptId: uuid('attempt_id')
+      .notNull()
+      .references(() => simulationAttempts.id, { onDelete: 'cascade' }),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => simulationItems.id, { onDelete: 'cascade' }),
+    relPath: text('rel_path').notNull(),
+    mime: text('mime').notNull(),
+    size: integer('size').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    // OCR of the handwritten page, cached by the grader (null status = not transcribed yet).
+    transcript: text('transcript'),
+    transcriptStatus: text('transcript_status').$type<'ok' | 'illegible' | 'failed'>(),
+    transcribedAt: timestamp('transcribed_at', { withTimezone: true }),
+  },
+  (table) => [index('attempt_answer_photos_attempt_item_idx').on(table.attemptId, table.itemId)],
+);
 
 /**
  * F6 scope (docs/fasi/F6-planner-calendario.md, docs/04-planner.md §9): the
@@ -945,6 +973,8 @@ export type ExamProfileRow = typeof examProfiles.$inferSelect;
 export type Simulation = typeof simulations.$inferSelect;
 export type SimulationItemRow = typeof simulationItems.$inferSelect;
 export type SimulationAttempt = typeof simulationAttempts.$inferSelect;
+export type AttemptAnswerPhotoRow = typeof attemptAnswerPhotos.$inferSelect;
+export type NewAttemptAnswerPhotoRow = typeof attemptAnswerPhotos.$inferInsert;
 export type AttemptItemResult = typeof attemptItemResults.$inferSelect;
 export type StudyPlan = typeof studyPlans.$inferSelect;
 export type NewStudyPlan = typeof studyPlans.$inferInsert;

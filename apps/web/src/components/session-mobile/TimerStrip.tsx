@@ -1,6 +1,7 @@
 'use client';
 
-import { Pause, Play } from 'lucide-react';
+import type { Ref } from 'react';
+import { Pause, Play, SlidersHorizontal } from 'lucide-react';
 import { formatClock, type UsePomodoro } from '@/components/PomodoroTimer';
 import { ringDashOffset, RING_CIRCUMFERENCE, timerCaption } from '@/lib/sessionMobile';
 
@@ -14,7 +15,15 @@ const requestNotifications = () => {
 };
 
 /** Ring, clock, caption and pause/resume of the study timer. No live region: it would read every second. */
-export function TimerStrip({ timer }: { timer: UsePomodoro }) {
+export function TimerStrip({
+  timer,
+  onOpenSettings,
+  settingsRef,
+}: {
+  timer: UsePomodoro;
+  onOpenSettings: () => void;
+  settingsRef: Ref<HTMLButtonElement>;
+}) {
   const free = timer.mode === 'free';
   const offset = free ? RING_CIRCUMFERENCE : ringDashOffset(timer.state, timer.config);
 
@@ -65,6 +74,17 @@ export function TimerStrip({ timer }: { timer: UsePomodoro }) {
         ) : (
           <Play className="h-[18px] w-[18px] fill-current" aria-hidden="true" />
         )}
+      </button>
+      <button
+        type="button"
+        ref={settingsRef}
+        aria-haspopup="dialog"
+        aria-label="Impostazioni del timer"
+        data-testid="timer-settings-button"
+        onClick={onOpenSettings}
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-control)] border border-border-strong bg-bg-raised text-fg-primary"
+      >
+        <SlidersHorizontal className="h-[18px] w-[18px]" aria-hidden="true" />
       </button>
     </div>
   );

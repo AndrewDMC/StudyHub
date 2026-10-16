@@ -90,12 +90,26 @@ export function ExamProfileCard({
           <div>
             <p className="mb-1.5 text-xs text-fg-muted">Argomenti ricorrenti</p>
             <ul className="flex flex-wrap gap-1.5">
-              {shown.map((t) => (
+              {shown.map((t, i) => (
                 <li
-                  key={t}
-                  className="max-w-full truncate rounded-full border border-border bg-bg-raised px-2.5 py-1 text-xs text-fg-secondary"
+                  key={`${t.name}-${i}`}
+                  data-testid="recurring-topic"
+                  className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-bg-raised px-2.5 py-1 text-xs text-fg-secondary"
                 >
-                  {t}
+                  <span className="min-w-0 truncate">{t.name}</span>
+                  {t.count !== null && (
+                    <>
+                      <span
+                        aria-hidden="true"
+                        className="shrink-0 font-mono tabular-nums text-fg-muted"
+                      >
+                        ×{t.count}
+                      </span>
+                      <span className="sr-only">
+                        , {t.count} {t.count === 1 ? 'volta' : 'volte'}
+                      </span>
+                    </>
+                  )}
                 </li>
               ))}
               {extra > 0 && (

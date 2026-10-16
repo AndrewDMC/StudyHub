@@ -52,11 +52,30 @@ export const GradeItemSecondOpinionJobInputSchema = z.object({
 });
 export type GradeItemSecondOpinionJobInput = z.infer<typeof GradeItemSecondOpinionJobInputSchema>;
 
+/**
+ * A recurring exam topic with how many times it came up (`null` = unknown). Profiles saved
+ * before counts existed hold plain strings: the preprocess turns them into `{ name, count: null }`.
+ */
+export const RecurringTopicSchema = z.preprocess(
+  (v) => (typeof v === 'string' ? { name: v, count: null } : v),
+  z.object({
+    name: z.string().trim().min(1),
+    count: z.number().int().positive().nullable(),
+  }),
+);
+export type RecurringTopic = z.infer<typeof RecurringTopicSchema>;
+
+/** The stored/edited profile: `ExamProfileSchema` with the `{ name, count }` recurring topics. */
+export const ExamProfileDataSchema = ExamProfileSchema.extend({
+  recurringTopics: z.array(RecurringTopicSchema),
+});
+export type ExamProfileData = z.infer<typeof ExamProfileDataSchema>;
+
 export const ExamProfileDtoSchema = z.object({
   id: z.string().uuid(),
   subjectId: z.string().uuid(),
   sourceDocIds: z.array(z.string().uuid()),
-  profile: ExamProfileSchema,
+  profile: ExamProfileDataSchema,
   edited: z.boolean(),
   model: z.string(),
   promptVersion: z.string(),
@@ -65,7 +84,7 @@ export const ExamProfileDtoSchema = z.object({
 export type ExamProfileDto = z.infer<typeof ExamProfileDtoSchema>;
 
 /** PATCH body: the user owns the profile after extraction (docs/fasi/F5 "Editabile dall'utente"). */
-export const UpdateExamProfileRequestSchema = ExamProfileSchema;
+export const UpdateExamProfileRequestSchema = ExamProfileDataSchema;
 export type UpdateExamProfileRequest = z.infer<typeof UpdateExamProfileRequestSchema>;
 
 export const SimulationSummaryDtoSchema = z.object({
@@ -102,6 +121,27 @@ export const ExamItemDtoSchema = z.object({
 });
 export type ExamItemDto = z.infer<typeof ExamItemDtoSchema>;
 
+/** Photo of a handwritten answer attached to one exercise of an attempt. */
+// Constants live in @studyhub/core (browser-safe): clients must not import runtime values from here.
+export {
+  ATTEMPT_PHOTO_MIMES,
+  ATTEMPT_PHOTO_MAX_BYTES,
+  ATTEMPT_PHOTO_MAX_PER_ITEM,
+} from '@studyhub/core';
+
+export const AttemptAnswerPhotoDtoSchema = z.object({
+  id: z.string().uuid(),
+  itemId: z.string().uuid(),
+  mime: z.string(),
+  size: z.number().int().nonnegative(),
+  createdAt: z.string().datetime(),
+  /** OCR state used by the grader: null = not transcribed yet. */
+  transcriptStatus: z.enum(['ok', 'illegible', 'failed']).nullable().default(null),
+  /** `GET /api/subjects/<slug>/attempts/<attemptId>/items/<itemId>/photos/<id>/file` */
+  url: z.string(),
+});
+export type AttemptAnswerPhotoDto = z.infer<typeof AttemptAnswerPhotoDtoSchema>;
+
 export const AttemptStatusSchema = z.enum(['in_progress', 'submitted', 'graded']);
 
 export const AttemptDtoSchema = z.object({
@@ -117,6 +157,8 @@ export const AttemptDtoSchema = z.object({
   totalAwarded: z.number().nullable(),
   totalMax: z.number().nullable(),
   weakTopics: z.array(z.string()).nullable(),
+  /** itemId -> photos attached to that exercise (oldest first); items without photos are absent. */
+  photos: z.record(z.string(), z.array(AttemptAnswerPhotoDtoSchema)).default({}),
 });
 export type AttemptDto = z.infer<typeof AttemptDtoSchema>;
 
@@ -154,6 +196,8 @@ export const AttemptItemResultDtoSchema = z.object({
   sourceRef: z.object({ docId: z.string().uuid(), page: z.number().int(), quote: z.string() }),
   /** On-demand re-grade with a stronger model — alongside the original, never replacing it. */
   secondOpinion: SecondOpinionDtoSchema.nullable(),
+  /** Photos attached to the answer (oldest first). */
+  photos: z.array(AttemptAnswerPhotoDtoSchema).default([]),
 });
 export type AttemptItemResultDto = z.infer<typeof AttemptItemResultDtoSchema>;
 

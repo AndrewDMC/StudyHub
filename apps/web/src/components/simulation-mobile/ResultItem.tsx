@@ -3,7 +3,8 @@
 import { useId } from 'react';
 import { ChevronRight } from 'lucide-react';
 import type { AttemptItemResultDto } from '@studyhub/contracts';
-import { formatPoints, ratioTone } from '@/lib/simulationMobile';
+import { formatPoints, photoTranscriptNote, ratioTone } from '@/lib/simulationMobile';
+import { PhotoImage } from './PhotoImage';
 import { cardClass, toneBg } from './styles';
 
 const textBlock = 'whitespace-pre-wrap text-sm [overflow-wrap:anywhere]';
@@ -57,6 +58,7 @@ export function ResultItem({
   onAskOpinion: () => void;
 }) {
   const panelId = useId();
+  const note = photoTranscriptNote(r.photos);
   const ratio = r.max > 0 ? r.awarded / r.max : 0;
   const tone = ratioTone(ratio);
   const score = `${formatPoints(r.awarded)}/${formatPoints(r.max)}`;
@@ -111,8 +113,44 @@ export function ResultItem({
               <p
                 className={`${textBlock} rounded-[var(--radius-control)] bg-bg-inset px-3 py-2 text-fg-secondary`}
               >
-                {r.answer || <span className="italic text-fg-muted">Nessuna risposta</span>}
+                {r.answer || (
+                  <span className="italic text-fg-muted">
+                    {r.photos.length > 0 ? 'Risposta nella foto' : 'Nessuna risposta'}
+                  </span>
+                )}
               </p>
+              {r.photos.length > 0 && (
+                <>
+                  <p className={`${blockLabel} mt-2`}>Foto allegate ({r.photos.length})</p>
+                  <ul className="grid grid-cols-3 gap-2" data-testid="result-photos">
+                    {r.photos.map((p, i) => (
+                      <li key={p.id}>
+                        <a
+                          href={p.url}
+                          target="_blank"
+                          rel="noopener"
+                          aria-label={`Apri la foto ${i + 1} a dimensione intera`}
+                          className="block aspect-square min-h-11 overflow-hidden rounded-[var(--radius-control)] border border-border bg-bg-inset"
+                        >
+                          <PhotoImage
+                            src={p.url}
+                            alt={`Foto ${i + 1} della tua risposta, esercizio ${r.ord + 1}`}
+                          />
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                  {note && (
+                    <p
+                      role={note.kind === 'unreadable' ? 'status' : undefined}
+                      data-testid="photo-transcript-note"
+                      className={`mt-1 text-xs ${note.kind === 'unreadable' ? 'text-warn' : 'text-fg-muted'}`}
+                    >
+                      {note.text}
+                    </p>
+                  )}
+                </>
+              )}
             </div>
 
             <div className="rounded-[var(--radius-control)] border border-[color-mix(in_srgb,var(--warn)_30%,transparent)] bg-[color-mix(in_srgb,var(--warn)_8%,var(--bg-inset))] px-3 py-2">

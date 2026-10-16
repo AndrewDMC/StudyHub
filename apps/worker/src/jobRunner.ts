@@ -150,7 +150,11 @@ async function dispatch(
     case 'grade_attempt':
       return processGradeAttempt(db, dataRoot, GradeAttemptJobInputSchema.parse(data));
     case 'grade_item_second_opinion':
-      return processGradeItemSecondOpinion(db, GradeItemSecondOpinionJobInputSchema.parse(data));
+      return processGradeItemSecondOpinion(
+        db,
+        dataRoot,
+        GradeItemSecondOpinionJobInputSchema.parse(data),
+      );
     case 'generate_plan':
       return processGeneratePlan(db, GeneratePlanJobInputSchema.parse(data));
     case 'extract_topics':

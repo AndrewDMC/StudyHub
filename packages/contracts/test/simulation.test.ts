@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import {
+  ExamProfileDataSchema,
+  RecurringTopicSchema,
   ExamItemDtoSchema,
   GenerateSimulationJobInputSchema,
   SaveAnswersRequestSchema,
@@ -51,5 +53,34 @@ describe('SaveAnswersRequestSchema', () => {
     expect(SaveAnswersRequestSchema.safeParse({ answers: { 'not-a-uuid': 'x' } }).success).toBe(
       false,
     );
+  });
+});
+
+describe('RecurringTopicSchema / ExamProfileDataSchema', () => {
+  it('parses legacy strings as { name, count: null } and keeps counted objects', () => {
+    expect(RecurringTopicSchema.parse('Integrali')).toEqual({ name: 'Integrali', count: null });
+    expect(RecurringTopicSchema.parse({ name: 'Serie', count: 5 })).toEqual({
+      name: 'Serie',
+      count: 5,
+    });
+    expect(RecurringTopicSchema.safeParse({ name: '', count: 1 }).success).toBe(false);
+    expect(RecurringTopicSchema.safeParse({ name: 'x', count: 0 }).success).toBe(false);
+  });
+
+  it('accepts an old profile with string topics', () => {
+    const parsed = ExamProfileDataSchema.parse({
+      itemCount: 2,
+      durationMin: 60,
+      totalPoints: 20,
+      kindDistribution: { open: 1 },
+      avgMinutesPerItem: 30,
+      verbosity: 'media',
+      recurringTopics: ['entropia', { name: 'Fourier', count: 3 }],
+      notes: '',
+    });
+    expect(parsed.recurringTopics).toEqual([
+      { name: 'entropia', count: null },
+      { name: 'Fourier', count: 3 },
+    ]);
   });
 });

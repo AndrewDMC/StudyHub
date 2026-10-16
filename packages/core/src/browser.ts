@@ -10,3 +10,5 @@ export * from './forecast.js';
 export * from './mastery.js';
 export * from './examTimer.js';
 export * from './pomodoro.js';
+export * from './scoring.js';
+export * from './attemptPhotos.js';

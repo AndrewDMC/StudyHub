@@ -143,7 +143,12 @@ export function GenerationPanel({
       </h2>
 
       <div className="flex flex-col gap-2 px-1">
-        <ModelPicker value={model} onChange={setModel} disabled={generateMutation.isPending} />
+        <ModelPicker
+          value={model}
+          onChange={setModel}
+          disabled={generateMutation.isPending}
+          defaultId={MODEL_OPTIONS[1].id}
+        />
         {estimateQuery.isError && (
           <p className="text-[11px] text-fg-muted">Stima costo non disponibile.</p>
         )}

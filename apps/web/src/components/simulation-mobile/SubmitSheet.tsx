@@ -12,6 +12,7 @@ export function SubmitSheet({
   answered,
   total,
   isSubmitting,
+  photosUploading = false,
   error,
   onSubmit,
   returnFocusRef,
@@ -21,6 +22,8 @@ export function SubmitSheet({
   answered: number;
   total: number;
   isSubmitting: boolean;
+  /** Some photo is still uploading: the hand-in waits for it. */
+  photosUploading?: boolean;
   error: string | null;
   onSubmit: () => void;
   returnFocusRef: RefObject<HTMLElement | null>;
@@ -41,6 +44,11 @@ export function SubmitSheet({
             {missing} {missing === 1 ? 'esercizio senza risposta' : 'esercizi senza risposta'}.
           </p>
         )}
+        {photosUploading && (
+          <p role="status" className="text-sm text-warn">
+            Aspetta che le foto finiscano di caricarsi.
+          </p>
+        )}
         {error && (
           <p role="alert" className="text-sm text-danger">
             {error}
@@ -58,7 +66,7 @@ export function SubmitSheet({
           </button>
           <button
             type="button"
-            disabled={isSubmitting}
+            disabled={isSubmitting || photosUploading}
             onClick={onSubmit}
             className={`${primaryButton} min-h-12 text-sm`}
           >
