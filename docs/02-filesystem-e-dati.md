@@ -26,13 +26,16 @@
 ```
 
 **Regole d'oro**
+
 1. `sources/` non viene mai modificato né cancellato da un job. Solo dall'utente.
 2. `derived/` e `artifacts/` sono ricostruibili: cancellarli non perde dati utente (perde solo tempo/token).
 3. Ogni file in `artifacts/` ha front-matter con `generatedBy`, `model`, `promptVersion`, `sourceDocIds`, `approvedAt`.
 4. Lo slug della cartella è stabile e non cambia se rinomini la materia (il nome vive in `subject.json`).
 
 ## 2. Sincronizzazione FS ↔ DB
+
 Il DB è un **indice**. Un `reconcile` job:
+
 - scansiona `subjects/`, calcola `sha256` dei file,
 - inserisce documenti nuovi (drop-in da file manager = ingest automatico),
 - marca `missing` quelli spariti senza cancellare i record,
@@ -84,6 +87,9 @@ tasks(id, plan_id, subject_id, topic_id, date, slot /*morning|afternoon|evening*
       title, description, est_minutes, payload jsonb /*deckId, docIds, pages…*/,
       status /*todo|doing|done|skipped|moved*/, actual_minutes, completed_at)
 
+task_flashcards(task_id → tasks cascade, flashcard_id → flashcards cascade,
+                source /*auto|user*/, PK(task_id, flashcard_id))   -- migrazione 0022
+
 sessions(id, task_id, subject_id, started_at, ended_at, focus_score, notes)
 
 jobs(id, type, subject_id, status, input jsonb, output jsonb,
@@ -96,11 +102,13 @@ Indici: `chunks USING hnsw (embedding vector_cosine_ops)`, GIN su `to_tsvector('
 `tasks(date, status)`, `flashcards(due_at) WHERE NOT suspended`.
 
 ## 4. Modello di ripetizione spaziata
+
 **FSRS-5** (non SM-2): migliore aderenza ai dati reali e, soprattutto, espone `retrievability(t)` —
-serve al Planner per rispondere a *"quante card saranno dimenticate il giorno dell'esame?"*.
+serve al Planner per rispondere a _"quante card saranno dimenticate il giorno dell'esame?"_.
 Implementazione: `ts-fsrs`. Parametri ottimizzabili dai `reviews` dell'utente dopo ~1000 recensioni.
 
 ## 5. Mastery per argomento
+
 `mastery(topic) = 0.5·retrievability_media_card + 0.3·accuratezza_simulazioni + 0.2·copertura_materiale_letto`
 Valore 0..1 usato per: heatmap in Dashboard, priorità del Planner, ordinamento della pagina Materia.
 Formula esplicitata in `packages/core/mastery.ts` e **mostrata all'utente** in tooltip: niente numeri magici.
@@ -112,7 +120,9 @@ Formula esplicitata in `packages/core/mastery.ts` e **mostrata all'utente** in t
 Vedi `docs/07-markdown-layer.md` per la specifica completa.
 
 ### 6.1 Modifiche al layout su disco
+
 `derived/<docId>/` ospita ora il **formato canonico** dell'applicazione:
+
 ```
 derived/<docId>/
 ├─ content.md        # canonical markdown (l'unico input delle funzioni AI a valle)
@@ -122,6 +132,7 @@ derived/<docId>/
 subjects/<slug>/.studyhub/handwriting-profile.md    # convenzioni di grafia apprese
 subjects/<slug>/artifacts/maps/<id>.canvas          # export JSON Canvas (Obsidian)
 ```
+
 `derived/` resta formalmente rigenerabile, **ma**: un `content.md` con `edited: true` contiene lavoro umano
 e va incluso nei backup e trattato come dato utente a tutti gli effetti.
 
@@ -148,6 +159,7 @@ schema_groups(id, document_id, group_key, label, node_keys text[])
 -- correzioni: alimentano il profilo di grafia
 transcription_corrections(id, document_id, node_key, before, after, kind, created_at)
 ```
+
 Indici: `schema_nodes(document_id, confidence)` per la coda di verifica;
 `schema_edges(from_node)`, `schema_edges(to_node)` per la navigazione del grafo.
 
@@ -170,6 +182,7 @@ calendar_events(id, subject_id, kind /*esame|lezione|impegno|blackout*/,
 Motivazione in `docs/04-planner.md` §9.4.
 
 ### 6.3 Regola di qualità applicata a livello di query
+
 Ogni job generativo (`flashcards`, `schema`, `summary`, `simulation`) filtra i blocchi sorgente con:
 `confidence = 'ok' OR verified_at IS NOT NULL`.
-Un documento con blocchi bloccati espone il conteggio in UI: *"12 blocchi esclusi, 3 nodi da verificare"*.
+Un documento con blocchi bloccati espone il conteggio in UI: _"12 blocchi esclusi, 3 nodi da verificare"_.

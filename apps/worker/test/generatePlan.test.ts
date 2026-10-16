@@ -13,6 +13,7 @@ import {
   studyPlans,
   studySessions,
   subjects,
+  taskFlashcards,
   tasks,
   topics,
 } from '@studyhub/db';
@@ -484,5 +485,61 @@ describe('processGeneratePlan', () => {
         .filter((t) => t.kind === 'read' && t.topicId === topicId)
         .reduce((s, t) => s + t.minutes, 0);
     expect(minutesFor(masteredTopicId)).toBeLessThan(minutesFor(freshTopicId));
+  });
+  it('attaches the subject’s topic cards to the nearest lesson of their topic in the new plan', async () => {
+    const doc = await addParsedDocument(20);
+    const topicId = randomUUID();
+    await db
+      .insert(topics)
+      .values({ id: topicId, subjectId, name: 'Termodinamica', slug: 'termodinamica' });
+    await db.insert(documentTopics).values({ documentId: doc, topicId });
+    const deckId = randomUUID();
+    await db.insert(artifacts).values({
+      id: deckId,
+      subjectId,
+      kind: 'flashcard_deck',
+      title: 'Deck',
+      path: '/x.json',
+      model: 'fake-v1',
+      promptVersion: 'flashcards/v2',
+    });
+    const cardId = randomUUID();
+    await db.insert(flashcards).values({
+      id: cardId,
+      deckId,
+      topicId,
+      type: 'basic',
+      front: 'Cos’è l’entropia?',
+      back: 'Disordine.',
+    });
+    const noTopicCard = randomUUID();
+    await db.insert(flashcards).values({
+      id: noTopicCard,
+      deckId,
+      type: 'basic',
+      front: 'Senza argomento',
+      back: 'x',
+    });
+
+    const result = await processGeneratePlan(db, baseInput(), new FakeProvider());
+
+    const links = await db.select().from(taskFlashcards);
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({ flashcardId: cardId, source: 'auto' });
+    const [task] = await db.select().from(tasks).where(eq(tasks.id, links[0]!.taskId));
+    expect(task?.planId).toBe(result.planId);
+    expect(task?.topicId).toBe(topicId);
+    expect(['rest', 'simulation']).not.toContain(task?.kind);
+
+    // Regenerating the draft recreates the tasks: links follow the new plan.
+    const again = await processGeneratePlan(
+      db,
+      { ...baseInput(), force: true },
+      new FakeProvider(),
+    );
+    const links2 = await db.select().from(taskFlashcards);
+    expect(links2).toHaveLength(1);
+    const [task2] = await db.select().from(tasks).where(eq(tasks.id, links2[0]!.taskId));
+    expect(task2?.planId).toBe(again.planId);
   });
 });

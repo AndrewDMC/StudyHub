@@ -14,6 +14,9 @@ import {
   sessionItems,
   simulationItems,
   simulations,
+  studyPlans,
+  taskFlashcards,
+  tasks,
   topics,
 } from '@studyhub/db';
 import { createSubject } from '../src/lib/subjects';
@@ -99,6 +102,61 @@ describe('session closing (flashcards from key points, drill from wrong exercise
       await expect(createKeyPointDeck(db, dataRoot, slug, sessionId)).rejects.toThrow(
         /Termina prima/,
       );
+    });
+
+    it('attaches the new cards to the open lesson of their topic', async () => {
+      const planId = randomUUID();
+      await db.insert(studyPlans).values({
+        id: planId,
+        subjectId,
+        startDate: '2026-01-01',
+        targetDate: '2099-12-31',
+        availability: { perWeekday: [0, 60, 60, 60, 60, 60, 0], blackoutDates: [] },
+        prefs: {
+          sessionLength: 50,
+          intensity: 'standard',
+          simulationCount: 'auto',
+          simulationMinutes: 90,
+          reviewMinutesPerCard: 0.5,
+        },
+        feasibility: {
+          feasible: true,
+          requiredMinutes: 0,
+          availableMinutes: 0,
+          shortfallMinutes: 0,
+          unscheduledTopicKeys: [],
+          strategies: [],
+        },
+        warnings: [],
+        model: 'fake-v1',
+        promptVersion: 'p',
+        status: 'active',
+      });
+      const lessonId = randomUUID();
+      await db.insert(tasks).values({
+        id: lessonId,
+        subjectId,
+        planId,
+        taskKey: 'read:integrali:001',
+        date: '2099-01-01',
+        kind: 'read',
+        topicId,
+        minutes: 30,
+        title: 'Integrali',
+        description: '',
+        payload: { action: 'read' },
+        status: 'todo',
+      });
+      await addItem('key_point', 0, 'Fubini');
+      await addItem('key_point', 1, 'Dominio normale');
+      await endSession(db, slug, sessionId);
+
+      const deck = await createKeyPointDeck(db, dataRoot, slug, sessionId);
+
+      const cards = await db.select().from(flashcards).where(eq(flashcards.deckId, deck.deckId));
+      const links = await db.select().from(taskFlashcards);
+      expect(links.map((l) => l.flashcardId).sort()).toEqual(cards.map((c) => c.id).sort());
+      expect(links.every((l) => l.taskId === lessonId && l.source === 'auto')).toBe(true);
     });
 
     it('turns every key point into a cited draft card and writes the deck file', async () => {

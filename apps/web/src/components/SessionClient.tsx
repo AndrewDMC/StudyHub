@@ -15,6 +15,7 @@ import type {
 } from '@studyhub/contracts';
 import { Button } from '@/components/ui/button';
 import { ObsidianMarkdown } from '@/components/ObsidianMarkdown';
+import { SessionLessonCards } from '@/components/task-flashcards/SessionLessonCards';
 import { formatClock, PomodoroPanel, usePomodoro } from '@/components/PomodoroTimer';
 import { SessionBriefing } from '@/components/SessionBriefing';
 import { SessionClosing } from '@/components/SessionClosing';
@@ -457,6 +458,7 @@ function SessionDesktop({ slug, sessionId }: { slug: string; sessionId: string }
                 disabled={!active || patchMutation.isPending}
                 onChange={(ids) => patchMutation.mutate({ topicIds: ids })}
               />
+              <SessionLessonCards slug={slug} taskId={session.taskId} variant="desktop" />
               {docs.length === 0 ? (
                 <div className="rounded-[var(--radius-card)] border border-dashed border-border p-4 text-sm text-fg-muted">
                   Nessun documento collegato a questa sessione. Scegli un argomento qui sopra,

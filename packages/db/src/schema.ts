@@ -738,6 +738,31 @@ export const tasks = pgTable(
   ],
 );
 
+export type TaskFlashcardSource = 'auto' | 'user';
+
+/**
+ * Flashcards attached to a "lesson" (a plan task). `auto` links are managed by
+ * `packages/db/src/taskFlashcards.ts` (card topic -> nearest open task of that
+ * topic); `user` links are set by hand and never touched by the automation.
+ */
+export const taskFlashcards = pgTable(
+  'task_flashcards',
+  {
+    taskId: uuid('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    flashcardId: uuid('flashcard_id')
+      .notNull()
+      .references(() => flashcards.id, { onDelete: 'cascade' }),
+    source: text('source').$type<TaskFlashcardSource>().notNull().default('auto'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.taskId, table.flashcardId] }),
+    index('task_flashcards_flashcard_idx').on(table.flashcardId),
+  ],
+);
+
 /**
  * Study session (docs/08-sessione-di-studio.md): what "Inizia" on a task opens.
  * `topicIds`/`documentIds` are a snapshot of the scope resolved at start
@@ -927,6 +952,8 @@ export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
 export type DocumentTopic = typeof documentTopics.$inferSelect;
 export type NewDocumentTopic = typeof documentTopics.$inferInsert;
+export type TaskFlashcard = typeof taskFlashcards.$inferSelect;
+export type NewTaskFlashcard = typeof taskFlashcards.$inferInsert;
 export type SchemaNode = typeof schemaNodes.$inferSelect;
 export type NewSchemaNode = typeof schemaNodes.$inferInsert;
 export type SchemaEdge = typeof schemaEdges.$inferSelect;

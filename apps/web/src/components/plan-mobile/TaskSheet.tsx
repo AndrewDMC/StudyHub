@@ -6,6 +6,7 @@ import { KIND_LABELS, addDaysIso, formatDayTitle } from '@/lib/planMobile';
 import { primaryButton, secondaryButton } from '../simulation-mobile/styles';
 import { BottomSheet } from '../subject-mobile/BottomSheet';
 import { todayIso } from '../subject-mobile/queries';
+import { TaskFlashcardsPanel, type PanelView } from '../task-flashcards/TaskFlashcardsSection';
 import type { usePlanMutations } from './usePlanData';
 
 type Mutations = ReturnType<typeof usePlanMutations>;
@@ -15,12 +16,14 @@ const dangerButton =
 
 /** Actions on one task: status (active plan), pin/delete (draft) and a one-day move. */
 export function TaskSheet({
+  slug,
   task,
   plan,
   onClose,
   returnFocusRef,
   mutations,
 }: {
+  slug: string;
   task: TaskDto | null;
   plan: PlanDto;
   onClose: () => void;
@@ -30,7 +33,11 @@ export function TaskSheet({
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const taskId = task?.id;
-  useEffect(() => setError(null), [taskId]);
+  const [view, setView] = useState<PanelView>('detail');
+  useEffect(() => {
+    setError(null);
+    setView('detail');
+  }, [taskId]);
 
   const run = async (action: () => Promise<unknown>) => {
     setPending(true);
@@ -67,97 +74,114 @@ export function TaskSheet({
     >
       {task && (
         <div className="mt-3 flex flex-col gap-2">
-          {task.description && (
+          {view === 'detail' && task.description && (
             <p className="whitespace-pre-wrap break-words text-sm text-fg-secondary">
               {task.description}
             </p>
           )}
-          {!draft && open && task.kind !== 'rest' && (
+          {task.kind !== 'rest' && (
+            <div className="my-1">
+              <TaskFlashcardsPanel
+                key={task.id}
+                slug={slug}
+                task={task}
+                variant="mobile"
+                onViewChange={setView}
+              />
+            </div>
+          )}
+          {view === 'detail' && (
             <>
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() =>
-                  void run(() => mutations.setStatus.mutateAsync({ id: task.id, status: 'done' }))
-                }
-                className={`${primaryButton} min-h-12 text-sm`}
-              >
-                Segna come fatta
-              </button>
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() =>
-                  void run(() =>
-                    mutations.setStatus.mutateAsync({ id: task.id, status: 'skipped' }),
-                  )
-                }
-                className={`${secondaryButton} min-h-12`}
-              >
-                Salta
-              </button>
+              {!draft && open && task.kind !== 'rest' && (
+                <>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() =>
+                      void run(() =>
+                        mutations.setStatus.mutateAsync({ id: task.id, status: 'done' }),
+                      )
+                    }
+                    className={`${primaryButton} min-h-12 text-sm`}
+                  >
+                    Segna come fatta
+                  </button>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() =>
+                      void run(() =>
+                        mutations.setStatus.mutateAsync({ id: task.id, status: 'skipped' }),
+                      )
+                    }
+                    className={`${secondaryButton} min-h-12`}
+                  >
+                    Salta
+                  </button>
+                </>
+              )}
+              {!draft && closed && (
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() =>
+                    void run(() => mutations.setStatus.mutateAsync({ id: task.id, status: 'todo' }))
+                  }
+                  className={`${secondaryButton} min-h-12`}
+                >
+                  Riapri
+                </button>
+              )}
+              {draft && task.kind !== 'rest' && (
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() =>
+                    void run(() => mutations.pin.mutateAsync({ id: task.id, pinned: !task.pinned }))
+                  }
+                  className={`${secondaryButton} min-h-12`}
+                >
+                  {task.pinned ? 'Sblocca' : 'Fissa'}
+                </button>
+              )}
+              {(draft || open || task.kind === 'rest') && (
+                <button
+                  type="button"
+                  disabled={pending || nextDay > plan.targetDate}
+                  onClick={() =>
+                    void run(() => mutations.move.mutateAsync({ id: task.id, date: nextDay }))
+                  }
+                  className={`${secondaryButton} min-h-12`}
+                >
+                  Sposta di 1 giorno
+                </button>
+              )}
+              {!draft && open && task.date < today && task.kind !== 'rest' && (
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => void run(() => mutations.reabsorb.mutateAsync([task]))}
+                  className={`${secondaryButton} min-h-12`}
+                >
+                  Riassorbi nel piano
+                </button>
+              )}
+              {draft && (
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => void run(() => mutations.removeTask.mutateAsync(task.id))}
+                  className={dangerButton}
+                >
+                  Elimina task
+                </button>
+              )}
+              {error && (
+                <p role="alert" className="text-sm text-danger">
+                  {error}
+                </p>
+              )}
             </>
-          )}
-          {!draft && closed && (
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() =>
-                void run(() => mutations.setStatus.mutateAsync({ id: task.id, status: 'todo' }))
-              }
-              className={`${secondaryButton} min-h-12`}
-            >
-              Riapri
-            </button>
-          )}
-          {draft && task.kind !== 'rest' && (
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() =>
-                void run(() => mutations.pin.mutateAsync({ id: task.id, pinned: !task.pinned }))
-              }
-              className={`${secondaryButton} min-h-12`}
-            >
-              {task.pinned ? 'Sblocca' : 'Fissa'}
-            </button>
-          )}
-          {(draft || open || task.kind === 'rest') && (
-            <button
-              type="button"
-              disabled={pending || nextDay > plan.targetDate}
-              onClick={() =>
-                void run(() => mutations.move.mutateAsync({ id: task.id, date: nextDay }))
-              }
-              className={`${secondaryButton} min-h-12`}
-            >
-              Sposta di 1 giorno
-            </button>
-          )}
-          {!draft && open && task.date < today && task.kind !== 'rest' && (
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() => void run(() => mutations.reabsorb.mutateAsync([task]))}
-              className={`${secondaryButton} min-h-12`}
-            >
-              Riassorbi nel piano
-            </button>
-          )}
-          {draft && (
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() => void run(() => mutations.removeTask.mutateAsync(task.id))}
-              className={dangerButton}
-            >
-              Elimina task
-            </button>
-          )}
-          {error && (
-            <p role="alert" className="text-sm text-danger">
-              {error}
-            </p>
           )}
         </div>
       )}

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, lt } from 'drizzle-orm';
 import {
   artifacts,
+  autoAttachFlashcards,
   chunks,
   buildPlanningUnits,
   exams,
@@ -194,46 +195,57 @@ export async function processGeneratePlan(
   // A regenerated draft replaces the previous one outright: it never existed
   // outside the review screen (docs/04-planner.md §9.1), so there is nothing
   // to preserve — unlike commit, which supersedes the *active* plan instead.
-  await db
-    .delete(studyPlans)
-    .where(and(eq(studyPlans.subjectId, input.subjectId), eq(studyPlans.status, 'draft')));
-
   const planId = randomUUID();
-  await db.insert(studyPlans).values({
-    id: planId,
-    subjectId: input.subjectId,
-    examId: input.examId ?? null,
-    startDate: input.startDate,
-    targetDate: input.targetDate,
-    availability: input.availability,
-    prefs: input.prefs,
-    feasibility: result.feasibility,
-    warnings: result.warnings,
-    model: resultModel,
-    promptVersion,
-    timeFactor: timeFactor.factor,
-  });
+  // Draft swap, plan, tasks and lesson links commit together: no half-built draft on failure.
+  await db.transaction(async (tx: typeof db) => {
+    await tx
+      .delete(studyPlans)
+      .where(and(eq(studyPlans.subjectId, input.subjectId), eq(studyPlans.status, 'draft')));
 
-  if (result.tasks.length > 0) {
-    const rows: NewTask[] = result.tasks.map((t) => ({
-      id: randomUUID(),
+    await tx.insert(studyPlans).values({
+      id: planId,
       subjectId: input.subjectId,
-      planId,
-      taskKey: t.key,
-      date: t.date,
-      kind: t.kind,
-      topicKey: t.topicKey,
-      topicId: t.topicId,
-      minutes: t.minutes,
-      title: t.title,
-      description: t.description,
-      payload: t.payload,
-      pinned: t.pinned,
-      origin: t.origin,
-      status: 'proposed',
-    }));
-    await db.insert(tasks).values(rows);
-  }
+      examId: input.examId ?? null,
+      startDate: input.startDate,
+      targetDate: input.targetDate,
+      availability: input.availability,
+      prefs: input.prefs,
+      feasibility: result.feasibility,
+      warnings: result.warnings,
+      model: resultModel,
+      promptVersion,
+      timeFactor: timeFactor.factor,
+    });
+
+    if (result.tasks.length > 0) {
+      const rows: NewTask[] = result.tasks.map((t) => ({
+        id: randomUUID(),
+        subjectId: input.subjectId,
+        planId,
+        taskKey: t.key,
+        date: t.date,
+        kind: t.kind,
+        topicKey: t.topicKey,
+        topicId: t.topicId,
+        minutes: t.minutes,
+        title: t.title,
+        description: t.description,
+        payload: t.payload,
+        pinned: t.pinned,
+        origin: t.origin,
+        status: 'proposed',
+      }));
+      await tx.insert(tasks).values(rows);
+    }
+
+    // Lessons: attach the subject's topic-bearing cards to the nearest lesson of each topic
+    // ("today" is the day the plan starts from).
+    await autoAttachFlashcards(tx, {
+      subjectId: input.subjectId,
+      planIds: [planId],
+      today: input.startDate,
+    });
+  });
 
   return {
     planId,

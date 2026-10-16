@@ -26,6 +26,7 @@ export async function fetchPage(
   slug: string,
   filters: Filters,
   cursor: string | undefined,
+  extra?: { suspended?: boolean },
 ): Promise<FlashcardPageDto> {
   const qs = new URLSearchParams();
   if (filters.topicId) qs.set('topicId', filters.topicId);
@@ -35,6 +36,7 @@ export async function fetchPage(
   if (filters.q) qs.set('q', filters.q);
   if (filters.flagged) qs.set('flagged', 'true');
   if (cursor) qs.set('cursor', cursor);
+  if (extra?.suspended !== undefined) qs.set('suspended', String(extra.suspended));
   const res = await fetch(`/api/subjects/${slug}/flashcards?${qs.toString()}`);
   const body = await res.json();
   if (!res.ok) throw new Error(body.error?.message ?? 'Impossibile caricare le flashcard');
@@ -53,7 +55,7 @@ const SELECT =
 const LINK_BTN = 'shrink-0 text-[11px] text-fg-muted hover:text-fg-primary disabled:opacity-50';
 
 /** Debounces a fast-changing value (the search box) so each keystroke isn't a request. */
-function useDebounced<T>(value: T, ms: number): T {
+export function useDebounced<T>(value: T, ms: number): T {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
     const t = setTimeout(() => setDebounced(value), ms);

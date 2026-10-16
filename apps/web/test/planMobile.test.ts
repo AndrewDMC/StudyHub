@@ -31,6 +31,7 @@ function task(over: Partial<TaskDto>): TaskDto {
     pinned: false,
     origin: 'planner',
     status: 'todo',
+    flashcardCount: 0,
     ...over,
   };
 }

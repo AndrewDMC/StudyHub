@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { FlashcardDtoSchema } from './generation.js';
 
 const IsoDateSchema = z
   .string()
@@ -96,8 +97,39 @@ export const TaskDtoSchema = z.object({
   pinned: z.boolean(),
   origin: TaskOriginSchema,
   status: TaskStatusSchema,
+  /** Flashcards attached to this lesson (task_flashcards). Missing in older payloads = 0. */
+  flashcardCount: z.number().int().nonnegative().default(0),
 });
 export type TaskDto = z.infer<typeof TaskDtoSchema>;
+
+export const TaskFlashcardSourceSchema = z.enum(['auto', 'user']);
+
+/** A flashcard attached to a lesson (plan task). */
+export const TaskFlashcardDtoSchema = FlashcardDtoSchema.extend({
+  source: TaskFlashcardSourceSchema,
+  /** Can enter a review queue: approved deck, not suspended, not flagged. */
+  reviewable: z.boolean(),
+});
+export type TaskFlashcardDto = z.infer<typeof TaskFlashcardDtoSchema>;
+
+/** `GET|PUT /api/subjects/:slug/plan/tasks/:taskId/flashcards` response. */
+export const TaskFlashcardsResponseSchema = z.object({
+  taskId: z.string().uuid(),
+  topicId: z.string().uuid().nullable(),
+  items: z.array(TaskFlashcardDtoSchema),
+});
+export type TaskFlashcardsResponse = z.infer<typeof TaskFlashcardsResponseSchema>;
+
+/** `PUT` body: `add` creates/upgrades `user` links, `remove` deletes links of any source. */
+export const UpdateTaskFlashcardsRequestSchema = z
+  .object({
+    add: z.array(z.string().uuid()).max(500).optional(),
+    remove: z.array(z.string().uuid()).max(500).optional(),
+  })
+  .refine((v) => (v.add?.length ?? 0) + (v.remove?.length ?? 0) > 0, {
+    message: 'add or remove must not be empty',
+  });
+export type UpdateTaskFlashcardsRequest = z.infer<typeof UpdateTaskFlashcardsRequestSchema>;
 
 export const PlanStatusSchema = z.enum(['draft', 'active', 'superseded']);
 

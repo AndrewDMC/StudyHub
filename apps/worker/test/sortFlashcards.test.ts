@@ -9,7 +9,10 @@ import {
   flashcards,
   jobs,
   settings,
+  studyPlans,
   subjects,
+  taskFlashcards,
+  tasks,
   topics,
 } from '@studyhub/db';
 import {
@@ -407,5 +410,58 @@ describe('processSortFlashcards', () => {
     expect(job?.subjectId).toBe(subjectId);
     expect(job?.output).toMatchObject({ assigned: 1, assignedByAi: 1, noTopics: false });
     expect(job?.cost?.eur).toBe(0);
+  });
+  it('attaches newly sorted cards to the open lesson of their topic, not the ones left unsorted', async () => {
+    const planId = randomUUID();
+    await db.insert(studyPlans).values({
+      id: planId,
+      subjectId,
+      startDate: '2026-01-01',
+      targetDate: '2099-12-31',
+      availability: { perWeekday: [0, 60, 60, 60, 60, 60, 0], blackoutDates: [] },
+      prefs: {
+        sessionLength: 50,
+        intensity: 'standard',
+        simulationCount: 'auto',
+        simulationMinutes: 90,
+        reviewMinutesPerCard: 0.5,
+      },
+      feasibility: {
+        feasible: true,
+        requiredMinutes: 0,
+        availableMinutes: 0,
+        shortfallMinutes: 0,
+        unscheduledTopicKeys: [],
+        strategies: [],
+      },
+      warnings: [],
+      model: 'fake-v1',
+      promptVersion: 'p',
+      status: 'active',
+    });
+    const lessonId = randomUUID();
+    await db.insert(tasks).values({
+      id: lessonId,
+      subjectId,
+      planId,
+      taskKey: 'read:ottica:001',
+      date: '2099-01-01',
+      kind: 'read',
+      topicId: otticaId,
+      minutes: 30,
+      title: 'Ottica',
+      description: '',
+      payload: { action: 'read' },
+      status: 'todo',
+    });
+    const sorted = await addCard('Domanda neutra?', { docId: docOttica });
+    const unsorted = await addCard('Capitale della Francia?');
+
+    await processSortFlashcards(db, { subjectId }, new SpyProvider());
+
+    const links = await db.select().from(taskFlashcards);
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({ taskId: lessonId, flashcardId: sorted, source: 'auto' });
+    expect(links.some((l) => l.flashcardId === unsorted)).toBe(false);
   });
 });

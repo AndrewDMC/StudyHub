@@ -15,6 +15,9 @@ import type {
 } from '@studyhub/contracts';
 import { useIsMobile } from '@/lib/useIsMobile';
 import { PlanMobile } from './plan-mobile/PlanMobile';
+import { TaskFlashcardsPanel } from './task-flashcards/TaskFlashcardsSection';
+import { cardCountLabel } from './task-flashcards/taskFlashcardsModel';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 
 async function getJson<T>(url: string, key: string): Promise<T> {
   const res = await fetch(url);
@@ -521,30 +524,60 @@ function FeasibilityBanner({ plan }: { plan: PlanDto }) {
 }
 
 function TaskRow({
+  slug,
   task,
   isDraft,
   onPin,
   onDelete,
   onStatus,
 }: {
+  slug: string;
   task: TaskDto;
   isDraft: boolean;
   onPin: (id: string, pinned: boolean) => void;
   onDelete: (id: string) => void;
   onStatus: (id: string, status: 'done' | 'skipped') => void;
 }) {
+  const [cardsOpen, setCardsOpen] = useState(false);
+  const hasCards = task.kind !== 'rest';
+  const pill =
+    'rounded-full border border-border px-2 py-0.5 text-xs text-fg-secondary hover:text-fg-primary max-md:min-h-11';
   return (
     <li className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 rounded-[var(--radius-control)] border border-border bg-bg-surface px-3 py-2">
       <div className="min-w-0 flex-1 basis-56">
-        <p className="text-xs uppercase tracking-wide text-fg-muted">
-          {KIND_LABELS[task.kind]} · {task.minutes} min{task.pinned ? ' · fissata' : ''}
-        </p>
+        <div className="flex items-center gap-2">
+          <p className="text-xs uppercase tracking-wide text-fg-muted">
+            {KIND_LABELS[task.kind]} · {task.minutes} min{task.pinned ? ' · fissata' : ''}
+          </p>
+          {hasCards && task.flashcardCount > 0 && (
+            <button
+              type="button"
+              aria-haspopup="dialog"
+              aria-label={`${task.flashcardCount} flashcard attaccate a ${task.title}: apri`}
+              onClick={() => setCardsOpen(true)}
+              className={pill}
+            >
+              <span data-testid="task-card-badge">{cardCountLabel(task.flashcardCount)}</span>
+            </button>
+          )}
+        </div>
         <p className="text-sm font-medium text-fg-primary md:truncate">{task.title}</p>
         {task.description && (
           <p className="text-xs text-fg-secondary md:truncate">{task.description}</p>
         )}
       </div>
       <div className="flex shrink-0 gap-1.5 max-md:[&>button]:min-h-11 max-md:[&>button]:px-3">
+        {hasCards && (
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            data-testid="task-flashcards-open"
+            onClick={() => setCardsOpen(true)}
+            className="rounded-[var(--radius-control)] border border-border px-2 py-1 text-[11px] text-fg-secondary hover:text-fg-primary"
+          >
+            Flashcard{task.flashcardCount > 0 ? ` (${task.flashcardCount})` : ''}
+          </button>
+        )}
         {isDraft ? (
           <>
             <button
@@ -584,6 +617,19 @@ function TaskRow({
           )
         )}
       </div>
+      {hasCards && (
+        <Dialog open={cardsOpen} onOpenChange={setCardsOpen}>
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <DialogTitle>{task.title}</DialogTitle>
+              <DialogDescription>
+                {KIND_LABELS[task.kind]} · {task.minutes} min · {task.date}
+              </DialogDescription>
+            </DialogHeader>
+            {cardsOpen && <TaskFlashcardsPanel slug={slug} task={task} variant="desktop" />}
+          </DialogContent>
+        </Dialog>
+      )}
     </li>
   );
 }
@@ -851,6 +897,7 @@ function PlanDesktop({ slug }: { slug: string }) {
                     {byDay.get(date)!.map((task) => (
                       <TaskRow
                         key={task.id}
+                        slug={slug}
                         task={task}
                         isDraft={plan.status === 'draft'}
                         onPin={(id, pinned) => pin.mutate({ id, pinned })}

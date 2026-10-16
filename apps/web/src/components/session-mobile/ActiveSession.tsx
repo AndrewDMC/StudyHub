@@ -2,6 +2,7 @@
 
 import { useRef, useState, type KeyboardEvent } from 'react';
 import type { SessionFocus, StudySessionDto, UpdateSessionRequest } from '@studyhub/contracts';
+import { SessionLessonCards } from '../task-flashcards/SessionLessonCards';
 import { BriefingMobile } from './BriefingMobile';
 import { ChatMobile } from './ChatMobile';
 import { SourceSheet, type SourceRef } from './SourceSheet';
@@ -100,6 +101,7 @@ export function ActiveSession({
           hidden={tab !== 'brief'}
           className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-4"
         >
+          <SessionLessonCards slug={slug} taskId={session.taskId} variant="mobile" />
           <BriefingMobile
             slug={slug}
             sessionId={sessionId}

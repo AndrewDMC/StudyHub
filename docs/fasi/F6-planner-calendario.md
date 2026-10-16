@@ -325,3 +325,36 @@ Non ancora:
 Test: unit [`planMobile.test.ts`](../../apps/web/test/planMobile.test.ts); e2e
 [`materia-lacune-piano.mobile.spec.ts`](../../apps/web/e2e/materia-lacune-piano.mobile.spec.ts) e
 [`materia-lacune-piano-desktop.spec.ts`](../../apps/web/e2e/materia-lacune-piano-desktop.spec.ts) (il desktop non cambi).
+
+## Aggiornamento — flashcard attaccate alle lezioni (Slice 2, 2026-10-16)
+
+Ogni task del piano può avere un insieme di flashcard collegate, in `task_flashcards` (migrazione
+`0022_task_flashcards.sql`, cascade da entrambi i lati; `source` `auto` o `user`). Le task mantengono
+il loro id durante il commit del piano, quindi i collegamenti restano.
+
+- **Scelta della lezione** (`pickLessonForTopic`, `packages/core/src/planner/lessons.ts`): per un argomento
+  sceglie la task aperta più vicina con data ≥ oggi, con `kind` diverso da `rest` e `simulation`; a parità di
+  data preferisce `review` > `flashcards` > `read`.
+- **Agganci automatici** (`packages/db/src/taskFlashcards.ts`: `autoAttachFlashcards`, `reattachFlashcards`):
+  alla generazione del piano, alla generazione e all'ordinamento delle card, alla creazione o modifica di
+  argomento nell'editor deck (i link `auto` si spostano, quelli `user` restano), alla riattivazione di una card
+  sospesa e alla chiusura di una sessione.
+- **API**: `TaskDto.flashcardCount`; `GET` e `PUT /api/subjects/[slug]/plan/tasks/[taskId]/flashcards`
+  (`PUT` accetta `{ add, remove }`; le aggiunte hanno `source: user`). Ogni item riporta `source` e
+  `reviewable` (mazzo approvato, card non sospesa né segnalata).
+- **Ripasso per lezione**: `GET /api/review/queue?task=` e pagina `/ripasso?materia=&task=`. Prima le card
+  scadute, poi le altre, solo le ripassabili. All'uscita si torna a `/materie/[slug]/piano`.
+- **UI**: piano desktop con badge "N card" che apre un dialog; piano mobile con "· N card" nella riga e
+  sezione Flashcard nel TaskSheet. Il dettaglio permette di staccare le card e di attaccarne altre con
+  "Attacca card…" (filtro per argomento, ricerca, "Carica altre"); le card non ripassabili mostrano
+  "Non in ripasso". In sessione, blocco "Flashcard della lezione (N)" con "Ripassa" (vedi
+  [`docs/08-sessione-di-studio.md`](../08-sessione-di-studio.md)).
+
+Test: unit e integration su core, db, web e worker; e2e [`flashcard-lezioni.mobile.spec.ts`](../../apps/web/e2e/flashcard-lezioni.mobile.spec.ts) (9)
+e `flashcard-lezioni-desktop` (2).
+
+Non ancora / limiti:
+
+- nessuna esclusione persistente: una card staccata a mano può tornare in automatico se cambia argomento
+  o se si rigenera la bozza;
+- "oggi" è calcolato in UTC, come nel resto dell'app.

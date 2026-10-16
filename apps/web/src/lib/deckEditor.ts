@@ -2,12 +2,15 @@ import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
   artifacts,
+  autoAttachFlashcards,
   flashcards,
+  reattachFlashcards,
   recomputeTopicMastery,
   subjects,
   topics,
   type Flashcard,
 } from '@studyhub/db';
+import { toIsoDate } from '@studyhub/core';
 import type {
   ArtifactDto,
   BulkFlashcardsRequest,
@@ -111,20 +114,31 @@ export async function createFlashcard(
   await requireDeck(db, subject.id, input.deckId);
   if (input.topicId) await requireTopic(db, subject.id, input.topicId);
 
-  const [row] = await db
-    .insert(flashcards)
-    .values({
-      id: randomUUID(),
-      deckId: input.deckId,
-      topicId: input.topicId ?? null,
-      type: input.type,
-      front: input.front,
-      back: input.back,
-      hint: input.hint ?? null,
-      sourceRef: null,
-      tags: normalizeTags(input.tags ?? []),
-    })
-    .returning();
+  // Card and lesson link together: a failing attach must not leave a card behind with a 500.
+  const row = await db.transaction(async (tx: AnyDb) => {
+    const [created] = await tx
+      .insert(flashcards)
+      .values({
+        id: randomUUID(),
+        deckId: input.deckId,
+        topicId: input.topicId ?? null,
+        type: input.type,
+        front: input.front,
+        back: input.back,
+        hint: input.hint ?? null,
+        sourceRef: null,
+        tags: normalizeTags(input.tags ?? []),
+      })
+      .returning();
+    if (created.topicId) {
+      await autoAttachFlashcards(tx, {
+        subjectId: subject.id,
+        cardIds: [created.id],
+        today: toIsoDate(new Date()),
+      });
+    }
+    return created;
+  });
   return toDto(row);
 }
 
@@ -164,7 +178,25 @@ export async function updateFlashcard(
   if (input.front !== undefined && input.front !== card.front) patch.embedding = null;
 
   const [row] = await db.update(flashcards).set(patch).where(eq(flashcards.id, cardId)).returning();
-  if (input.topicId !== undefined) await recomputeTopics(db, [card.topicId, row.topicId]);
+  if (input.suspended === false && card.suspended) {
+    // A reactivated card joins its lesson (suspended cards are never attached).
+    await autoAttachFlashcards(db, {
+      subjectId: subject.id,
+      cardIds: [cardId],
+      today: toIsoDate(new Date()),
+    });
+  }
+  if (input.topicId !== undefined) {
+    await recomputeTopics(db, [card.topicId, row.topicId]);
+    if (row.topicId !== card.topicId) {
+      // Lessons: the card follows its topic (auto links only; user links stay).
+      await reattachFlashcards(db, {
+        subjectId: subject.id,
+        cardIds: [row.id],
+        today: toIsoDate(new Date()),
+      });
+    }
+  }
   return toDto(row);
 }
 
@@ -205,6 +237,13 @@ export async function bulkFlashcards(
         .update(flashcards)
         .set({ suspended: action.suspended })
         .where(inArray(flashcards.id, ids));
+      if (!action.suspended) {
+        await autoAttachFlashcards(db, {
+          subjectId: subject.id,
+          cardIds: ids,
+          today: toIsoDate(new Date()),
+        });
+      }
       break;
     case 'move':
       await requireDeck(db, subject.id, action.deckId);
@@ -217,6 +256,11 @@ export async function bulkFlashcards(
         .set({ topicId: action.topicId })
         .where(inArray(flashcards.id, ids));
       await recomputeTopics(db, [...cards.map((c) => c.topicId), action.topicId]);
+      await reattachFlashcards(db, {
+        subjectId: subject.id,
+        cardIds: cards.filter((c) => c.topicId !== action.topicId).map((c) => c.id),
+        today: toIsoDate(new Date()),
+      });
       break;
     case 'addTag': {
       const tag = action.tag.trim().toLowerCase();

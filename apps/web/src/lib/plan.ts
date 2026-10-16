@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import {
   buildPlanningUnits,
+  countTaskFlashcards,
   exams,
   filterUnitsByScope,
   heuristicPlannerTopics,
@@ -99,7 +100,7 @@ async function requireSubject(db: AnyDb, subjectSlug: string) {
   return subject;
 }
 
-function toTaskDto(row: Task): TaskDto {
+function toTaskDto(row: Task, flashcardCount = 0): TaskDto {
   return {
     id: row.id,
     planId: row.planId,
@@ -115,11 +116,21 @@ function toTaskDto(row: Task): TaskDto {
     pinned: row.pinned,
     origin: row.origin,
     status: row.status,
+    flashcardCount,
   };
 }
 
+/** Task rows to DTOs with the attached-flashcard count (one query for the whole batch). */
+async function toTaskDtos(db: AnyDb, rows: Task[]): Promise<TaskDto[]> {
+  const counts = await countTaskFlashcards(
+    db,
+    rows.map((r) => r.id),
+  );
+  return rows.map((r) => toTaskDto(r, counts.get(r.id) ?? 0));
+}
+
 /** `loadPerDay` is derived, not stored — capacity depends only on the plan's own window/prefs (see `moveTaskInPlan` for the cross-subject-busy caveat). */
-function toPlanDto(plan: StudyPlan, taskRows: Task[]): PlanDto {
+async function toPlanDto(db: AnyDb, plan: StudyPlan, taskRows: Task[]): Promise<PlanDto> {
   const capacity = buildCapacity({
     startDate: plan.startDate,
     targetDate: plan.targetDate,
@@ -139,7 +150,7 @@ function toPlanDto(plan: StudyPlan, taskRows: Task[]): PlanDto {
     feasibility: plan.feasibility,
     warnings: plan.warnings,
     loadPerDay: computeLoadPerDay(capacity, taskRows),
-    tasks: taskRows.map(toTaskDto),
+    tasks: await toTaskDtos(db, taskRows),
     createdAt: plan.createdAt.toISOString(),
     committedAt: plan.committedAt ? plan.committedAt.toISOString() : null,
   };
@@ -156,7 +167,7 @@ async function loadPlanByStatus(
     .where(and(eq(studyPlans.subjectId, subjectId), eq(studyPlans.status, status)));
   if (!plan) return null;
   const taskRows: Task[] = await db.select().from(tasks).where(eq(tasks.planId, plan.id));
-  return toPlanDto(plan, taskRows);
+  return await toPlanDto(db, plan, taskRows);
 }
 
 /**
@@ -179,7 +190,7 @@ export async function listPlans(db: AnyDb, subjectSlug: string): Promise<PlanDto
   const result: PlanDto[] = [];
   for (const plan of plans) {
     const taskRows: Task[] = await db.select().from(tasks).where(eq(tasks.planId, plan.id));
-    result.push(toPlanDto(plan, taskRows));
+    result.push(await toPlanDto(db, plan, taskRows));
   }
   return result;
 }
@@ -328,7 +339,7 @@ export async function commitPlan(
 
   if (plan.status === 'active') {
     const taskRows: Task[] = await db.select().from(tasks).where(eq(tasks.planId, plan.id));
-    return toPlanDto(plan, taskRows); // idempotent: already committed
+    return await toPlanDto(db, plan, taskRows); // idempotent: already committed
   }
   if (plan.status === 'superseded') {
     throw new PlanNotFoundError(planId); // a superseded plan can never be (re)committed
@@ -371,7 +382,7 @@ export async function commitPlan(
     'utf-8',
   );
 
-  return toPlanDto(committed, taskRows);
+  return await toPlanDto(db, committed, taskRows);
 }
 
 async function requireTask(db: AnyDb, subjectId: string, taskId: string): Promise<Task> {
@@ -402,7 +413,7 @@ export async function updateDraftTask(
   if (request.pinned !== undefined) patch.pinned = request.pinned;
 
   const [updated] = await db.update(tasks).set(patch).where(eq(tasks.id, taskId)).returning();
-  return toTaskDto(updated);
+  return (await toTaskDtos(db, [updated]))[0]!;
 }
 
 export async function deleteDraftTask(
@@ -446,7 +457,7 @@ export async function createManualTask(
     status: 'proposed',
   });
   const [row] = await db.select().from(tasks).where(eq(tasks.id, id));
-  return toTaskDto(row);
+  return (await toTaskDtos(db, [row]))[0]!;
 }
 
 /**
@@ -504,7 +515,7 @@ async function applyMoveResult(
   }
 
   const taskRows: Task[] = await db.select().from(tasks).where(eq(tasks.planId, plan.id));
-  return toPlanDto(plan, taskRows);
+  return await toPlanDto(db, plan, taskRows);
 }
 
 export async function moveTaskInPlan(
@@ -584,7 +595,7 @@ export async function applyBulkToDraft(
   if (removedIds.length > 0) await db.delete(tasks).where(inArray(tasks.id, removedIds));
 
   const taskRows: Task[] = await db.select().from(tasks).where(eq(tasks.planId, plan.id));
-  return toPlanDto(plan, taskRows);
+  return await toPlanDto(db, plan, taskRows);
 }
 
 /**
@@ -644,7 +655,10 @@ export async function getDailyTasks(
         inArray(tasks.status, ['todo', 'doing']),
       ),
     );
-  return rows.filter((r) => r.date <= today).map(toTaskDto);
+  return toTaskDtos(
+    db,
+    rows.filter((r) => r.date <= today),
+  );
 }
 
 export async function setTaskStatus(
@@ -670,7 +684,7 @@ export async function setTaskStatus(
     await recomputeTopicMastery(db, updated.topicId);
   }
 
-  return toTaskDto(updated);
+  return (await toTaskDtos(db, [updated]))[0]!;
 }
 
 /**

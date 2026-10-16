@@ -183,6 +183,14 @@ testata della chat.
   dalle fonti dei punti chiave. Le sessioni senza documenti aprono lo sheet Argomenti. "Termina" chiede conferma.
   `AppShell` nasconde l'header globale su `/sessione/[id]`.
 
+### Flashcard della lezione — Slice 2 (2026-10-16)
+
+- **Blocco in sessione**: "Flashcard della lezione (N)", dove N conta le card ripassabili attaccate alla task
+  della sessione (desktop nell'aside, mobile nel tab Punti chiave). "Ripassa" porta a `/ripasso?materia=&task=`.
+  Le card si collegano alla task dal piano (vedi `docs/fasi/F6-planner-calendario.md`).
+- **Chiusura**: la chiusura della sessione (`createKeyPointDeck`) aggancia alla task le card create dai punti
+  chiave.
+
 ## 7. Fette di consegna (ognuna usabile da sola)
 
 | #   | Fetta                       | Contenuto                                                                                                       | AI?      |
