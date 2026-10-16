@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray, lt } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lt } from 'drizzle-orm';
 import {
   artifacts,
   autoAttachFlashcards,
@@ -17,12 +17,14 @@ import {
   tasks,
   type Flashcard,
   type NewTask,
+  type Task,
 } from '@studyhub/db';
 import {
   applyTimeFactor,
   diffDays,
   forecastDueCounts,
   schedulePlan,
+  type PlannedTask,
   type PlannerInput,
   type PlannerTopic,
 } from '@studyhub/core';
@@ -180,6 +182,51 @@ export async function processGeneratePlan(
   // minutes (docs/04-planner.md §7, §9.4).
   const busyMinutesByDate = await loadBusyMinutesByDate(db, input.subjectId, input.examId);
 
+  // Open tasks the student pinned on the plan this draft will replace stay where they are
+  // ("Fissa" on an active plan). Their key (`pin:<task id>:<seq>`) is unique and can't collide with a generated one.
+  const activeRows: { id: string }[] = await db
+    .select({ id: studyPlans.id })
+    .from(studyPlans)
+    .where(
+      and(
+        eq(studyPlans.subjectId, input.subjectId),
+        eq(studyPlans.status, 'active'),
+        input.examId ? eq(studyPlans.examId, input.examId) : isNull(studyPlans.examId),
+      ),
+    );
+  const pinnedRows: Task[] =
+    activeRows.length === 0
+      ? []
+      : await db
+          .select()
+          .from(tasks)
+          .where(
+            and(
+              inArray(
+                tasks.planId,
+                activeRows.map((p) => p.id),
+              ),
+              eq(tasks.pinned, true),
+              inArray(tasks.status, ['todo', 'doing']),
+            ),
+          );
+  const pinned: PlannedTask[] = pinnedRows
+    .filter((t) => t.date >= input.startDate && t.date < input.targetDate && t.kind !== 'rest')
+    .map((t) => ({
+      // keeps the original trailing sequence: the move engine reads the order of a topic's sessions from it
+      key: `pin:${t.id}:${t.taskKey.split(':').at(-1)}`,
+      date: t.date,
+      kind: t.kind,
+      topicKey: t.topicKey,
+      topicId: t.topicId,
+      minutes: t.minutes,
+      title: t.title,
+      description: t.description,
+      payload: t.payload,
+      pinned: true,
+      origin: t.origin,
+    }));
+
   const plannerInput: PlannerInput = {
     startDate: input.startDate,
     targetDate: input.targetDate,
@@ -188,7 +235,7 @@ export async function processGeneratePlan(
     prefs: input.prefs,
     dueCardsByDate,
     busyMinutesByDate,
-    pinned: [],
+    pinned,
   };
   const result = schedulePlan(plannerInput);
 

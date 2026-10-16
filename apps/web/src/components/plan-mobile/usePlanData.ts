@@ -129,7 +129,13 @@ export function usePlanMutations(slug: string) {
   });
   const bulk = useMutation({
     mutationFn: (action: BulkPlanActionRequest) => send(`${base}/bulk`, 'POST', action),
-    onSuccess: () => invalidate(false),
+    onSuccess: () => invalidate(true),
+  });
+  // One transaction: on error nothing has moved.
+  const moveMany = useMutation({
+    mutationFn: (ids: string[]) =>
+      send(`${base}/tasks/move`, 'POST', { taskIds: ids.slice(0, 100), days: 1 }),
+    onSuccess: () => invalidate(true),
   });
   // One by one: each reabsorb reads the plan the previous one wrote. Stops at the first refusal.
   const reabsorb = useMutation({
@@ -159,6 +165,7 @@ export function usePlanMutations(slug: string) {
     setStatus,
     move,
     bulk,
+    moveMany,
     reabsorb,
   };
 }

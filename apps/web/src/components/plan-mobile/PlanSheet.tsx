@@ -34,6 +34,7 @@ export function PlanSheet({
   returnFocusRef,
   pending,
   error,
+  hasDraft,
   onSubmit,
 }: {
   open: boolean;
@@ -44,6 +45,7 @@ export function PlanSheet({
   returnFocusRef: RefObject<HTMLElement | null>;
   pending: boolean;
   error: string | null;
+  hasDraft: boolean;
   onSubmit: (req: GeneratePlanRequest) => void;
 }) {
   const [targetDate, setTargetDate] = useState('');
@@ -89,7 +91,8 @@ export function PlanSheet({
   const preview = usePlanPreview(slug, settledKey, ready && settledKey === key);
 
   const valid = !!targetDate && targetDate > today && minutes >= 15 && minutes <= 480;
-  const title = plan ? 'Rigenera bozza' : 'Genera il piano';
+  const editing = plan?.status === 'active';
+  const title = editing ? 'Modifica ritmo' : plan ? 'Rigenera bozza' : 'Genera il piano';
 
   return (
     <BottomSheet
@@ -97,9 +100,11 @@ export function PlanSheet({
       onOpenChange={onOpenChange}
       title={title}
       description={
-        plan
-          ? 'Crea una nuova bozza: il piano attuale resta com’è finché non la confermi. La bozza copre tutta la materia.'
-          : 'Crea una bozza: la rivedi e la confermi prima che entri nel calendario.'
+        editing
+          ? 'Imposta ritmo e minuti al giorno: crei una nuova bozza e il piano attuale resta attivo finché non la confermi.'
+          : plan
+            ? 'Crea una nuova bozza: il piano attuale resta com’è finché non la confermi. La bozza copre tutta la materia.'
+            : 'Crea una bozza: la rivedi e la confermi prima che entri nel calendario.'
       }
       returnFocusRef={returnFocusRef}
     >
@@ -120,6 +125,11 @@ export function PlanSheet({
             onChange={(e) => setTargetDate(e.target.value)}
             className={fieldClass}
           />
+          {editing && plan.targetDate <= today && (
+            <p className="text-xs font-normal text-fg-muted">
+              Scegli una nuova data: quella attuale è passata.
+            </p>
+          )}
         </label>
 
         {exams.length > 0 && !lockedExam && (
@@ -198,9 +208,17 @@ export function PlanSheet({
           </p>
         )}
 
+        {editing && (
+          <p className="text-xs text-fg-muted" data-testid="plan-edit-note">
+            La bozza riparte da oggi e non tiene conto delle lezioni già fatte.
+            {hasDraft && ' Sostituisce la bozza già in attesa.'}
+          </p>
+        )}
+
         <button
           type="submit"
           disabled={pending || !valid}
+          data-testid="plan-sheet-submit"
           className={`${primaryButton} min-h-12 text-sm`}
         >
           {pending ? 'Generazione…' : 'Genera bozza'}
