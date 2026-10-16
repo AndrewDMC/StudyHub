@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { z, ZodTypeAny } from 'zod';
 import { formatError, SubjectNotFoundError } from './errors';
-import { AttemptPhotoError, ConflictError, NotFoundError } from './examPrep';
+import { AttemptPhotoError, ConflictError, InvalidRequestError, NotFoundError } from './examPrep';
 
 export function errorResponse(err: unknown): NextResponse {
   if (err instanceof SubjectNotFoundError) {
@@ -25,6 +25,12 @@ export function errorResponse(err: unknown): NextResponse {
         },
       },
       { status: err.status },
+    );
+  }
+  if (err instanceof InvalidRequestError) {
+    return NextResponse.json(
+      { error: { code: 'invalid_request', message: err.message } },
+      { status: 400 },
     );
   }
   if (err instanceof ConflictError) {

@@ -176,6 +176,13 @@
       "when": 1790700800000,
       "tag": "0024_attempt_photo_transcripts",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790700900000,
+      "tag": "0025_session_mood",
+      "breakpoints": true
     }
   ]
 }

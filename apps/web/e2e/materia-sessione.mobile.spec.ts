@@ -35,18 +35,27 @@ async function smallTargets(page: Page, scope: string) {
   return page.evaluate((sel) => {
     const root = document.querySelector(sel);
     if (!root) return ['(scope mancante)'];
-    return Array.from(
-      root.querySelectorAll<HTMLElement>('button, a[href], input, select, textarea'),
-    )
-      .filter((el) => {
-        const r = el.getBoundingClientRect();
-        return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden';
-      })
-      .filter((el) => el.getBoundingClientRect().height < 43.5)
-      .map(
-        (el) =>
-          `${el.tagName.toLowerCase()} "${(el.getAttribute('aria-label') ?? el.textContent ?? '').trim().slice(0, 40)}" ${Math.round(el.getBoundingClientRect().height)}px`,
-      );
+    return (
+      Array.from(root.querySelectorAll<HTMLElement>('button, a[href], input, select, textarea'))
+        .filter((el) => {
+          const r = el.getBoundingClientRect();
+          return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden';
+        })
+        .filter((el) => el.getBoundingClientRect().height < 43.5)
+        // Checkbox/radio dentro una label alta almeno 44px: il target è la label.
+        .filter((el) => {
+          const label = el.closest('label');
+          return !(
+            el instanceof HTMLInputElement &&
+            label &&
+            label.getBoundingClientRect().height >= 43.5
+          );
+        })
+        .map(
+          (el) =>
+            `${el.tagName.toLowerCase()} "${(el.getAttribute('aria-label') ?? el.textContent ?? '').trim().slice(0, 40)}" ${Math.round(el.getBoundingClientRect().height)}px`,
+        )
+    );
   }, scope);
 }
 

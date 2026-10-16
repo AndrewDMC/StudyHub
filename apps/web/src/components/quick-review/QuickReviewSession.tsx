@@ -1,14 +1,23 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import { FileText, MoreHorizontal, Undo2, X } from 'lucide-react';
+import { useEffect, useRef, type KeyboardEvent } from 'react';
+import { Check, FileText, MoreHorizontal, Undo2, X } from 'lucide-react';
 import type { ReviewQueueItemDto } from '@studyhub/contracts';
 import { revealPlan } from '@/lib/cardText';
 import { formatInterval } from '@/lib/format';
 import { SUBJECT_COLOR_HEX } from '@/lib/subjectColors';
-import { RATINGS, RATING_LABELS, cardSourceHref, type Rating } from '@/lib/quickReview';
+import {
+  CONFIDENCE_LABELS,
+  RATINGS,
+  RATING_LABELS,
+  cardSourceHref,
+  type Confidence,
+  type Rating,
+} from '@/lib/quickReview';
 import { CardText } from '../CardText';
 import { SwipeCard } from './SwipeCard';
+
+const CONFIDENCES: Confidence[] = [1, 2, 3];
 
 export const RATING_COLORS: Record<Rating, string> = {
   1: 'var(--danger)',
@@ -28,6 +37,8 @@ export function QuickReviewSession({
   total,
   done,
   revealed,
+  confidence,
+  onConfidence,
   canUndo,
   onReveal,
   onRate,
@@ -41,6 +52,8 @@ export function QuickReviewSession({
   total: number;
   done: number;
   revealed: boolean;
+  confidence: Confidence | null;
+  onConfidence: (confidence: Confidence | null) => void;
   canUndo: boolean;
   onReveal: () => void;
   onRate: (rating: Rating) => void;
@@ -58,6 +71,29 @@ export function QuickReviewSession({
   useEffect(() => {
     answerRef.current?.scrollTo({ top: 0 });
   }, [card.id, revealed]);
+
+  // The confidence controls unmount on reveal: keep keyboard focus alive, but only if the reveal button had it.
+  const gradesRef = useRef<HTMLDivElement>(null);
+  const focusGradesRef = useRef(false);
+  const confRefs = useRef<Partial<Record<Confidence, HTMLButtonElement | null>>>({});
+  useEffect(() => {
+    if (revealed && focusGradesRef.current) gradesRef.current?.focus();
+    focusGradesRef.current = false;
+  }, [revealed]);
+
+  const onConfKey = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const step =
+      e.key === 'ArrowRight' || e.key === 'ArrowDown'
+        ? 1
+        : e.key === 'ArrowLeft' || e.key === 'ArrowUp'
+          ? -1
+          : 0;
+    if (!step) return;
+    e.preventDefault();
+    const target = CONFIDENCES[(index + step + CONFIDENCES.length) % CONFIDENCES.length]!;
+    confRefs.current[target]?.focus();
+    onConfidence(target);
+  };
 
   const iconButton =
     'flex size-11 shrink-0 items-center justify-center rounded-[var(--radius-control)] text-fg-secondary disabled:text-fg-muted disabled:opacity-50';
@@ -188,7 +224,13 @@ export function QuickReviewSession({
             <p className="mb-2.5 text-center text-xs text-fg-secondary">
               Oppure scorri la card: ← di nuovo · bene →
             </p>
-            <div role="group" aria-label="Quanto la ricordavi?" className="grid grid-cols-4 gap-2">
+            <div
+              ref={gradesRef}
+              tabIndex={-1}
+              role="group"
+              aria-label="Quanto la ricordavi?"
+              className="grid grid-cols-4 gap-2 outline-none"
+            >
               {RATINGS.map((rating) => {
                 const interval = formatInterval(card.intervals[rating]);
                 return (
@@ -209,13 +251,55 @@ export function QuickReviewSession({
             </div>
           </>
         ) : (
-          <button
-            type="button"
-            onClick={onReveal}
-            className="h-14 w-full rounded-[var(--radius-card)] bg-accent text-base font-semibold text-bg-base"
-          >
-            Mostra risposta
-          </button>
+          <div className="flex flex-col gap-2.5">
+            <p id="conf-label" className="text-center text-sm text-fg-secondary">
+              Quanto sei sicuro?
+            </p>
+            <div
+              role="radiogroup"
+              aria-labelledby="conf-label"
+              data-testid="confidence-group"
+              className="grid grid-cols-3 gap-2"
+            >
+              {CONFIDENCES.map((value, i) => {
+                const checked = confidence === value;
+                return (
+                  <button
+                    key={value}
+                    ref={(el) => {
+                      confRefs.current[value] = el;
+                    }}
+                    type="button"
+                    role="radio"
+                    aria-checked={checked}
+                    tabIndex={(confidence ?? CONFIDENCES[0]) === value ? 0 : -1}
+                    data-testid={`confidence-${value}`}
+                    onClick={() => onConfidence(checked ? null : value)}
+                    onKeyDown={(e) => onConfKey(e, i)}
+                    className={`flex min-h-[60px] items-center justify-center gap-1.5 rounded-[10px] border text-sm font-semibold text-fg-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+                      checked
+                        ? 'border-accent bg-accent-subtle'
+                        : 'border-border-strong bg-bg-raised'
+                    }`}
+                  >
+                    {checked && <Check className="size-3.5 shrink-0" aria-hidden="true" />}
+                    {CONFIDENCE_LABELS[value]}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              data-testid="reveal"
+              onClick={() => {
+                focusGradesRef.current = true;
+                onReveal();
+              }}
+              className="h-14 w-full rounded-[var(--radius-card)] bg-accent text-base font-semibold text-bg-base"
+            >
+              Mostra risposta
+            </button>
+          </div>
         )}
       </div>
     </>

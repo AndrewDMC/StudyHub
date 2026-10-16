@@ -421,5 +421,5 @@ migrazione 0016).
 
 **Non fatto / limiti (mobile)**
 
-- Omessi su mobile: mood "Com'è andata?", selezione per-item delle flashcard, modalità Libero / Salta e durate del
+- Omessi su mobile: modalità Libero / Salta e durate del
   timer, selettore del modello della chat, viewer del documento dentro la sessione, trascrizione nella chiusura.

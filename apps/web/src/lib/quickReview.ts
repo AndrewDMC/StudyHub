@@ -16,6 +16,15 @@ export const RATING_LABELS: Record<Rating, string> = {
   4: 'Facile',
 };
 
+/** "Quanto sei sicuro?" before the answer; same values and labels as the desktop review. */
+export type Confidence = 1 | 2 | 3;
+
+export const CONFIDENCE_LABELS: Record<Confidence, string> = {
+  1: 'Non lo so',
+  2: 'Forse',
+  3: 'Lo so',
+};
+
 /** "Card per sessione": 0 = Tutte. */
 export const SESSION_LIMITS = [5, 10, 0] as const;
 export type SessionLimit = (typeof SESSION_LIMITS)[number];
@@ -285,6 +294,7 @@ export type OutboxOp =
       cardId: string;
       rating: Rating;
       elapsedMs: number;
+      confidence?: Confidence;
     }
   | { kind: 'undo'; key: string };
 
