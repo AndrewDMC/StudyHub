@@ -48,7 +48,7 @@ describe('ClaudeCliProvider.generateFlashcards — control flow against a mocked
     expect(run).toHaveBeenCalledTimes(1);
     expect(result.data.cards).toHaveLength(1);
     expect(result.model).toBe('claude-sonnet-5-5');
-    expect(result.promptVersion).toBe('flashcards/v1');
+    expect(result.promptVersion).toBe('flashcards/v2');
     expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
 
     const [args, stdin] = run.mock.calls[0];

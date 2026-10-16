@@ -39,8 +39,11 @@ export class NotFoundError extends Error {
 
 /** A request that is valid but not in the current state (e.g. saving answers after the deadline). */
 export class ConflictError extends Error {
-  constructor(message: string) {
+  /** Optional id of the already-running job that causes the conflict, so the UI can attach to it. */
+  readonly jobId: string | undefined;
+  constructor(message: string, jobId?: string) {
     super(message);
+    this.jobId = jobId;
     this.name = 'ConflictError';
   }
 }

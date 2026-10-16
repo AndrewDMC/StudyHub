@@ -363,7 +363,7 @@ migrazione 0016).
 - **Alla chiusura** (`SessionClosing`, solo a sessione terminata, così l'insieme è definitivo) due azioni gratuite e
   idempotenti (una seconda richiesta restituisce lo stesso oggetto; `study_sessions.flashcard_deck_id` e `drill_id`):
   - **Flashcard dai punti chiave** (`POST .../flashcards`): una carta `basic` per punto (fronte = punto, retro = spiegazione,
-    stessa citazione, stesso argomento). **Nessuna chiamata AI**: i punti sono già generati e validati. Il mazzo nasce in
+    stessa citazione; argomento del punto, o l'unico argomento della sessione se esiste ancora — dal 2026-10-16, insert in transazione). **Nessuna chiamata AI**: i punti sono già generati e validati. Il mazzo nasce in
     **bozza** come ogni mazzo generato, da approvare.
   - **Esercizi sbagliati nei drill** (`POST .../drill`): una simulazione `drill_argomento` con gli esercizi `wrong`
     (1 punto ciascuno, 5 min a esercizio, rubrica a un criterio, soluzione = quella attesa). È un normale drill: si

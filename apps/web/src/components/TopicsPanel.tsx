@@ -330,7 +330,13 @@ export function TopicsPanel({
   return (
     <div className="rounded-[var(--radius-card)] border border-border bg-bg-surface p-3">
       <div className="mb-2 flex items-center justify-between px-1">
-        <h2 className="text-xs font-medium uppercase tracking-wide text-fg-muted">Argomenti</h2>
+        <h2
+          id="topics-panel-title"
+          tabIndex={-1}
+          className="text-xs font-medium uppercase tracking-wide text-fg-muted"
+        >
+          Argomenti
+        </h2>
         {onToggleTopic && (selectedTopicIds?.size ?? 0) > 0 && (
           <button
             type="button"

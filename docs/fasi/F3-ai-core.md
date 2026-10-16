@@ -285,3 +285,14 @@ richiederebbe `AnthropicProvider` con una chiave vera, non disponibile qui).
   non può dimostrare che l'istruzione regge — questo va provato con `AnthropicProvider` reale).
 - **Pricing**: `packages/ai/src/pricing.ts` usa tariffe **placeholder** (commentate come tali):
   aggiornale con i prezzi reali del tuo piano prima di fidarti dei numeri per il budget guard.
+
+**Aggiornamento (2026-10-16)**: `generate_flashcards` riceve l'elenco degli argomenti della materia e
+restituisce `topicName` per card: prompt `packages/ai/prompts/flashcards/v2.md` (di default; v1 resta
+disponibile), schema `GeneratedFlashcardSchema` con `topicName` opzionale, quindi retrocompatibile. Il
+worker risolve `topicId` in cascata (`apps/worker/src/processors/generation/generateFlashcards.ts`), senza
+chiamate extra. Nuovo job `sort_flashcards` (`apps/worker/src/processors/generation/sortFlashcards.ts`,
+prompt `packages/ai/prompts/sort_flashcards/v1.md`, modello haiku, batch da 40 card): assegna gli argomenti
+alle card sfuse, prima gratis dal documento, poi con AI; nessuna chiamata se la materia non ha argomenti;
+con budget esaurito si ferma (`stoppedByBudget`). Dettagli e API in `docs/fasi/F4-flashcard.md` "Stato" /
+"Aggiornamento — mazzi per argomento". Il CLI `generate flashcards --dry-run` usa la versione corrente del
+prompt e include gli argomenti della materia.

@@ -12,6 +12,7 @@ import {
   SectionError,
   SkeletonRows,
 } from '../subject-mobile/SectionState';
+import { CARDS_TITLE_ID } from './DeckGroupsSection';
 import { FlashcardDetailSheet } from './FlashcardDetailSheet';
 import { FlashcardRow } from './FlashcardRow';
 import { useFlashcardPages } from './queries';
@@ -33,12 +34,15 @@ export function CardsSection({
   slug,
   topics,
   stats,
+  topicId,
+  onTopicChange: setTopicId,
 }: {
   slug: string;
   topics: TopicDto[];
   stats: FlashcardStatsDto | undefined;
+  topicId: string;
+  onTopicChange: (topicId: string) => void;
 }) {
-  const [topicId, setTopicId] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [text, setText] = useState('');
   const [selected, setSelected] = useState<FlashcardDto | null>(null);
@@ -65,7 +69,11 @@ export function CardsSection({
 
   return (
     <MobileSection
-      title="Le tue card"
+      title={
+        <span id={CARDS_TITLE_ID} tabIndex={-1}>
+          Le tue card
+        </span>
+      }
       busy={query.isLoading}
       action={
         <span className="flex items-center gap-1">
@@ -174,6 +182,7 @@ export function CardsSection({
 
       <FlashcardDetailSheet
         slug={slug}
+        topics={topics}
         card={selected}
         onOpenChange={(open) => {
           if (!open) setSelected(null);

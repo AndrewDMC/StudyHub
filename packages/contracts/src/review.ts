@@ -65,7 +65,8 @@ export type FlashcardStatsDto = z.infer<typeof FlashcardStatsDtoSchema>;
  * resta reattiva").
  */
 export const ListFlashcardsQuerySchema = z.object({
-  topicId: z.string().uuid().optional(),
+  /** A topic id, or the literal 'none' = only cards without a topic. */
+  topicId: z.union([z.string().uuid(), z.literal('none')]).optional(),
   state: FsrsCardStateSchema.optional(),
   suspended: z.boolean().optional(),
   flagged: z.boolean().optional(),
@@ -129,6 +130,60 @@ export const BulkFlashcardsRequestSchema = z.object({
   ]),
 });
 export type BulkFlashcardsRequest = z.infer<typeof BulkFlashcardsRequestSchema>;
+
+/**
+ * `sort_flashcards`: assigns a topic to flashcards that have none (cardIds omitted = every
+ * unsorted card of the subject). Never creates topics.
+ */
+export const SortFlashcardsJobInputSchema = z.object({
+  subjectId: z.string().uuid(),
+  cardIds: z.array(z.string().uuid()).min(1).optional(),
+});
+export type SortFlashcardsJobInput = z.infer<typeof SortFlashcardsJobInputSchema>;
+
+/** Output of a finished `sort_flashcards` job. `noTopics` = subject has no topics, AI not called. */
+export const SortFlashcardsOutputSchema = z.object({
+  assigned: z.number().int(),
+  assignedByDocument: z.number().int(),
+  assignedByAi: z.number().int(),
+  unassigned: z.number().int(),
+  noTopics: z.boolean(),
+});
+export type SortFlashcardsOutput = z.infer<typeof SortFlashcardsOutputSchema>;
+
+/** `POST /api/subjects/:slug/flashcards/sort` response. */
+export const SortFlashcardsEnqueuedSchema = z.object({ jobId: z.string() });
+export type SortFlashcardsEnqueued = z.infer<typeof SortFlashcardsEnqueuedSchema>;
+
+/** Body of the 409 from POST .../flashcards/sort: `jobId` = the sort already queued/running, to attach to. */
+export const SortFlashcardsConflictSchema = z.object({
+  error: z.object({
+    code: z.literal('conflict'),
+    message: z.string(),
+    jobId: z.string().optional(),
+  }),
+});
+export type SortFlashcardsConflict = z.infer<typeof SortFlashcardsConflictSchema>;
+
+/** `GET /api/subjects/:slug/flashcards/sort/:jobId` (same shape as topics/extract/:jobId). */
+export const SortFlashcardsStatusSchema = z.object({
+  status: z.enum(['queued', 'running', 'succeeded', 'failed', 'cancelled']),
+  output: SortFlashcardsOutputSchema.nullable().optional(),
+  error: z.string().nullable().optional(),
+});
+export type SortFlashcardsStatus = z.infer<typeof SortFlashcardsStatusSchema>;
+
+/** `GET /api/subjects/:slug/flashcards/groups`: one group per topic with cards; `topicId: null` = unsorted. */
+export const DeckGroupDtoSchema = z.object({
+  topicId: z.string().uuid().nullable(),
+  topicName: z.string().nullable(),
+  parentTopicId: z.string().uuid().nullable(),
+  total: z.number().int(),
+  due: z.number().int(),
+  new: z.number().int(),
+  suspended: z.number().int(),
+});
+export type DeckGroupDto = z.infer<typeof DeckGroupDtoSchema>;
 
 export const MergeDecksRequestSchema = z
   .object({ sourceDeckId: z.string().uuid(), targetDeckId: z.string().uuid() })

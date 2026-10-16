@@ -216,3 +216,62 @@ cloze con blank e risposte evidenziate, KaTeX inline/display, creazione card da 
 (`PK`, `application/apkg`), reimport e import CSV in nuovo mazzo, 200 card importate. **Non provato**
 in browser: azioni in blocco, unione mazzi, modifica inline nella lista, import `.apkg` dal form di
 upload (solo via `fetch`); coperti dai test di libreria.
+
+## Aggiornamento — mazzi per argomento e auto-sorting, Slice 1 (2026-10-16)
+
+Le card si raggruppano per argomento: `flashcards.topicId` (colonna esistente, prima mai scritta in
+generazione) ora è valorizzato alla creazione e riassegnabile. Un "mazzo di argomento" è un raggruppamento
+di lettura, non un artefatto: i mazzi-generazione (`artifacts` `flashcard_deck`, bozza/approvato, export,
+merge) restano invariati.
+
+**Argomento in generazione** (`apps/worker/src/processors/generation/generateFlashcards.ts`, prompt
+`packages/ai/prompts/flashcards/v2.md`, di default): il prompt riceve l'elenco degli argomenti della materia
+e restituisce per card `topicName` (verbatim dalla lista, o `null`). Il worker risolve `topicId` in cascata:
+(a) `topicName` matchato case/whitespace-insensitive a un argomento della materia; (b) l'unico `topicId`
+dello scope, se ce n'è uno; (c) argomento primario del documento citato (`resolvePrimaryTopics`,
+`packages/db/src/documentTopics.ts`); (d) nessuno. Il CLI `studyhub generate flashcards --dry-run`
+renderizza la versione corrente del prompt e include gli argomenti della materia.
+
+**Ordinamento automatico** (job `sort_flashcards`, `apps/worker/src/processors/generation/sortFlashcards.ts`,
+prompt `packages/ai/prompts/sort_flashcards/v1.md`, modello haiku, batch da 40 card):
+
+- lavora sulle card senza argomento della materia (o sugli `cardIds` passati); non tocca le card che hanno già un argomento;
+- prima, senza AI: le card il cui documento ha un argomento primario;
+- poi AI sulle restanti, con classificazione solo negli argomenti esistenti (il job non ne crea di nuovi);
+- nessuna chiamata AI se la materia non ha argomenti; se il budget si esaurisce il job si ferma
+  (`stoppedByBudget`) e applica i batch già pagati;
+- costi registrati come per gli altri job AI (`AI_JOB_TYPES` in `apps/worker/src/processors/generation/shared.ts`);
+- a fine job ricalcola la mastery degli argomenti toccati.
+
+Output: `{ assigned, assignedByDocument, assignedByAi, unassigned, noTopics }`. Contratti in
+`packages/contracts/src/review.ts` (`SortFlashcards*`, `DeckGroupDtoSchema`) e `packages/contracts/src/job.ts`.
+
+**API** (`apps/web/src/app/api/subjects/[slug]/flashcards/`, logica in `apps/web/src/lib/flashcardGroups.ts`):
+
+- `GET groups` → `{ groups: DeckGroupDto[] }`: un gruppo per argomento con card, card sfuse (`topicId: null`) in fondo.
+  `total` e `suspended` contano tutte le card; `new` solo le nuove riesaminabili (mazzi approvati, non sospese,
+  non segnalate); `due` le card già viste scadute oggi, con gli stessi filtri.
+- `POST sort`, body opzionale `{ cardIds? }` → `202 { jobId }`; `409` con `error.jobId` se un sort è già in
+  coda o in corso per la materia (lato client l'UI si aggancia a quel job).
+- `GET sort/[jobId]` → stato del job (`queued` finché il worker non crea la riga del job).
+- `GET /flashcards?topicId=none` → card senza argomento.
+- Bulk `{ action: { type: 'topic', topicId } }` su `/flashcards/bulk`; create/update accettano già `topicId`.
+
+**UI**: desktop, tab Flashcard della materia: sezione Mazzi (`apps/web/src/components/deck-groups/`) con una
+riga per argomento (nome, totale, da ripassare, nuove) e "Ripassa" verso `/ripasso?materia=&argomento=`. Il gruppo
+"Senza argomento" ha "Ordina automaticamente" con stato in corso. Selezione multipla: "Sposta in argomento".
+Mobile: `DeckGroupsSection` in `apps/web/src/components/flashcard-mobile/`; "Cambia argomento" nel dettaglio card.
+Se la materia non ha argomenti, la sezione lo dice e rimanda alla scheda Argomenti.
+
+**Stato Slice 1 (2026-10-16)**: implementata. Test unitari su cascata di generazione
+(`apps/worker/test/generateFlashcardsTopics.test.ts`), job di sorting (`apps/worker/test/sortFlashcards.test.ts`),
+gruppi (`apps/web/test/deckGroups.test.ts`, `apps/web/test/flashcardGroups.test.ts`). Gli e2e
+(`apps/web/e2e/flashcard-mazzi-*.spec.ts`) coprono desktop e mobile 375×812.
+
+**Non ancora**:
+
+- Slice 2 (prevista): flashcard attaccate alle lezioni del piano (tabella `task_flashcards`), badge "N card"
+  sulla task, blocco "Flashcard della lezione" in sessione e ripasso per `task=`. Oggi le card non sono legate alle task.
+- Le card importate da `.apkg`/CSV restano sfuse: nessun argomento viene assegnato all'import, lo fa l'ordinamento automatico.
+- Il sort non parte in background: solo su richiesta da "Ordina automaticamente".
+- Il sort non crea argomenti nuovi: le card che non combaciano con nessun argomento restano sfuse.

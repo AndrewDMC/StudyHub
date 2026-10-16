@@ -563,7 +563,8 @@ export async function listFlashcards(
   const limit = Math.min(options.limit ?? 50, 200);
 
   const conditions = [eq(artifacts.subjectId, subject.id)];
-  if (options.topicId) conditions.push(eq(flashcards.topicId, options.topicId));
+  if (options.topicId === 'none') conditions.push(isNull(flashcards.topicId));
+  else if (options.topicId) conditions.push(eq(flashcards.topicId, options.topicId));
   if (options.state) conditions.push(eq(flashcards.state, options.state));
   if (options.suspended !== undefined) conditions.push(eq(flashcards.suspended, options.suspended));
   if (options.flagged !== undefined) {

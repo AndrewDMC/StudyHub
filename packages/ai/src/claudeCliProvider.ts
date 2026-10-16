@@ -20,6 +20,7 @@ import type {
   SessionBriefingPromptInput,
   SessionChatPromptInput,
   SimulationPromptInput,
+  SortFlashcardsPromptInput,
   SummaryPromptInput,
 } from './provider.js';
 import {
@@ -35,6 +36,7 @@ import {
   SchemaOutputSchema,
   SessionBriefingOutputSchema,
   SimulationOutputSchema,
+  SortFlashcardsAiOutputSchema,
   SummaryOutputSchema,
   type ClassifyDocumentTypeOutput,
   type DistillHandwritingProfileOutput,
@@ -48,6 +50,7 @@ import {
   type SchemaOutput,
   type SessionBriefingOutput,
   type SimulationOutput,
+  type SortFlashcardsAiOutput,
   type SummaryOutput,
 } from './schemas.js';
 import { resolveClaudeBinary } from './claudeBinary.js';
@@ -63,6 +66,7 @@ import {
   renderSessionChatUserPrompt,
   renderSessionBriefingUserPrompt,
   renderSimulationUserPrompt,
+  renderSortFlashcardsUserPrompt,
   renderSummaryUserPrompt,
 } from './promptRender.js';
 
@@ -181,11 +185,25 @@ export class ClaudeCliProvider implements AiProvider {
     input: FlashcardsPromptInput,
     model: string,
   ): Promise<GeneratedWithMeta<FlashcardsOutput>> {
-    const { text: system, promptVersion } = loadPrompt('flashcards', 1);
+    const { text: system, promptVersion } = loadPrompt('flashcards', 2);
     const { data, usage } = await this.callWithSchema(
       system,
       renderFlashcardsUserPrompt(input),
       FlashcardsOutputSchema,
+      model,
+    );
+    return { data, usage, model, promptVersion };
+  }
+
+  async sortFlashcards(
+    input: SortFlashcardsPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<SortFlashcardsAiOutput>> {
+    const { text: system, promptVersion } = loadPrompt('sort_flashcards', 1);
+    const { data, usage } = await this.callWithSchema(
+      system,
+      renderSortFlashcardsUserPrompt(input),
+      SortFlashcardsAiOutputSchema,
       model,
     );
     return { data, usage, model, promptVersion };

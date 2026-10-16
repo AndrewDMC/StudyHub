@@ -10,6 +10,7 @@ import type {
   TopicDto,
 } from '@studyhub/contracts';
 import { bulkCards, deleteCard, fetchDecks, fetchTags, updateCard } from '@/lib/deckEditorClient';
+import { DeckGroupsPanel } from './deck-groups/DeckGroupsPanel';
 import { DeckToolsPanel } from './DeckToolsPanel';
 
 export interface Filters {
@@ -118,6 +119,7 @@ export function FlashcardListPanel({
     void queryClient.invalidateQueries({ queryKey: ['flashcard-tags', subjectSlug] });
     void queryClient.invalidateQueries({ queryKey: ['flashcard-stats', subjectSlug] });
     void queryClient.invalidateQueries({ queryKey: ['stats', subjectSlug] });
+    void queryClient.invalidateQueries({ queryKey: ['deck-groups', subjectSlug] });
   };
 
   const updateMutation = useMutation({
@@ -180,6 +182,13 @@ export function FlashcardListPanel({
     <div className="space-y-3">
       <DeckToolsPanel subjectSlug={subjectSlug} topics={topics} />
 
+      <DeckGroupsPanel
+        subjectSlug={subjectSlug}
+        topics={topics}
+        selectedTopicId={filters.topicId}
+        onSelect={(topicId) => setFilters({ ...filters, topicId })}
+      />
+
       <div className="rounded-[var(--radius-card)] border border-border bg-bg-surface p-3">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
           <h2 className="text-xs font-medium uppercase tracking-wide text-fg-muted">Flashcard</h2>
@@ -199,6 +208,7 @@ export function FlashcardListPanel({
               className={SELECT}
             >
               <option value="">Tutti gli argomenti</option>
+              <option value="none">Senza argomento</option>
               {topics.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}
@@ -335,7 +345,11 @@ export function FlashcardListPanel({
                             </Badge>
                             {card.flaggedAt && <Badge tone="danger">segnalata</Badge>}
                             <Badge>{deckTitle(card.deckId)}</Badge>
-                            {topicName(card.topicId) && <Badge>{topicName(card.topicId)}</Badge>}
+                            {topicName(card.topicId) ? (
+                              <Badge>{topicName(card.topicId)}</Badge>
+                            ) : (
+                              <Badge>Senza argomento</Badge>
+                            )}
                             {card.tags.map((t) => (
                               <Badge key={t}>#{t}</Badge>
                             ))}
@@ -472,7 +486,7 @@ function BulkBar({
         ))}
       </select>
       <select
-        aria-label="Assegna argomento"
+        aria-label="Sposta in argomento"
         value=""
         disabled={busy}
         onChange={(e) =>
@@ -481,8 +495,8 @@ function BulkBar({
         }
         className={SELECT}
       >
-        <option value="">Assegna argomento…</option>
-        <option value="__none">Nessun argomento</option>
+        <option value="">Sposta in argomento…</option>
+        <option value="__none">Senza argomento</option>
         {topics.map((t) => (
           <option key={t.id} value={t.id}>
             {t.name}
@@ -620,7 +634,7 @@ function CardEditForm({
           aria-label="Argomento"
           className={SELECT}
         >
-          <option value="">Nessun argomento</option>
+          <option value="">Senza argomento</option>
           {topics.map((t) => (
             <option key={t.id} value={t.id}>
               {t.name}

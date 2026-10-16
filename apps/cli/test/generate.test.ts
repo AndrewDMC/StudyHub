@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { chunks, documents, topics, documentTopics } from '@studyhub/db';
 import { createTestDb } from '@studyhub/db/testDb';
+import { FLASHCARDS_PROMPT_VERSION } from '@studyhub/ai';
 import { addSubject } from '../src/commands/subject.js';
 import { buildGenerationDryRun, SubjectNotFoundCliError } from '../src/commands/generate.js';
 
@@ -56,7 +57,9 @@ describe('CLI generate <kind> --dry-run', () => {
       scope: { docIds: [docId] },
     });
 
-    expect(result.promptVersion).toBe('flashcards/v1');
+    expect(result.promptVersion).toBe('flashcards/v2');
+    expect(result.promptVersion).toBe(FLASHCARDS_PROMPT_VERSION);
+    expect(result.userPrompt).toContain('Nessun argomento'); // subject without topics
     expect(result.model).toBe('claude-sonnet-5-5');
     expect(result.docCount).toBe(1);
     expect(result.chunkCount).toBe(1);
@@ -66,6 +69,20 @@ describe('CLI generate <kind> --dry-run', () => {
     expect(result.inputTokens).toBeGreaterThan(0);
     expect(result.outputTokens).toBeGreaterThan(0);
     expect(result.costEur).toBeGreaterThan(0);
+  });
+
+  it('lists the subject topics in the flashcards prompt, in the worker order', async () => {
+    await db.insert(topics).values([
+      { id: randomUUID(), subjectId, name: 'Termodinamica', slug: 'termo', orderIndex: 1 },
+      { id: randomUUID(), subjectId, name: 'Ottica', slug: 'ottica', orderIndex: 0 },
+    ]);
+    const result = await buildGenerationDryRun(db, {
+      subjectSlug,
+      kind: 'flashcards',
+      scope: { docIds: [docId] },
+    });
+    expect(result.userPrompt).toContain('["Ottica","Termodinamica"]');
+    expect(result.system).toContain('topicName');
   });
 
   it('renders the schema and summary prompts too, with their own prompt version', async () => {

@@ -120,6 +120,50 @@ describe('session closing (flashcards from key points, drill from wrong exercise
       expect(file.cards).toHaveLength(2);
     });
 
+    describe('topic fallback for points without a topic', () => {
+      async function addUntopicedPoint(forSession: string) {
+        await db.insert(sessionItems).values({
+          id: randomUUID(),
+          sessionId: forSession,
+          kind: 'key_point',
+          orderIndex: 0,
+          title: 'Fubini',
+          body: 'Spiegazione',
+          difficulty: null,
+          citations: [{ docId, page: 1, quote: 'Il teorema di Fubini' }],
+          topicId: null,
+          state: 'open',
+        });
+      }
+      async function deckTopics(forSession: string) {
+        await endSession(db, slug, forSession);
+        const deck = await createKeyPointDeck(db, dataRoot, slug, forSession);
+        const cards = await db.select().from(flashcards).where(eq(flashcards.deckId, deck.deckId));
+        return cards.map((c) => c.topicId);
+      }
+
+      it('uses the only topic of the session', async () => {
+        await addUntopicedPoint(sessionId);
+        expect(await deckTopics(sessionId)).toEqual([topicId]);
+      });
+
+      it('leaves the card unsorted when the session has several topics', async () => {
+        const second = randomUUID();
+        await db
+          .insert(topics)
+          .values({ id: second, subjectId, name: 'Derivate', slug: 'derivate' });
+        const multi = (await startSession(db, slug, { topicIds: [topicId, second] })).id;
+        await addUntopicedPoint(multi);
+        expect(await deckTopics(multi)).toEqual([null]);
+      });
+
+      it('ignores a session topic that was deleted, without failing the deck', async () => {
+        await addUntopicedPoint(sessionId);
+        await db.delete(topics).where(eq(topics.id, topicId));
+        expect(await deckTopics(sessionId)).toEqual([null]);
+      });
+    });
+
     it('returns the same deck when asked twice, and refuses a session without key points', async () => {
       await addItem('key_point', 0, 'Fubini');
       await endSession(db, slug, sessionId);
