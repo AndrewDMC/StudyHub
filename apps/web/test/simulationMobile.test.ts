@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import type { SimulationSummaryDto } from '@studyhub/contracts';
+import { simulationSubtitle } from '../src/components/simulation-mobile/SimulationRow';
 import {
   answeredCount,
   countBelowHalf,
@@ -42,7 +44,7 @@ describe('simulationMobile', () => {
     });
   });
 
-  it('converts the best ratio into points', () => {
+  it('converts the last-attempt ratio into points', () => {
     expect(scoreFromRatio({ lastScoreRatio: null, totalPoints: 30 })).toBeNull();
     expect(scoreFromRatio({ lastScoreRatio: 0.7, totalPoints: 30 })).toEqual({
       awarded: 21,
@@ -73,5 +75,26 @@ describe('simulationMobile', () => {
     expect(lowTimeAnnouncement(61)).toBe('Restano 2 minuti');
     expect(lowTimeAnnouncement(60)).toBe('Resta 1 minuto');
     expect(lowTimeAnnouncement(0)).toBe('Tempo scaduto');
+  });
+});
+
+describe('simulationSubtitle', () => {
+  const base = {
+    itemCount: 6,
+    timeBudgetMin: 180,
+    attemptCount: 2,
+    openAttemptId: null,
+    lastScoreRatio: 0.7,
+    createdAt: new Date(2026, 0, 1).toISOString(),
+    lastGradedAt: null,
+  } as unknown as SimulationSummaryDto;
+
+  it('shows how long ago the last attempt was graded', () => {
+    const yesterday = new Date(Date.now() - 86_400_000).toISOString();
+    expect(simulationSubtitle({ ...base, lastGradedAt: yesterday })).toBe('Corretta · ieri');
+  });
+
+  it('falls back to the creation date for legacy rows', () => {
+    expect(simulationSubtitle(base)).toMatch(/^Corretta · creata /);
   });
 });

@@ -1,13 +1,20 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import type { TaskDto } from '@studyhub/contracts';
+import type { DocumentDto, TaskDto } from '@studyhub/contracts';
 
 async function fetchToday(slug: string): Promise<TaskDto[]> {
   const res = await fetch(`/api/subjects/${slug}/plan/today`);
   const body = await res.json();
   if (!res.ok) throw new Error(body.error?.message ?? 'Impossibile caricare le task di oggi');
   return body.tasks as TaskDto[];
+}
+
+export async function fetchDocuments(slug: string): Promise<DocumentDto[]> {
+  const res = await fetch(`/api/subjects/${slug}/documents`);
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error?.message ?? 'Impossibile caricare i documenti');
+  return body.documents as DocumentDto[];
 }
 
 /** Same key as `DailyTasksPanel`: the two share one fetch and one invalidation. */

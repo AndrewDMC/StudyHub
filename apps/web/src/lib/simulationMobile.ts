@@ -31,7 +31,7 @@ export function simulationStatus(sim: SimStatusInput): { label: string; tone: To
   return { label: 'In correzione', tone: 'info' };
 }
 
-/** Best score as points (`lastScoreRatio` is the best attempt, not the last one). */
+/** Score of the last graded attempt as points (`lastScoreRatio`). */
 export function scoreFromRatio(
   sim: Pick<SimulationSummaryDto, 'lastScoreRatio' | 'totalPoints'>,
 ): { awarded: number; max: number } | null {

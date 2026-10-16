@@ -11,6 +11,7 @@ import { ObsidianMarkdown } from '../ObsidianMarkdown';
 import { DeleteDocumentButton } from '../DeleteDocumentButton';
 import { fetchContent, saveContent } from '../DocumentContentClient';
 import { fetchTopics } from '../DocumentList';
+import { fetchGraph } from '../VerifySchemaClient';
 import { SectionError } from '../subject-mobile/SectionState';
 import { ConflictBanner } from './ConflictBanner';
 import { DocHeader, iconButton } from './DocHeader';
@@ -54,6 +55,14 @@ export function DocumentMobile({
   const [draft, setDraft] = useState('');
   const [topicsOpen, setTopicsOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
+  // Loaded when the kebab opens; no graph (or an error) simply means no "Esporta .canvas".
+  const graphQuery = useQuery({
+    queryKey: ['schema-graph', slug, documentId],
+    queryFn: () => fetchGraph(slug, documentId),
+    enabled: actionsOpen,
+    retry: false,
+  });
+  const hasGraph = (graphQuery.data?.nodes.length ?? 0) > 0;
   const [deleteOpen, setDeleteOpen] = useState(false);
   const editRef = useRef<HTMLButtonElement>(null);
   const kebabRef = useRef<HTMLButtonElement>(null);
@@ -277,6 +286,7 @@ export function DocumentMobile({
         onOpenChange={setActionsOpen}
         slug={slug}
         doc={doc}
+        hasGraph={hasGraph}
         returnFocusRef={kebabRef}
         onDelete={() => {
           setActionsOpen(false);

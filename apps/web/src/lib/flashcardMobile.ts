@@ -88,3 +88,20 @@ export function plainCardText(text: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 }
+
+/**
+ * Short due label of a card row: "oggi", "domani", "tra N g"; "—" for new or suspended cards.
+ * Day boundaries follow the server queue (`endOfDay` in `lib/review.ts`): the end of the UTC day.
+ */
+export function formatCardDue(dueAt: string | null | undefined, now = Date.now()): string {
+  if (!dueAt) return '—';
+  const at = Date.parse(dueAt);
+  if (Number.isNaN(at)) return '—';
+  const dayMs = 86_400_000;
+  const endOfToday = new Date(
+    `${new Date(now).toISOString().slice(0, 10)}T23:59:59.999Z`,
+  ).getTime();
+  if (at <= endOfToday) return 'oggi';
+  const days = Math.ceil((at - endOfToday) / dayMs);
+  return days === 1 ? 'domani' : `tra ${days} g`;
+}

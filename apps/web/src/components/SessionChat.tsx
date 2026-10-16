@@ -25,7 +25,7 @@ async function fetchChat(slug: string, sessionId: string): Promise<SessionChatDt
   return body as SessionChatDto;
 }
 
-async function fetchTranscript(slug: string, sessionId: string): Promise<string | null> {
+export async function fetchTranscript(slug: string, sessionId: string): Promise<string | null> {
   const res = await fetch(`/api/subjects/${slug}/sessions/${sessionId}/transcript`);
   const body = await res.json().catch(() => null);
   if (!res.ok) throw new Error(body?.error?.message ?? 'Impossibile caricare la trascrizione');

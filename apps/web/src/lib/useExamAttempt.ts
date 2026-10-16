@@ -37,6 +37,7 @@ export function useExamAttempt({
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [remaining, setRemaining] = useState(0);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -106,6 +107,7 @@ export function useExamAttempt({
       }
       if (res.ok) {
         setSaveState('saved');
+        setLastSavedAt(Date.now());
         return true;
       }
       const body = await res.json().catch(() => null);
@@ -218,6 +220,7 @@ export function useExamAttempt({
     answers,
     remaining,
     saveState,
+    lastSavedAt,
     error,
     submitError,
     isSubmitting,

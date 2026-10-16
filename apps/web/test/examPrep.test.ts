@@ -149,6 +149,40 @@ describe('exam prep (web)', () => {
     });
   });
 
+  describe('last graded attempt info', () => {
+    it('exposes lastGradedAt (and lastScoreRatio) of the most recent graded attempt', async () => {
+      expect((await listSimulations(db, slug))[0]).toMatchObject({
+        lastGradedAt: null,
+      });
+
+      await db.insert(simulationAttempts).values([
+        {
+          id: randomUUID(),
+          simulationId,
+          durationMin: 60,
+          status: 'graded',
+          startedAt: new Date('2026-02-01T09:00:00Z'),
+          gradedAt: new Date('2026-02-01T11:00:00Z'),
+          totalAwarded: 18,
+          totalMax: 20,
+        },
+        {
+          id: randomUUID(),
+          simulationId,
+          durationMin: 60,
+          status: 'graded',
+          startedAt: new Date('2026-03-01T09:00:00Z'),
+          gradedAt: new Date('2026-03-01T11:00:00Z'),
+          totalAwarded: 10,
+          totalMax: 20,
+        },
+      ]);
+      const sim = (await listSimulations(db, slug))[0];
+      expect(sim?.lastGradedAt).toBe('2026-03-01T11:00:00.000Z');
+      expect(sim?.lastScoreRatio).toBeCloseTo(0.5, 6);
+    });
+  });
+
   describe('simulation attempt ids', () => {
     it('exposes openAttemptId and lastAttemptId (null, in progress, most recent submitted/graded)', async () => {
       const none = (await listSimulations(db, slug))[0];

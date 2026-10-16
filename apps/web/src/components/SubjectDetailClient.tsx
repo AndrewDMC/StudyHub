@@ -4,13 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import type {
-  DocumentDto,
-  ExamDto,
-  FlashcardStatsDto,
-  SubjectDto,
-  TopicDto,
-} from '@studyhub/contracts';
+import type { ExamDto, FlashcardStatsDto, SubjectDto, TopicDto } from '@studyhub/contracts';
 import { SUBJECT_COLOR_HEX } from '@/lib/subjectColors';
 import { formatExamCountdown } from '@/lib/format';
 import { SelectionProvider, useSelection } from '@/lib/selection';
@@ -28,6 +22,7 @@ import { FlashcardListPanel } from './FlashcardListPanel';
 import { CalibrationPanel } from './CalibrationPanel';
 import { CoveragePanel } from './CoveragePanel';
 import { SubjectMobile } from './subject-mobile/SubjectMobile';
+import { fetchDocuments } from './subject-mobile/queries';
 import { parseSubjectTab } from '@/lib/subjectTabs';
 import { useIsMobile } from '@/lib/useIsMobile';
 
@@ -52,13 +47,6 @@ async function fetchSubject(slug: string): Promise<SubjectDto> {
   const body = await res.json();
   if (!res.ok) throw new Error(body.error?.message ?? 'Materia non trovata');
   return body.subject as SubjectDto;
-}
-
-async function fetchDocuments(slug: string): Promise<DocumentDto[]> {
-  const res = await fetch(`/api/subjects/${slug}/documents`);
-  const body = await res.json();
-  if (!res.ok) throw new Error(body.error?.message ?? 'Impossibile caricare i documenti');
-  return body.documents as DocumentDto[];
 }
 
 async function fetchTopics(slug: string): Promise<TopicDto[]> {

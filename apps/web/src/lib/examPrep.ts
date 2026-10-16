@@ -191,6 +191,7 @@ export async function listSimulations(
         ? (lastGraded.totalAwarded ?? 0) / (lastGraded.totalMax ?? 1)
         : null,
       attemptCount: mine.length,
+      lastGradedAt: lastGraded?.gradedAt?.toISOString() ?? null,
     };
   });
 }

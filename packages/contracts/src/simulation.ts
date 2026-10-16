@@ -77,13 +77,15 @@ export const SimulationSummaryDtoSchema = z.object({
   totalPoints: z.number(),
   itemCount: z.number().int(),
   createdAt: z.string().datetime(),
-  /** Best graded score so far, as a 0..1 ratio — for the trend view. */
+  /** Score of the most recent graded attempt, as a 0..1 ratio — for the trend view. */
   lastScoreRatio: z.number().nullable(),
   attemptCount: z.number().int(),
   /** Most recent in-progress attempt ("Riprendi"), null if none. */
   openAttemptId: z.string().uuid().nullable(),
   /** Most recent submitted/graded attempt ("Vedi la correzione"), null if none. */
   lastAttemptId: z.string().uuid().nullable(),
+  /** When the most recent graded attempt was graded, null if none. */
+  lastGradedAt: z.string().datetime().nullable().default(null),
 });
 export type SimulationSummaryDto = z.infer<typeof SimulationSummaryDtoSchema>;
 

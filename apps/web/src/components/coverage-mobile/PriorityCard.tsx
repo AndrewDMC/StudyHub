@@ -16,19 +16,24 @@ import { TopicAction, type SheetKind } from './TopicAction';
 export function PriorityCard({
   slug,
   topic,
+  due,
   onOpenSheet,
 }: {
   slug: string;
   topic: CoverageTopicDto;
+  /** Cards due today in this topic; `undefined`/`null` while unknown. */
+  due?: number | null | undefined;
   onOpenSheet: (kind: SheetKind, topicId: string, trigger: HTMLElement) => void;
 }) {
   const titleId = useId();
   const tone = masteryTone(topic.mastery);
   const mentions = mentionsLabel(topic);
   // The drill is the design's primary step whenever there is material to drill on.
-  const primary: TopicActionKind | null =
+  const basePrimary: TopicActionKind | null =
     topic.materialDocs > 0 && !topic.flags.includes('no_material') ? 'drill' : topicAction(topic);
-  const showReview = topic.cards > 0 && primary !== 'review';
+  // Nothing due today: the review step is dropped (no "Ripassa 0 card").
+  const primary = basePrimary === 'review' && due === 0 ? null : basePrimary;
+  const showReview = topic.cards > 0 && primary !== 'review' && due !== 0;
   const single = primary === null || !showReview;
 
   return (
@@ -82,6 +87,7 @@ export function PriorityCard({
               topic={topic}
               kind={primary}
               variant="primary"
+              due={due}
               className={single ? 'col-span-2' : ''}
               onOpenSheet={onOpenSheet}
             />
@@ -92,6 +98,7 @@ export function PriorityCard({
               topic={topic}
               kind="review"
               variant="secondary"
+              due={due}
               className={single ? 'col-span-2' : ''}
               onOpenSheet={onOpenSheet}
             />

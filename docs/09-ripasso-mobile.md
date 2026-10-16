@@ -20,7 +20,7 @@ per materia attuale (`/materie/[slug]/review`, tastiera-first) e il link al ripa
 | `getReviewQueue` (`lib/review.ts`)    | per **una** materia, filtro `topicId`                            | il ripasso rapido parte da "tutte le materie" o da una materia/argomento qualsiasi                                   |
 | `countDueCards*` (`lib/dashboard.ts`) | conta new + scadute                                              | **non esclude le card segnalate** e non applica `newLimit`: il numero non coincide con la coda reale                 |
 | `reviews` (schema)                    | salva `prevStability`                                            | **impossibile annullare** una valutazione: manca lo snapshot FSRS precedente                                         |
-| `FlashcardDto`                        | senza `dueAt`                                                    | il riepilogo "Prossime scadenze" non ha i dati                                                                       |
+| `FlashcardDto`                        | senza `dueAt`                                                    | il riepilogo "Prossime scadenze" non ha i dati (`dueAt` aggiunto in slice A, vedi F2)                                |
 | FSRS (`core/fsrs.ts`)                 | solo `scheduleReview`                                            | mancano gli intervalli in anteprima sotto i bottoni ("<1 min", "1 g"…)                                               |
 | Playwright                            | solo `Desktop Chrome`                                            | nessun test a viewport telefono                                                                                      |
 

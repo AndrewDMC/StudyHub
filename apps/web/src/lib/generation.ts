@@ -92,6 +92,7 @@ function toFlashcardDto(row: Flashcard): FlashcardDto {
     suspended: row.suspended,
     tags: row.tags,
     flaggedAt: row.flaggedAt ? row.flaggedAt.toISOString() : null,
+    dueAt: row.dueAt && !row.suspended && row.state !== 'new' ? row.dueAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
   };
 }

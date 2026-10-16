@@ -2,7 +2,7 @@
 
 import { type RefObject } from 'react';
 import Link from 'next/link';
-import { Download, FileText, Trash2 } from 'lucide-react';
+import { Download, FileText, Network, Trash2 } from 'lucide-react';
 import type { DocumentDto } from '@studyhub/contracts';
 import { BottomSheet } from '../subject-mobile/BottomSheet';
 
@@ -15,6 +15,7 @@ export function DocumentActionsSheet({
   onOpenChange,
   slug,
   doc,
+  hasGraph,
   onDelete,
   returnFocusRef,
 }: {
@@ -22,6 +23,8 @@ export function DocumentActionsSheet({
   onOpenChange: (open: boolean) => void;
   slug: string;
   doc: DocumentDto;
+  /** The document has a schema graph: only then the canvas export makes sense. */
+  hasGraph: boolean;
   onDelete: () => void;
   returnFocusRef: RefObject<HTMLElement | null>;
 }) {
@@ -46,6 +49,16 @@ export function DocumentActionsSheet({
           <Download className="h-5 w-5 text-fg-secondary" aria-hidden="true" />
           Scarica
         </a>
+        {hasGraph && (
+          <a
+            href={`/api/subjects/${slug}/documents/${doc.id}/schema-graph/canvas`}
+            download={`${doc.id}.canvas`}
+            className={rowClass}
+          >
+            <Network className="h-5 w-5 text-fg-secondary" aria-hidden="true" />
+            Esporta .canvas
+          </a>
+        )}
         <button type="button" onClick={onDelete} className={`${rowClass} text-danger`}>
           <Trash2 className="h-5 w-5" aria-hidden="true" />
           Elimina documento

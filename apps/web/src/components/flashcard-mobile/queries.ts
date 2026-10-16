@@ -27,6 +27,16 @@ export function useReviewDue(slug: string) {
   };
 }
 
+/** Cards due today per topic id (null while loading or on error), from the same overview query. */
+export function useTopicDue(slug: string): Map<string, number> | null {
+  const query = useQuery({ queryKey: REVIEW_OVERVIEW_KEY, queryFn: fetchReviewOverview });
+  const topics = query.data?.subjects.find((s) => s.slug === slug)?.topics;
+  if (!topics) return null;
+  const map = new Map<string, number>();
+  for (const t of topics) if (t.id !== null) map.set(t.id, t.due);
+  return map;
+}
+
 async function fetchArtifacts(slug: string): Promise<ArtifactDto[]> {
   const res = await fetch(`/api/subjects/${slug}/artifacts`);
   const body = await res.json();

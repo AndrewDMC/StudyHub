@@ -159,14 +159,14 @@ test.describe('Materia mobile — Lacune', () => {
     await expect(
       card(page, 'Cinematica').getByRole('link', { name: 'Carica materiale' }),
     ).toHaveAttribute('href', `/materie/${seed.slug}?tab=materiale`);
-    const review = card(page, 'Entropia').getByRole('link', { name: 'Ripassa le card' });
+    const review = card(page, 'Entropia').getByRole('link', { name: /^Ripassa \d+ card$/ });
     await expect(review).toHaveAttribute(
       'href',
       `/ripasso?materia=${seed.slug}&argomento=${seed.topicIds.entropia}`,
     );
     // "In regola" ha card: l'azione è ancora il ripasso; la card Termodinamica ha il bottone sheet.
     await expect(
-      card(page, 'Ottica').getByRole('link', { name: 'Ripassa le card' }),
+      card(page, 'Ottica').getByRole('link', { name: /^Ripassa \d+ card$/ }),
     ).toHaveAttribute('href', `/ripasso?materia=${seed.slug}&argomento=${seed.topicIds.ottica}`);
 
     await review.click();

@@ -7,6 +7,7 @@ import { Check } from 'lucide-react';
 import type { CoverageMapDto, TopicDto } from '@studyhub/contracts';
 import { filterCounts, matchesFilter, type GapFilter } from '@/lib/coverageMobile';
 import { materialHref } from '@/lib/subjectTabs';
+import { useTopicDue } from '../flashcard-mobile/queries';
 import { GenerateSheet } from '../simulation-mobile/GenerateSheet';
 import { secondaryButton } from '../simulation-mobile/styles';
 import { SectionEmpty, SectionError, SkeletonRows } from '../subject-mobile/SectionState';
@@ -28,6 +29,7 @@ async function fetchCoverage(slug: string): Promise<CoverageMapDto> {
 export function CoverageMobile({ slug, topics }: { slug: string; topics: TopicDto[] }) {
   const queryClient = useQueryClient();
   const query = useQuery({ queryKey: ['coverage', slug], queryFn: () => fetchCoverage(slug) });
+  const dueByTopic = useTopicDue(slug);
   const [filter, setFilter] = useState<GapFilter>('tutte');
   const [sheet, setSheet] = useState<{ kind: SheetKind; topicId: string } | null>(null);
   const [drillStarted, setDrillStarted] = useState(false);
@@ -80,7 +82,12 @@ export function CoverageMobile({ slug, topics }: { slug: string; topics: TopicDt
       </p>
 
       {priority ? (
-        <PriorityCard slug={slug} topic={priority} onOpenSheet={openSheet} />
+        <PriorityCard
+          slug={slug}
+          topic={priority}
+          due={dueByTopic?.get(priority.topicId)}
+          onOpenSheet={openSheet}
+        />
       ) : (
         map.topics.length > 0 && (
           <p className="flex items-start gap-2 rounded-[var(--radius-card)] border border-ok bg-bg-surface p-4 text-sm text-ok">
@@ -116,7 +123,12 @@ export function CoverageMobile({ slug, topics }: { slug: string; topics: TopicDt
               <ul className="space-y-3">
                 {visible.map((t) => (
                   <li key={t.topicId} className="min-w-0">
-                    <TopicCard slug={slug} topic={t} onOpenSheet={openSheet} />
+                    <TopicCard
+                      slug={slug}
+                      topic={t}
+                      due={dueByTopic?.get(t.topicId)}
+                      onOpenSheet={openSheet}
+                    />
                   </li>
                 ))}
               </ul>
