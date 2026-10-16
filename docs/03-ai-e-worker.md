@@ -41,6 +41,9 @@ output: { cards: [{ type, front, back, hint?, topicId, sourceRef{docId,page,quot
 Regole nel prompt: una card = un fatto atomico; niente domande "sì/no"; cloze solo su termini portanti;
 `quote` deve essere **verbatim** dal chunk (validato programmaticamente: se non compare → card scartata).
 Post-processing: dedup semantica (cosine > 0.92) contro le card esistenti del deck.
+`topicId` non lo decide l'AI: il worker lo risolve da `topicName` (verbatim dall'elenco argomenti), poi dallo scope,
+poi dal documento citato. Le card senza argomento possono essere classificate dopo dal job `sort_flashcards`
+(haiku, batch da 40, solo argomenti esistenti) — vedi `docs/fasi/F4-flashcard.md`.
 
 ### 3.2 `generate_schema`
 

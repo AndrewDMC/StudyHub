@@ -3,7 +3,7 @@ import { loadPrompt } from './promptLoader.js';
 // Single source of truth for prompt versions — both providers and job
 // orchestration (idempotency jobKey, artifact front-matter) read from here
 // instead of hardcoding the string in more than one place.
-export const FLASHCARDS_PROMPT_VERSION = loadPrompt('flashcards', 1).promptVersion;
+export const FLASHCARDS_PROMPT_VERSION = loadPrompt('flashcards', 2).promptVersion;
 export const SUMMARY_PROMPT_VERSION = loadPrompt('summary', 1).promptVersion;
 export const SCHEMA_PROMPT_VERSION = loadPrompt('schema', 1).promptVersion;
 export const SCHEMA_TRANSCRIPTION_PROMPT_VERSION = loadPrompt(
@@ -26,3 +26,4 @@ export const ESTIMATE_TOPICS_PROMPT_VERSION = loadPrompt('estimate_topics', 2).p
 export const EXTRACT_TOPICS_PROMPT_VERSION = loadPrompt('extract_topics', 2).promptVersion;
 export const SESSION_BRIEFING_PROMPT_VERSION = loadPrompt('session_briefing', 1).promptVersion;
 export const SESSION_CHAT_PROMPT_VERSION = loadPrompt('session_chat', 1).promptVersion;
+export const SORT_FLASHCARDS_PROMPT_VERSION = loadPrompt('sort_flashcards', 1).promptVersion;

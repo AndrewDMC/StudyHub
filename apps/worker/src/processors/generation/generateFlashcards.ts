@@ -2,10 +2,19 @@ import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
-import { artifactSources, artifacts, flashcards, subjects } from '@studyhub/db';
+import {
+  artifactSources,
+  artifacts,
+  flashcards,
+  resolvePrimaryTopics,
+  subjects,
+  topics,
+} from '@studyhub/db';
 import { resolveSubjectSubpath } from '@studyhub/core';
 import { embedTexts } from '@studyhub/ai/embeddings';
 import {
+  buildTopicNameIndex,
+  matchTopicId,
   resolveProvider,
   estimateCostEur,
   FLASHCARDS_PROMPT_VERSION,
@@ -33,6 +42,33 @@ export interface GenerateFlashcardsResult {
   jobKey: string;
   costEur: number;
   usage: { inputTokens: number; outputTokens: number };
+}
+
+export interface FlashcardTopicContext {
+  /** The subject's topics by normalized name (`buildTopicNameIndex`). */
+  topicIndex: ReadonlyMap<string, { id: string }>;
+  /** The scope's only `topicId` when it names exactly one topic of this subject, else null. */
+  scopeTopicId: string | null;
+  /** Primary topic of each cited document (`resolvePrimaryTopics`); untagged documents are absent. */
+  primaryTopicByDoc: ReadonlyMap<string, { topicId: string }>;
+}
+
+/**
+ * Which topic a freshly generated card is filed under, first hit wins:
+ * (a) the model's `topicName`, matched to a topic of the subject (a name outside the list is a
+ * miss, not an error); (b) the scope's single topic; (c) the primary topic of the cited document;
+ * (d) none. Never invents a topic.
+ */
+export function resolveFlashcardTopicId(
+  card: { topicName?: string | null | undefined; sourceRef: { docId: string } },
+  ctx: FlashcardTopicContext,
+): string | null {
+  return (
+    matchTopicId(card.topicName, ctx.topicIndex) ??
+    ctx.scopeTopicId ??
+    ctx.primaryTopicByDoc.get(card.sourceRef.docId)?.topicId ??
+    null
+  );
 }
 
 /**
@@ -87,6 +123,12 @@ export async function processGenerateFlashcards(
     };
   }
 
+  const subjectTopics: { id: string; name: string }[] = await db
+    .select({ id: topics.id, name: topics.name })
+    .from(topics)
+    .where(eq(topics.subjectId, input.subjectId))
+    .orderBy(topics.orderIndex, topics.name);
+
   const result = await provider.generateFlashcards(
     {
       subjectName: subject.name,
@@ -95,6 +137,7 @@ export async function processGenerateFlashcards(
       types: input.types,
       difficulty: input.difficulty,
       lang: input.lang,
+      ...(subjectTopics.length > 0 ? { topics: subjectTopics.map((t) => ({ name: t.name })) } : {}),
     },
     model,
   );
@@ -175,10 +218,23 @@ export async function processGenerateFlashcards(
   });
 
   if (deduplicated.length > 0) {
+    const scopeTopicIds = input.scope.topicIds ?? [];
+    const scopeTopicId =
+      scopeTopicIds.length === 1 && subjectTopics.some((t) => t.id === scopeTopicIds[0])
+        ? scopeTopicIds[0]!
+        : null;
+    const topicContext: FlashcardTopicContext = {
+      topicIndex: buildTopicNameIndex(subjectTopics),
+      scopeTopicId,
+      primaryTopicByDoc: await resolvePrimaryTopics(db, input.subjectId, [
+        ...new Set(deduplicated.map((c) => c.sourceRef.docId)),
+      ]),
+    };
     await db.insert(flashcards).values(
       deduplicated.map((c) => ({
         id: randomUUID(),
         deckId,
+        topicId: resolveFlashcardTopicId(c, topicContext),
         type: c.type,
         front: c.front,
         back: c.back,

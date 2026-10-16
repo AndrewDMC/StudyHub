@@ -18,6 +18,13 @@ export const GeneratedFlashcardSchema = z.object({
   back: z.string().min(1),
   hint: z.string().optional(),
   sourceRef: AiSourceRefSchema,
+  /**
+   * The subject topic this card belongs to, verbatim from the `topics` list given in the prompt
+   * (flashcards/v2) — `null` when none fits. Optional so v1 output (no topics) still parses.
+   * Matched to a `topicId` in the worker, not trusted as-is: a name outside the given list is
+   * treated as no match, not rejected.
+   */
+  topicName: z.string().min(1).nullable().optional(),
 });
 export type GeneratedFlashcard = z.infer<typeof GeneratedFlashcardSchema>;
 
@@ -25,6 +32,22 @@ export const FlashcardsOutputSchema = z.object({
   cards: z.array(GeneratedFlashcardSchema),
 });
 export type FlashcardsOutput = z.infer<typeof FlashcardsOutputSchema>;
+
+/**
+ * `sort_flashcards`: files existing cards (identified by the `cardId` the caller sent) under the
+ * subject's existing topics. `topicName` is verbatim from the given list or `null`; the model
+ * never creates topics. The worker matches names to ids and ignores unknown cardIds.
+ */
+export const FlashcardSortAssignmentSchema = z.object({
+  cardId: z.string().min(1),
+  topicName: z.string().min(1).nullable(),
+});
+export type FlashcardSortAssignment = z.infer<typeof FlashcardSortAssignmentSchema>;
+
+export const SortFlashcardsAiOutputSchema = z.object({
+  assignments: z.array(FlashcardSortAssignmentSchema),
+});
+export type SortFlashcardsAiOutput = z.infer<typeof SortFlashcardsAiOutputSchema>;
 
 /**
  * `generate_schema` (docs/03-ai-e-worker.md §3.2). One node of the schema —

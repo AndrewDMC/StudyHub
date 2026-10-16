@@ -15,6 +15,7 @@ import type {
   SessionBriefingPromptInput,
   SessionChatPromptInput,
   SimulationPromptInput,
+  SortFlashcardsPromptInput,
   SummaryPromptInput,
 } from './provider.js';
 import type {
@@ -33,11 +34,13 @@ import type {
   SchemaOutput,
   SessionBriefingOutput,
   SimulationOutput,
+  SortFlashcardsAiOutput,
   SummaryOutput,
   TopicEstimate,
 } from './schemas.js';
 import { estimateTokens } from './pricing.js';
 import { keywordCoverage, keywords, splitSentences, truncate } from './text.js';
+import { normalizeTopicName } from './topicMatch.js';
 import { renderSessionChatUserPrompt } from './promptRender.js';
 import { fakeExtractExamProfile, fakeGenerateSimulation, fakeGradeAnswer } from './fakeExam.js';
 import {
@@ -54,6 +57,7 @@ import {
   SESSION_BRIEFING_PROMPT_VERSION,
   SESSION_CHAT_PROMPT_VERSION,
   SIMULATION_PROMPT_VERSION,
+  SORT_FLASHCARDS_PROMPT_VERSION,
   SUMMARY_PROMPT_VERSION,
 } from './versions.js';
 
@@ -98,6 +102,11 @@ export class FakeProvider implements AiProvider {
               : `Cosa afferma il materiale su: "${truncate(sentence, 50)}"?`,
           back: sentence,
           sourceRef: { docId: chunk.docId, page: chunk.page, quote: sentence },
+          // Only when the prompt carried topics: a real signal (the sentence names the topic),
+          // otherwise null — the worker's fallbacks (single scope topic, document topic) take over.
+          ...(input.topics && input.topics.length > 0
+            ? { topicName: pickTopicByKeywords(sentence, input.topics) }
+            : {}),
         });
       }
     }
@@ -110,6 +119,33 @@ export class FakeProvider implements AiProvider {
       usage: { inputTokens, outputTokens },
       model: FAKE_MODEL,
       promptVersion: FLASHCARDS_PROMPT_VERSION,
+    };
+  }
+
+  /**
+   * Keyword stand-in for the classifier: a card goes to the topic whose name (or most of whose
+   * content words) appears in its text, `null` when none does. Not judgment — it proves the
+   * pipeline (batching, name matching, document fallback, "don't touch cards with a topic")
+   * moves a genuine per-card signal, never a constant.
+   */
+  async sortFlashcards(
+    input: SortFlashcardsPromptInput,
+    _model: string,
+  ): Promise<GeneratedWithMeta<SortFlashcardsAiOutput>> {
+    const data: SortFlashcardsAiOutput = {
+      assignments: input.cards.map((card) => ({
+        cardId: card.id,
+        topicName: pickTopicByKeywords(`${card.front} ${card.back}`, input.topics),
+      })),
+    };
+    return {
+      data,
+      usage: {
+        inputTokens: input.cards.reduce((sum, c) => sum + estimateTokens(c.front + c.back), 0),
+        outputTokens: estimateTokens(JSON.stringify(data)),
+      },
+      model: FAKE_MODEL,
+      promptVersion: SORT_FLASHCARDS_PROMPT_VERSION,
     };
   }
 
@@ -506,6 +542,29 @@ function estimateDifficulty(excerpt: string): 1 | 2 | 3 | 4 | 5 {
   const sentences = splitSentences(excerpt);
   const density = sentences.length === 0 ? 0 : keywords(excerpt).length / sentences.length;
   return Math.min(5, Math.max(1, Math.round(1 + density))) as 1 | 2 | 3 | 4 | 5;
+}
+
+/**
+ * The topic (verbatim name) best matching `text`, or `null`: a topic whose whole normalized name
+ * occurs in the text scores 1, otherwise the fraction of its content words found; ties go to the
+ * earlier topic, zero overlap is no match.
+ */
+function pickTopicByKeywords(text: string, topics: readonly { name: string }[]): string | null {
+  const haystack = normalizeTopicName(text);
+  const words = new Set(keywords(text));
+  let best: { name: string; score: number } | null = null;
+  for (const topic of topics) {
+    const needle = normalizeTopicName(topic.name);
+    if (!needle) continue;
+    const topicWords = keywords(topic.name);
+    const score = haystack.includes(needle)
+      ? 1
+      : topicWords.length === 0
+        ? 0
+        : topicWords.filter((w) => words.has(w)).length / topicWords.length;
+    if (score > 0 && (!best || score > best.score)) best = { name: topic.name, score };
+  }
+  return best?.name ?? null;
 }
 
 function clozeify(sentence: string): string {

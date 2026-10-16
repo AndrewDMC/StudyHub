@@ -18,7 +18,13 @@ export function errorResponse(err: unknown): NextResponse {
   }
   if (err instanceof ConflictError) {
     return NextResponse.json(
-      { error: { code: 'conflict', message: err.message } },
+      {
+        error: {
+          code: 'conflict',
+          message: err.message,
+          ...(err.jobId ? { jobId: err.jobId } : {}),
+        },
+      },
       { status: 409 },
     );
   }

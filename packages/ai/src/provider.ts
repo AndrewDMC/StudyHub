@@ -13,6 +13,7 @@ import type {
   SessionBriefingOutput,
   SimulationItem,
   SimulationOutput,
+  SortFlashcardsAiOutput,
   SummaryOutput,
 } from './schemas.js';
 
@@ -41,6 +42,25 @@ export interface FlashcardsPromptInput {
   types: FlashcardType[];
   difficulty: 1 | 2 | 3;
   lang: string;
+  /**
+   * The subject's topics (flashcards/v2): the model tags each card with the exact name of one of
+   * them, or `null`. Omitted/empty when the subject has no topics yet.
+   */
+  topics?: { name: string }[];
+}
+
+/** One card to file under a topic — `id` is echoed back in the assignment. */
+export interface SortableFlashcard {
+  id: string;
+  front: string;
+  back: string;
+}
+
+export interface SortFlashcardsPromptInput {
+  subjectName: string;
+  /** The topics the cards may be filed under (never empty: the worker skips the call otherwise). */
+  topics: { name: string; parentName?: string | null }[];
+  cards: SortableFlashcard[];
 }
 
 export interface SummaryPromptInput {
@@ -251,6 +271,11 @@ export interface AiProvider {
     input: SessionBriefingPromptInput,
     model: string,
   ): Promise<GeneratedWithMeta<SessionBriefingOutput>>;
+  /** Files existing flashcards under the subject's existing topics (`sort_flashcards`). */
+  sortFlashcards(
+    input: SortFlashcardsPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<SortFlashcardsAiOutput>>;
   /** Streaming, free-text answer for the study-session chat (docs/08-sessione-di-studio.md §5.3). */
   chatStream(input: SessionChatPromptInput, model: string): AsyncIterable<ChatDelta>;
 }

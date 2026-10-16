@@ -57,7 +57,9 @@ export function FlashcardRow({
       />
       <span className="flex min-w-0 flex-wrap items-center gap-1.5">
         <CardStatePills card={card} />
-        {topicName && <span className="min-w-0 truncate text-xs text-fg-muted">{topicName}</span>}
+        <span className="min-w-0 truncate text-xs text-fg-muted">
+          {topicName ?? 'Senza argomento'}
+        </span>
       </span>
     </button>
   );

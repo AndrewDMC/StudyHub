@@ -9,6 +9,7 @@ import type {
   SessionBriefingPromptInput,
   SessionChatPromptInput,
   SimulationPromptInput,
+  SortFlashcardsPromptInput,
   SummaryPromptInput,
 } from './provider.js';
 
@@ -86,9 +87,13 @@ export function renderGradeUserPrompt(input: GradePromptInput): string {
 
 export function renderFlashcardsUserPrompt(input: FlashcardsPromptInput): string {
   const countText = input.count === 'auto' ? 'un numero adeguato di' : String(input.count);
+  const topics = input.topics ?? [];
   return [
     `Materia: ${input.subjectName}`,
     `Genera ${countText} flashcard di tipo ${input.types.join(', ')}, difficoltà ${input.difficulty}/3, lingua "${input.lang}".`,
+    topics.length > 0
+      ? `Argomenti della materia (assegna a ogni card il nome esatto di uno di questi in "topicName", o null se nessuno calza): ${JSON.stringify(topics.map((t) => t.name))}`
+      : 'Nessun argomento definito per questa materia: imposta "topicName" a null.',
     '',
     documentsBlock(input.chunks),
   ].join('\n');
@@ -229,4 +234,19 @@ export function renderSessionBriefingUserPrompt(input: SessionBriefingPromptInpu
   }
   parts.push('', documentsBlock(input.chunks));
   return parts.join('\n');
+}
+
+/** Cards are user-authored, so each goes in escaped, inert tags (docs/03 §6). */
+export function renderSortFlashcardsUserPrompt(input: SortFlashcardsPromptInput): string {
+  const attr = (value: string) => value.replace(/"/g, "'");
+  return [
+    `Materia: ${input.subjectName}`,
+    `Argomenti disponibili (nomi esatti): ${JSON.stringify(input.topics.map((t) => t.name))}`,
+    `${input.cards.length} flashcard da classificare. Per ciascuna restituisci lo stesso "cardId" e il "topicName" scelto fra gli argomenti sopra, o null.`,
+    '',
+    ...input.cards.map(
+      (c) =>
+        `<card id="${attr(c.id)}">\n<front>${escapeClosingTag(c.front, 'front')}</front>\n<back>${escapeClosingTag(c.back, 'back')}</back>\n</card>`,
+    ),
+  ].join('\n');
 }

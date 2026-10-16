@@ -165,7 +165,7 @@ describe('processGenerateFlashcards', () => {
 
     const fileContents = JSON.parse(await readFile(artifact!.path, 'utf-8'));
     expect(fileContents.sourceDocIds).toEqual([docId]);
-    expect(fileContents.promptVersion).toBe('flashcards/v1');
+    expect(fileContents.promptVersion).toBe('flashcards/v2');
     expect(fileContents.cards).toHaveLength(result.cardCount);
   });
 

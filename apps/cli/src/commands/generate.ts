@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
-import { subjects } from '@studyhub/db';
+import { subjects, topics } from '@studyhub/db';
 import {
+  FLASHCARDS_PROMPT_VERSION,
   estimateCostEur,
   estimateTokens,
   loadPrompt,
@@ -105,7 +106,16 @@ export async function buildGenerationDryRun(
   let promptVersion: string;
   let userPrompt: string;
   if (input.kind === 'flashcards') {
-    ({ text: system, promptVersion } = loadPrompt('flashcards', 1));
+    // Current prompt version and the subject's topics (same order), exactly as the worker sends them.
+    ({ text: system, promptVersion } = loadPrompt(
+      'flashcards',
+      Number(FLASHCARDS_PROMPT_VERSION.split('/v')[1]),
+    ));
+    const subjectTopics: { name: string }[] = await db
+      .select({ name: topics.name })
+      .from(topics)
+      .where(eq(topics.subjectId, subject.id))
+      .orderBy(topics.orderIndex, topics.name);
     userPrompt = renderFlashcardsUserPrompt({
       subjectName: subject.name,
       chunks: scopeChunks,
@@ -113,6 +123,7 @@ export async function buildGenerationDryRun(
       types: input.types ?? ['basic'],
       difficulty: input.difficulty ?? 2,
       lang: input.lang ?? 'it',
+      ...(subjectTopics.length > 0 ? { topics: subjectTopics } : {}),
     });
   } else if (input.kind === 'schema') {
     ({ text: system, promptVersion } = loadPrompt('schema', 1));

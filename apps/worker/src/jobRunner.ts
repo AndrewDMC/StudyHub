@@ -19,6 +19,7 @@ import {
   PingJobInputSchema,
   PrepareSessionJobInputSchema,
   ReconcileJobInputSchema,
+  SortFlashcardsJobInputSchema,
   TranscribeSchemaJobInputSchema,
   type JobType,
 } from '@studyhub/contracts';
@@ -34,6 +35,7 @@ import { processGenerateFlashcards } from './processors/generation/generateFlash
 import { processGenerateSchema } from './processors/generation/generateSchema.js';
 import { processPrepareSession } from './processors/generation/prepareSession.js';
 import { processGenerateSummary } from './processors/generation/generateSummary.js';
+import { processSortFlashcards } from './processors/generation/sortFlashcards.js';
 import { processExtractExamProfile } from './processors/exam/extractExamProfile.js';
 import { processGenerateSimulation } from './processors/exam/generateSimulation.js';
 import { processGradeAttempt } from './processors/exam/gradeAttempt.js';
@@ -155,6 +157,8 @@ async function dispatch(
       return processExtractTopics(db, dataRoot, ExtractTopicsJobInputSchema.parse(data));
     case 'prepare_session':
       return processPrepareSession(db, PrepareSessionJobInputSchema.parse(data));
+    case 'sort_flashcards':
+      return processSortFlashcards(db, SortFlashcardsJobInputSchema.parse(data));
     default: {
       const exhaustive: never = type;
       throw new Error(`unhandled job type: ${exhaustive}`);

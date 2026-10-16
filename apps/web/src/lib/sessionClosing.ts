@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import {
   artifactSources,
   artifacts,
@@ -11,6 +11,7 @@ import {
   simulations,
   studySessions,
   subjects,
+  topics,
   type SessionItem,
   type StudySession,
 } from '@studyhub/db';
@@ -127,38 +128,63 @@ export async function createKeyPointDeck(
     'utf-8',
   );
 
-  await db.insert(artifacts).values({
-    id: deckId,
-    subjectId: subject.id,
-    kind: 'flashcard_deck',
-    title,
-    path,
-    model: SOURCE_MODEL,
-    promptVersion: SOURCE_PROMPT_VERSION,
-    costEur: 0,
-  });
-  await db.insert(flashcards).values(
-    points.map((p, i) => ({
-      id: randomUUID(),
-      deckId,
-      topicId: p.topicId,
-      type: 'basic' as const,
-      front: cards[i]!.front,
-      back: cards[i]!.back,
-      hint: null,
-      sourceRef: cards[i]!.sourceRef,
-    })),
-  );
+  // session.topicIds is a jsonb array without FK: only use topics that still exist in this subject.
+  const candidateIds = [
+    ...new Set([
+      ...(session.topicIds as string[]),
+      ...points.map((p) => p.topicId).filter((t): t is string => !!t),
+    ]),
+  ];
+  const existing: { id: string }[] = candidateIds.length
+    ? await db
+        .select({ id: topics.id })
+        .from(topics)
+        .where(and(eq(topics.subjectId, subject.id), inArray(topics.id, candidateIds)))
+    : [];
+  const valid = new Set(existing.map((t) => t.id));
+  const sessionTopics = (session.topicIds as string[]).filter((t) => valid.has(t));
+  // Point's own topic, else the session's only topic (several topics = left unsorted).
+  const topicFor = (p: { topicId: string | null }) =>
+    p.topicId && valid.has(p.topicId)
+      ? p.topicId
+      : sessionTopics.length === 1
+        ? sessionTopics[0]!
+        : null;
+
   const docIds = docIdsOf(points);
-  if (docIds.length > 0) {
-    await db
-      .insert(artifactSources)
-      .values(docIds.map((documentId) => ({ artifactId: deckId, documentId })));
-  }
-  await db
-    .update(studySessions)
-    .set({ flashcardDeckId: deckId })
-    .where(eq(studySessions.id, session.id));
+  await db.transaction(async (tx: AnyDb) => {
+    await tx.insert(artifacts).values({
+      id: deckId,
+      subjectId: subject.id,
+      kind: 'flashcard_deck',
+      title,
+      path,
+      model: SOURCE_MODEL,
+      promptVersion: SOURCE_PROMPT_VERSION,
+      costEur: 0,
+    });
+    await tx.insert(flashcards).values(
+      points.map((p, i) => ({
+        id: randomUUID(),
+        deckId,
+        topicId: topicFor(p),
+        type: 'basic' as const,
+        front: cards[i]!.front,
+        back: cards[i]!.back,
+        hint: null,
+        sourceRef: cards[i]!.sourceRef,
+      })),
+    );
+    if (docIds.length > 0) {
+      await tx
+        .insert(artifactSources)
+        .values(docIds.map((documentId) => ({ artifactId: deckId, documentId })));
+    }
+    await tx
+      .update(studySessions)
+      .set({ flashcardDeckId: deckId })
+      .where(eq(studySessions.id, session.id));
+  });
 
   return { deckId, title, cardCount: points.length, created: true };
 }

@@ -44,7 +44,7 @@ describe('AnthropicProvider.generateFlashcards — control flow against a mocked
     expect(create).toHaveBeenCalledTimes(1);
     expect(result.data.cards).toHaveLength(1);
     expect(result.model).toBe('claude-sonnet-5-5');
-    expect(result.promptVersion).toBe('flashcards/v1');
+    expect(result.promptVersion).toBe('flashcards/v2');
     expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
 
     const call = create.mock.calls[0][0];
@@ -266,5 +266,79 @@ describe('AnthropicProvider — F5 capabilities against a mocked client', () => 
     expect(call.tool_choice).toEqual({ type: 'tool', name: 'emit_topic_estimates' });
     const prompt: string = call.messages[0].content;
     expect(prompt.match(/<\/document>/g)).toHaveLength(1);
+  });
+});
+
+describe('AnthropicProvider.sortFlashcards — control flow against a mocked client', () => {
+  const cardId = randomUUID();
+  const input = {
+    subjectName: 'Fisica 1',
+    topics: [{ name: 'Termodinamica' }, { name: 'Meccanica' }],
+    cards: [{ id: cardId, front: 'Che cos’è l’entropia?', back: 'Una misura del disordine.' }],
+  };
+  const sortResponse = (payload: unknown) => ({
+    content: [{ type: 'tool_use', id: 'tu_1', name: 'emit_flashcard_sorting', input: payload }],
+    usage: { input_tokens: 100, output_tokens: 50 },
+  });
+
+  it('returns the validated assignments with the sort prompt version, topics and cards in the prompt', async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValue(sortResponse({ assignments: [{ cardId, topicName: 'Termodinamica' }] }));
+    const provider = new AnthropicProvider({ client: { messages: { create } } as any });
+
+    const result = await provider.sortFlashcards(input, 'claude-haiku-4-5-20251001');
+
+    expect(result.data.assignments).toEqual([{ cardId, topicName: 'Termodinamica' }]);
+    expect(result.promptVersion).toBe('sort_flashcards/v1');
+    const call = create.mock.calls[0][0];
+    expect(call.tool_choice).toEqual({ type: 'tool', name: 'emit_flashcard_sorting' });
+    expect(call.messages[0].content).toContain('Termodinamica');
+    expect(call.messages[0].content).toContain(`<card id="${cardId}">`);
+  });
+
+  it('retries with validation feedback when an assignment is malformed (max 2 retries)', async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValueOnce(sortResponse({ assignments: [{ cardId }] })) // topicName missing
+      .mockResolvedValueOnce(sortResponse({ assignments: [{ cardId, topicName: null }] }));
+    const provider = new AnthropicProvider({ client: { messages: { create } } as any });
+
+    const result = await provider.sortFlashcards(input, 'claude-haiku-4-5-20251001');
+
+    expect(result.data.assignments).toEqual([{ cardId, topicName: null }]);
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(create.mock.calls[1][0].messages[0].content).toContain('non era valido');
+  });
+});
+
+describe('AnthropicProvider.generateFlashcards — topics (flashcards/v2)', () => {
+  it('puts the topic list in the prompt and accepts topicName, null or absent', async () => {
+    const create = vi.fn().mockResolvedValue(
+      toolUseResponse({
+        cards: [
+          { ...validFlashcardsOutput.cards[0], topicName: 'Termodinamica' },
+          { ...validFlashcardsOutput.cards[0], front: 'Altra?', topicName: null },
+          { ...validFlashcardsOutput.cards[0], front: 'Ancora?' },
+        ],
+      }),
+    );
+    const provider = new AnthropicProvider({ client: { messages: { create } } as any });
+
+    const result = await provider.generateFlashcards(
+      {
+        subjectName: 'Fisica 1',
+        chunks: [{ docId, page: 1, text: 'Risposta.' }],
+        count: 3,
+        types: ['basic'],
+        difficulty: 1,
+        lang: 'it',
+        topics: [{ name: 'Termodinamica' }],
+      },
+      'claude-sonnet-5-5',
+    );
+
+    expect(result.data.cards.map((c) => c.topicName)).toEqual(['Termodinamica', null, undefined]);
+    expect(create.mock.calls[0][0].messages[0].content).toContain('["Termodinamica"]');
   });
 });

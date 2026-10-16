@@ -148,6 +148,7 @@ const AI_JOB_TYPES = [
   'generate_plan',
   'extract_topics',
   'prepare_session',
+  'sort_flashcards',
 ] as const;
 
 /**
