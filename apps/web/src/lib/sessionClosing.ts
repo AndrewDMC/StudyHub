@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import {
+  autoAttachFlashcards,
   artifactSources,
   artifacts,
   flashcards,
@@ -15,7 +16,7 @@ import {
   type SessionItem,
   type StudySession,
 } from '@studyhub/db';
-import { resolveSubjectSubpath } from '@studyhub/core';
+import { resolveSubjectSubpath, toIsoDate } from '@studyhub/core';
 import type { SessionDeckResult, SessionDrillResult } from '@studyhub/contracts';
 import { SubjectNotFoundError } from './errors';
 import { ConflictError, NotFoundError } from './examPrep';
@@ -163,9 +164,10 @@ export async function createKeyPointDeck(
       promptVersion: SOURCE_PROMPT_VERSION,
       costEur: 0,
     });
+    const cardIds = points.map(() => randomUUID());
     await tx.insert(flashcards).values(
       points.map((p, i) => ({
-        id: randomUUID(),
+        id: cardIds[i]!,
         deckId,
         topicId: topicFor(p),
         type: 'basic' as const,
@@ -175,6 +177,12 @@ export async function createKeyPointDeck(
         sourceRef: cards[i]!.sourceRef,
       })),
     );
+    // Lessons: cards with a topic join the nearest lesson of that topic.
+    await autoAttachFlashcards(tx, {
+      subjectId: subject.id,
+      cardIds,
+      today: toIsoDate(new Date()),
+    });
     if (docIds.length > 0) {
       await tx
         .insert(artifactSources)

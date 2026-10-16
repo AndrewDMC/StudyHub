@@ -270,8 +270,17 @@ gruppi (`apps/web/test/deckGroups.test.ts`, `apps/web/test/flashcardGroups.test.
 
 **Non ancora**:
 
-- Slice 2 (prevista): flashcard attaccate alle lezioni del piano (tabella `task_flashcards`), badge "N card"
-  sulla task, blocco "Flashcard della lezione" in sessione e ripasso per `task=`. Oggi le card non sono legate alle task.
+- ~~Slice 2: flashcard attaccate alle lezioni del piano~~ → fatta, vedi "Aggiornamento — flashcard attaccate alle lezioni".
 - Le card importate da `.apkg`/CSV restano sfuse: nessun argomento viene assegnato all'import, lo fa l'ordinamento automatico.
 - Il sort non parte in background: solo su richiesta da "Ordina automaticamente".
 - Il sort non crea argomenti nuovi: le card che non combaciano con nessun argomento restano sfuse.
+
+## Aggiornamento — flashcard attaccate alle lezioni (Slice 2, 2026-10-16)
+
+Le card si collegano alle task del piano (`task_flashcards`, migrazione `0022_task_flashcards.sql`). Dettagli
+di API, UI e agganci in `docs/fasi/F6-planner-calendario.md`, sezione omonima. Il ripasso per lezione usa la
+stessa coda di F4: `GET /api/review/queue?task=` filtra le card attaccate alla task e solo quelle ripassabili
+(mazzo approvato, non sospese né segnalate), scadute per prime.
+
+Non ancora: nessuna esclusione persistente (una card staccata a mano può essere riattaccata in automatico se
+cambia argomento o si rigenera la bozza); "oggi" in UTC.

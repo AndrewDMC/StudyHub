@@ -5,6 +5,7 @@ import { Check } from 'lucide-react';
 import type { TaskDto } from '@studyhub/contracts';
 import { KIND_LABELS } from '@/lib/planMobile';
 import { reviewHref } from '@/lib/quickReview';
+import { cardCountLabel } from '../task-flashcards/taskFlashcardsModel';
 import { StartTaskButton } from '../StartTaskButton';
 import { kindBar } from './kindStyle';
 
@@ -23,7 +24,8 @@ export function taskMeta(task: TaskDto): string {
         : task.status === 'doing'
           ? ' · in corso'
           : '';
-  return `${task.minutes} min${suffix}${task.pinned ? ' · fissata' : ''}`;
+  const cards = task.flashcardCount > 0 ? ` · ${cardCountLabel(task.flashcardCount)}` : '';
+  return `${task.minutes} min${suffix}${task.pinned ? ' · fissata' : ''}${cards}`;
 }
 
 /** One task of the selected day: colour bar, tick-off (active plan), text that opens the sheet, start/pin. */

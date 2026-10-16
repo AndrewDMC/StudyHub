@@ -8,7 +8,7 @@ import { TaskDtoSchema } from './plan.js';
  * multi-materia con colori identità"). Only tasks from *active* plans — a
  * `draft` is invisible outside its own review screen (docs/04-planner.md §9.1).
  */
-export const CalendarTaskDtoSchema = TaskDtoSchema.extend({
+export const CalendarTaskDtoSchema = TaskDtoSchema.omit({ flashcardCount: true }).extend({
   subjectSlug: z.string(),
   subjectName: z.string(),
   subjectColor: SubjectColorSchema,

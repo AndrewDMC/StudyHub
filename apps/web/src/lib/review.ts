@@ -22,6 +22,7 @@ import {
   recomputeTopicMastery,
   reviews,
   subjects,
+  taskFlashcards,
   topics,
   type Flashcard,
   type ReviewPrevSchedule,
@@ -132,6 +133,8 @@ export interface ReviewScope {
   subjectSlug?: string | undefined;
   /** Omitted = every topic; null = only cards without a topic. */
   topicId?: string | null | undefined;
+  /** A plan task (lesson): its attached cards, due or not. Wins over `topicId`. */
+  taskId?: string | undefined;
 }
 
 interface QueueRow {
@@ -203,6 +206,46 @@ async function loadDueRows(db: AnyDb, scope: ReviewScope, now: Date): Promise<Qu
     .orderBy(subjects.sortOrder, subjects.name, flashcards.createdAt, flashcards.id);
 }
 
+/**
+ * Lesson queue: every reviewable card attached to the task (see `task_flashcards`), due or not.
+ * Due cards come first (learning/review by due date, then new ones), then the rest by due date.
+ */
+async function loadTaskQueueRows(db: AnyDb, scope: ReviewScope, now: Date): Promise<QueueRow[]> {
+  const conditions = [...reviewableConditions(), eq(taskFlashcards.taskId, scope.taskId!)];
+  if (scope.subjectSlug) {
+    const subject = await requireSubject(db, scope.subjectSlug);
+    conditions.push(eq(artifacts.subjectId, subject.id));
+  }
+  const rows: QueueRow[] = await db
+    .select({
+      f: flashcards,
+      subjectId: subjects.id,
+      subjectSlug: subjects.slug,
+      subjectName: subjects.name,
+      subjectColor: subjects.color,
+      topicName: topics.name,
+    })
+    .from(taskFlashcards)
+    .innerJoin(flashcards, eq(taskFlashcards.flashcardId, flashcards.id))
+    .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
+    .innerJoin(subjects, eq(artifacts.subjectId, subjects.id))
+    .leftJoin(topics, eq(flashcards.topicId, topics.id))
+    .where(and(...conditions))
+    .orderBy(taskFlashcards.createdAt, flashcards.createdAt, flashcards.id);
+
+  const dueAt = (r: QueueRow) => r.f.dueAt?.getTime() ?? 0;
+  const isDue = (r: QueueRow) => {
+    if (r.f.state === 'new') return true;
+    const due = r.f.dueAt?.getTime() ?? 0;
+    return r.f.state === 'review' ? due <= endOfDay(now).getTime() : due <= now.getTime();
+  };
+  const due = rows.filter(isDue);
+  const seenDue = due.filter((r) => r.f.state !== 'new').sort((a, b) => dueAt(a) - dueAt(b));
+  const newDue = due.filter((r) => r.f.state === 'new');
+  const rest = rows.filter((r) => !isDue(r)).sort((a, b) => dueAt(a) - dueAt(b));
+  return [...seenDue, ...newDue, ...rest];
+}
+
 async function buildQueue(
   db: AnyDb,
   scope: ReviewScope,
@@ -259,7 +302,10 @@ export async function getQuickReviewQueue(
   options: { n?: number | undefined; now?: Date | undefined } = {},
 ): Promise<ReviewQueueItemDto[]> {
   const now = options.now ?? new Date();
-  const queue = await buildQueue(db, scope, options.n ?? 500, DEFAULT_NEW_LIMIT, now);
+  const cap = options.n ?? 500;
+  const queue = scope.taskId
+    ? (await loadTaskQueueRows(db, scope, now)).slice(0, cap)
+    : await buildQueue(db, scope, cap, DEFAULT_NEW_LIMIT, now);
   return queue.map((r) => ({
     ...toDto(r.f),
     subjectSlug: r.subjectSlug,

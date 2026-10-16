@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import {
   artifacts,
+  autoAttachFlashcards,
   flashcards,
   recomputeTopicMastery,
   resolvePrimaryTopics,
@@ -16,6 +17,7 @@ import {
   truncate,
   type AiProvider,
 } from '@studyhub/ai';
+import { toIsoDate } from '@studyhub/core';
 import type { SortFlashcardsJobInput, SortFlashcardsOutput } from '@studyhub/contracts';
 import { BudgetExceededError, checkBudget } from './shared.js';
 
@@ -109,6 +111,7 @@ export async function processSortFlashcards(
   // Every update is guarded by `topic_id IS NULL`: a card the student filed by hand while the job
   // ran keeps their choice.
   const touchedTopicIds = new Set<string>();
+  const assignedCardIds: string[] = [];
   const assignTopic = async (topicId: string, cardIds: string[]): Promise<number> => {
     if (cardIds.length === 0) return 0;
     const updated: { id: string }[] = await db
@@ -117,6 +120,7 @@ export async function processSortFlashcards(
       .where(and(inArray(flashcards.id, cardIds), isNull(flashcards.topicId)))
       .returning({ id: flashcards.id });
     if (updated.length > 0) touchedTopicIds.add(topicId);
+    for (const u of updated) assignedCardIds.push(u.id);
     return updated.length;
   };
 
@@ -125,6 +129,18 @@ export async function processSortFlashcards(
   let costEur = 0;
   let stoppedByBudget = false;
   const usage = { inputTokens: 0, outputTokens: 0 };
+  // Mastery depends on the cards a topic holds (coverage), so every topic that gained cards is
+  // recomputed — also when the job fails halfway, since the cards already moved. The lesson links
+  // follow; a failure there must not mask the error that stopped the job.
+  const settle = async () => {
+    for (const topicId of touchedTopicIds) await recomputeTopicMastery(db, topicId);
+    // Lessons: the newly filed cards join the nearest lesson of their topic.
+    await autoAttachFlashcards(db, {
+      subjectId: input.subjectId,
+      cardIds: assignedCardIds,
+      today: toIsoDate(new Date()),
+    });
+  };
   try {
     // (1) Free fallback: the topic of the document the card cites.
     const primaryByDoc = await resolvePrimaryTopics(db, input.subjectId, [
@@ -206,11 +222,15 @@ export async function processSortFlashcards(
         }
       }
     }
-  } finally {
-    // Mastery depends on the cards a topic holds (coverage), so every topic that gained cards is
-    // recomputed — also when the job fails halfway, since the cards already moved.
-    for (const topicId of touchedTopicIds) await recomputeTopicMastery(db, topicId);
+  } catch (err) {
+    try {
+      await settle();
+    } catch {
+      // keep the original error
+    }
+    throw err;
   }
+  await settle();
 
   const assigned = assignedByDocument + assignedByAi;
   return {

@@ -67,6 +67,12 @@ una task non dice "studia termodinamica", dice
 _"Leggi Appunti cap. 4 pp. 51–68 (35 min) → genera 20 flashcard → ripassale"_, con i deep-link ai documenti
 e il bottone che lancia direttamente il job o la sessione di ripasso. **Ogni task è azionabile in un click.**
 
+**Flashcard collegate alla task.** Ogni task può avere flashcard attaccate (`task_flashcards`, `source` `auto`
+o `user`). Gli agganci automatici arrivano dal piano stesso (la lezione scelta per un argomento è quella
+aperta più vicina con data ≥ oggi, esclusi `rest` e `simulation`), dalla generazione e dall'ordinamento delle
+card, dall'editor deck e dalla chiusura di una sessione. La coda di ripasso per task è `/ripasso?materia=&task=`.
+Dettagli in `docs/fasi/F6-planner-calendario.md`, sezione "flashcard attaccate alle lezioni".
+
 ## 6. Adattività (ciò che rende il piano vivo)
 
 Ricalcolo automatico quando:

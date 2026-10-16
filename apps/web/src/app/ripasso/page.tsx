@@ -7,7 +7,7 @@ const one = (value: string | string[] | undefined) =>
   typeof value === 'string' ? value : undefined;
 
 /**
- * Ripasso rapido (docs/09-ripasso-mobile.md §C). `?materia=<slug>&argomento=<topicId|none>&n=10`
+ * Ripasso rapido (docs/09-ripasso-mobile.md §C). `?materia=<slug>&argomento=<topicId|none>&task=<taskId>&n=10`
  * opens straight into a session.
  */
 export default async function RipassoPage({
@@ -19,6 +19,7 @@ export default async function RipassoPage({
   const scope = scopeFromSearchParams({
     materia: one(params.materia),
     argomento: one(params.argomento),
+    task: one(params.task),
   });
   const n = Number(one(params.n));
   const limit = Number.isInteger(n) && n > 0 && n <= 500 ? n : null;

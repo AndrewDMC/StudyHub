@@ -3,3 +3,4 @@ export * from './client.js';
 export * from './mastery.js';
 export * from './documentTopics.js';
 export * from './planning.js';
+export * from './taskFlashcards.js';

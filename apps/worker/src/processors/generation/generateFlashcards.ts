@@ -5,12 +5,13 @@ import { eq } from 'drizzle-orm';
 import {
   artifactSources,
   artifacts,
+  autoAttachFlashcards,
   flashcards,
   resolvePrimaryTopics,
   subjects,
   topics,
 } from '@studyhub/db';
-import { resolveSubjectSubpath } from '@studyhub/core';
+import { resolveSubjectSubpath, toIsoDate } from '@studyhub/core';
 import { embedTexts } from '@studyhub/ai/embeddings';
 import {
   buildTopicNameIndex,
@@ -206,32 +207,38 @@ export async function processGenerateFlashcards(
     'utf-8',
   );
 
-  await db.insert(artifacts).values({
-    id: deckId,
-    subjectId: input.subjectId,
-    kind: 'flashcard_deck',
-    title: `Flashcard — ${deduplicated.length} carte`,
-    path: artifactPath,
-    model: result.model,
-    promptVersion: result.promptVersion,
-    costEur,
-  });
+  const scopeTopicIds = input.scope.topicIds ?? [];
+  const scopeTopicId =
+    scopeTopicIds.length === 1 && subjectTopics.some((t) => t.id === scopeTopicIds[0])
+      ? scopeTopicIds[0]!
+      : null;
+  const topicContext: FlashcardTopicContext | null =
+    deduplicated.length > 0
+      ? {
+          topicIndex: buildTopicNameIndex(subjectTopics),
+          scopeTopicId,
+          primaryTopicByDoc: await resolvePrimaryTopics(db, input.subjectId, [
+            ...new Set(deduplicated.map((c) => c.sourceRef.docId)),
+          ]),
+        }
+      : null;
 
-  if (deduplicated.length > 0) {
-    const scopeTopicIds = input.scope.topicIds ?? [];
-    const scopeTopicId =
-      scopeTopicIds.length === 1 && subjectTopics.some((t) => t.id === scopeTopicIds[0])
-        ? scopeTopicIds[0]!
-        : null;
-    const topicContext: FlashcardTopicContext = {
-      topicIndex: buildTopicNameIndex(subjectTopics),
-      scopeTopicId,
-      primaryTopicByDoc: await resolvePrimaryTopics(db, input.subjectId, [
-        ...new Set(deduplicated.map((c) => c.sourceRef.docId)),
-      ]),
-    };
-    await db.insert(flashcards).values(
-      deduplicated.map((c) => ({
+  // Deck, cards, sources and lesson links land together: a failing attach must not leave an
+  // orphan deck behind (a retry would otherwise duplicate it).
+  await db.transaction(async (tx: typeof db) => {
+    await tx.insert(artifacts).values({
+      id: deckId,
+      subjectId: input.subjectId,
+      kind: 'flashcard_deck',
+      title: `Flashcard — ${deduplicated.length} carte`,
+      path: artifactPath,
+      model: result.model,
+      promptVersion: result.promptVersion,
+      costEur,
+    });
+
+    if (topicContext) {
+      const newCards = deduplicated.map((c) => ({
         id: randomUUID(),
         deckId,
         topicId: resolveFlashcardTopicId(c, topicContext),
@@ -241,14 +248,27 @@ export async function processGenerateFlashcards(
         hint: c.hint ?? null,
         sourceRef: c.sourceRef,
         embedding: c.embedding,
-      })),
-    );
-  }
-  if (uniqueDocIds.length > 0) {
-    await db
-      .insert(artifactSources)
-      .values(uniqueDocIds.map((documentId) => ({ artifactId: deckId, documentId })));
-  }
+      }));
+      await tx.insert(flashcards).values(newCards);
+    }
+    if (uniqueDocIds.length > 0) {
+      await tx
+        .insert(artifactSources)
+        .values(uniqueDocIds.map((documentId) => ({ artifactId: deckId, documentId })));
+    }
+    if (topicContext) {
+      // Lessons: attach the new cards (those with a topic) to the nearest lesson of their topic.
+      const rows: { id: string }[] = await tx
+        .select({ id: flashcards.id })
+        .from(flashcards)
+        .where(eq(flashcards.deckId, deckId));
+      await autoAttachFlashcards(tx, {
+        subjectId: input.subjectId,
+        cardIds: rows.map((r) => r.id),
+        today: toIsoDate(new Date()),
+      });
+    }
+  });
 
   return {
     artifactId: deckId,

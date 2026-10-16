@@ -3,9 +3,20 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { createTestDb } from '@studyhub/db/testDb';
-import { chunks, documentTopics, documents, flashcards, subjects, topics } from '@studyhub/db';
+import {
+  artifacts,
+  chunks,
+  documentTopics,
+  documents,
+  flashcards,
+  studyPlans,
+  subjects,
+  taskFlashcards,
+  tasks,
+  topics,
+} from '@studyhub/db';
 import { createManifest, scaffoldSubject } from '@studyhub/core';
 import { FakeProvider, type FlashcardsPromptInput } from '@studyhub/ai';
 import {
@@ -223,6 +234,125 @@ describe('processGenerateFlashcards — topic assignment', () => {
     const cards = await generated();
     expect(cards.length).toBeGreaterThan(0);
     expect(cards.every((c) => c.topicId === otticaId)).toBe(true); // lowest orderIndex
+  });
+
+  it('attaches the new cards to the open lesson of their topic', async () => {
+    const planId = randomUUID();
+    await db.insert(studyPlans).values({
+      id: planId,
+      subjectId,
+      startDate: '2026-01-01',
+      targetDate: '2099-12-31',
+      availability: { perWeekday: [0, 60, 60, 60, 60, 60, 0], blackoutDates: [] },
+      prefs: {
+        sessionLength: 50,
+        intensity: 'standard',
+        simulationCount: 'auto',
+        simulationMinutes: 90,
+        reviewMinutesPerCard: 0.5,
+      },
+      feasibility: {
+        feasible: true,
+        requiredMinutes: 0,
+        availableMinutes: 0,
+        shortfallMinutes: 0,
+        unscheduledTopicKeys: [],
+        strategies: [],
+      },
+      warnings: [],
+      model: 'fake-v1',
+      promptVersion: 'p',
+      status: 'active',
+    });
+    const lessonId = randomUUID();
+    await db.insert(tasks).values({
+      id: lessonId,
+      subjectId,
+      planId,
+      taskKey: 'read:termo:001',
+      date: '2099-01-01',
+      kind: 'read',
+      topicId: termoId,
+      minutes: 30,
+      title: 'Termodinamica',
+      description: '',
+      payload: { action: 'read' },
+      status: 'todo',
+    });
+
+    await processGenerateFlashcards(
+      db,
+      dataRoot,
+      input({ topicIds: [termoId], docIds: [docId] }),
+      new NamingProvider(null),
+      distinctEmbed,
+    );
+
+    const cards = await generated();
+    expect(cards.length).toBeGreaterThan(0);
+    const links = await db.select().from(taskFlashcards);
+    const withTopic = cards.filter((c) => c.topicId === termoId);
+    expect(withTopic.length).toBeGreaterThan(0);
+    expect(links.map((l) => l.flashcardId).sort()).toEqual(withTopic.map((c) => c.id).sort());
+    expect(links.every((l) => l.taskId === lessonId && l.source === 'auto')).toBe(true);
+  });
+
+  it('a failing lesson attach rolls the whole generation back: no orphan deck or cards', async () => {
+    const planId = randomUUID();
+    await db.insert(studyPlans).values({
+      id: planId,
+      subjectId,
+      startDate: '2026-01-01',
+      targetDate: '2099-12-31',
+      availability: { perWeekday: [0, 60, 60, 60, 60, 60, 0], blackoutDates: [] },
+      prefs: {
+        sessionLength: 50,
+        intensity: 'standard',
+        simulationCount: 'auto',
+        simulationMinutes: 90,
+        reviewMinutesPerCard: 0.5,
+      },
+      feasibility: {
+        feasible: true,
+        requiredMinutes: 0,
+        availableMinutes: 0,
+        shortfallMinutes: 0,
+        unscheduledTopicKeys: [],
+        strategies: [],
+      },
+      warnings: [],
+      model: 'fake-v1',
+      promptVersion: 'p',
+      status: 'active',
+    });
+    await db.insert(tasks).values({
+      id: randomUUID(),
+      subjectId,
+      planId,
+      taskKey: 'read:termo:001',
+      date: '2099-01-01',
+      kind: 'read',
+      topicId: termoId,
+      minutes: 30,
+      title: 'Termodinamica',
+      description: '',
+      payload: { action: 'read' },
+      status: 'todo',
+    });
+    await db.execute(sql`drop table task_flashcards`);
+
+    await expect(
+      processGenerateFlashcards(
+        db,
+        dataRoot,
+        input({ topicIds: [termoId], docIds: [docId] }),
+        new NamingProvider(null),
+        distinctEmbed,
+      ),
+    ).rejects.toThrow();
+
+    expect(await db.select().from(artifacts)).toHaveLength(0);
+    expect(await generated()).toHaveLength(0);
   });
 
   it('(d) leaves the card without topic when nothing resolves', async () => {

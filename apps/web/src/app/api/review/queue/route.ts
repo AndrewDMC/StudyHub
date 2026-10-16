@@ -8,7 +8,8 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Ripasso rapido queue (docs/09-ripasso-mobile.md §B2): `materia` and `argomento` narrow it
- * (`argomento=none` = cards without a topic), `n` caps it; without `materia` it spans every
+ * (`argomento=none` = cards without a topic), `task=<taskId>` = the cards attached to that
+ * lesson (due or not; wins over `argomento`), `n` caps it; without `materia` it spans every
  * active subject.
  */
 export async function GET(request: Request) {
@@ -25,12 +26,15 @@ export async function GET(request: Request) {
       { status: 400 },
     );
   }
-  const { materia, argomento, n } = parsed.data;
+  const { materia, argomento, task, n } = parsed.data;
 
   try {
     const queue = await getQuickReviewQueue(
       getDb(),
-      { subjectSlug: materia, topicId: argomento === 'none' ? null : argomento },
+      // `task` (a lesson) wins over `argomento`.
+      task
+        ? { subjectSlug: materia, taskId: task }
+        : { subjectSlug: materia, topicId: argomento === 'none' ? null : argomento },
       { n },
     );
     return NextResponse.json({ queue });

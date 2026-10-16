@@ -35,12 +35,15 @@ export function parseSessionLimit(value: string | null | undefined): SessionLimi
 export interface ReviewScope {
   subjectSlug?: string;
   topicId?: string | null;
+  /** A plan task (lesson): only the cards attached to it, due or not. Wins over `topicId`. */
+  taskId?: string;
 }
 
 export function scopeToSearchParams(scope: ReviewScope, limit: number): URLSearchParams {
   const qs = new URLSearchParams();
   if (scope.subjectSlug) qs.set('materia', scope.subjectSlug);
-  if (scope.subjectSlug && scope.topicId !== undefined) {
+  if (scope.taskId) qs.set('task', scope.taskId);
+  else if (scope.subjectSlug && scope.topicId !== undefined) {
     qs.set('argomento', scope.topicId ?? 'none');
   }
   if (limit) qs.set('n', String(limit));
@@ -51,7 +54,13 @@ export function scopeToSearchParams(scope: ReviewScope, limit: number): URLSearc
 export function scopeFromSearchParams(params: {
   materia?: string | null | undefined;
   argomento?: string | null | undefined;
+  task?: string | null | undefined;
 }): ReviewScope | null {
+  if (params.task) {
+    return params.materia
+      ? { subjectSlug: params.materia, taskId: params.task }
+      : { taskId: params.task };
+  }
   if (!params.materia) return null;
   if (!params.argomento) return { subjectSlug: params.materia };
   return {
@@ -60,8 +69,21 @@ export function scopeFromSearchParams(params: {
   };
 }
 
+/**
+ * Where leaving a lesson session (`scope.taskId`) goes: always an app URL, never the browser
+ * history (the page may have been opened directly or reloaded). null = not a lesson session.
+ */
+export function lessonExitHref(scope: ReviewScope): string | null {
+  if (!scope.taskId) return null;
+  return scope.subjectSlug ? `/materie/${scope.subjectSlug}/piano` : '/ripasso';
+}
+
 /** "Basi di Dati · Normalizzazione", "Basi di Dati · tutti gli argomenti", "Tutte le materie". */
 export function sessionTitle(scope: ReviewScope, overview: ReviewOverviewDto | undefined): string {
+  if (scope.taskId) {
+    const name = overview?.subjects.find((s) => s.slug === scope.subjectSlug)?.name;
+    return name ? `${name} · flashcard della lezione` : 'Flashcard della lezione';
+  }
   if (!scope.subjectSlug) return 'Tutte le materie';
   const subject = overview?.subjects.find((s) => s.slug === scope.subjectSlug);
   const name = subject?.name ?? scope.subjectSlug;

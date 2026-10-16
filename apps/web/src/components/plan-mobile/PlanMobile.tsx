@@ -289,6 +289,7 @@ export function PlanMobile({ slug }: { slug: string }) {
 
       {plan && (
         <TaskSheet
+          slug={slug}
           task={sheetTask}
           plan={plan}
           onClose={closeSheet}

@@ -266,10 +266,12 @@ export const RatingIntervalsSchema = z.object({
 });
 export type RatingIntervals = z.infer<typeof RatingIntervalsSchema>;
 
-/** `GET /api/review/queue?materia=&argomento=&n=`; `argomento=none` = cards without a topic. */
+/** `GET /api/review/queue?materia=&argomento=&task=&n=`; `argomento=none` = cards without a topic. */
 export const ReviewQueueQuerySchema = z.object({
   materia: z.string().min(1).optional(),
   argomento: z.union([z.string().uuid(), z.literal('none')]).optional(),
+  /** A plan task (lesson): its attached reviewable cards, due or not. Wins over `argomento`. */
+  task: z.string().uuid().optional(),
   n: z.coerce.number().int().positive().max(500).optional(),
 });
 export type ReviewQueueQuery = z.infer<typeof ReviewQueueQuerySchema>;

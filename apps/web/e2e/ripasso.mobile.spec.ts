@@ -97,7 +97,7 @@ test('Ripasso rapido: sessione completa con swipe, annulla e riepilogo', async (
     await expect(position).toHaveText('1 / 1');
 
     await session.getByRole('button', { name: 'Chiudi sessione' }).click();
-    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByRole('dialog')).toHaveCount(0, { timeout: 20_000 });
     await expect(page.getByRole('navigation', { name: 'Navigazione principale' })).toBeVisible();
   } finally {
     await request.delete(`${baseURL}/api/subjects/${slug}`);

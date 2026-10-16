@@ -14,6 +14,7 @@ import {
   rateCard,
   removeCard,
   replaceCard,
+  lessonExitHref,
   scopeToSearchParams,
   sessionTitle,
   startSession,
@@ -154,7 +155,12 @@ export function QuickReviewClient({
       setStartError(null);
       try {
         const queue = await fetchQueue(nextScope, size);
-        if (queue.length === 0) setStartError('Niente da ripassare qui per oggi.');
+        if (queue.length === 0)
+          setStartError(
+            nextScope.taskId
+              ? 'Nessuna card da ripassare in questa lezione.'
+              : 'Niente da ripassare qui per oggi.',
+          );
         else begin(queue, nextScope);
       } catch (err) {
         setStartError((err as Error).message);
@@ -201,7 +207,9 @@ export function QuickReviewClient({
     setScreen('home');
     setSheetOpen(false);
     refreshCounts();
-    if (linkSlug) router.replace(`/materie/${linkSlug}?tab=flashcard`);
+    const lessonHref = lessonExitHref(scope);
+    if (lessonHref) router.replace(lessonHref, { scroll: false });
+    else if (linkSlug) router.replace(`/materie/${linkSlug}?tab=flashcard`);
     else if (deepLink) router.replace('/ripasso', { scroll: false });
   };
 
@@ -296,7 +304,9 @@ export function QuickReviewClient({
           onStart={(s) => void start(s)}
           starting={starting}
           startError={startError}
-          backHref={linkSlug ? `/materie/${linkSlug}?tab=flashcard` : undefined}
+          backHref={
+            lessonExitHref(scope) ?? (linkSlug ? `/materie/${linkSlug}?tab=flashcard` : undefined)
+          }
         />
       </div>
 
@@ -339,7 +349,11 @@ export function QuickReviewClient({
               onRetryErrors={retryErrors}
               onHome={goHome}
               homePending={leaving}
-              {...(linkSlug ? { homeLabel: 'Torna alla materia' } : {})}
+              {...(scope.taskId
+                ? { homeLabel: 'Torna alla lezione' }
+                : linkSlug
+                  ? { homeLabel: 'Torna alla materia' }
+                  : {})}
             />
           ) : null}
         </div>
