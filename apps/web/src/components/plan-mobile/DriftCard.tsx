@@ -11,6 +11,8 @@ export function DriftCard({
   feasibility,
   onReabsorb,
   onRecalculate,
+  onMoveDay,
+  movePending,
   pending,
   error,
 }: {
@@ -19,6 +21,8 @@ export function DriftCard({
   feasibility: PlanDto['feasibility'];
   onReabsorb: () => void;
   onRecalculate: (trigger: HTMLElement) => void;
+  onMoveDay: () => void;
+  movePending: boolean;
   pending: boolean;
   error: string | null;
 }) {
@@ -28,6 +32,7 @@ export function DriftCard({
       : feasibility.feasible
         ? 'Il tempo a disposizione resta sufficiente.'
         : `Il tempo non basta più: mancano ~${feasibility.shortfallMinutes} min.`;
+  const busy = pending || movePending;
   return (
     <div
       role="status"
@@ -40,21 +45,31 @@ export function DriftCard({
           <p className="break-words text-[13px] text-fg-secondary">{subtitle}</p>
         </div>
       </div>
-      <div className={`mt-3 grid gap-2 ${drift.shouldRecalculate ? 'grid-cols-2' : 'grid-cols-1'}`}>
+      <div className="mt-3 grid grid-cols-2 gap-2">
         <button
           type="button"
           onClick={onReabsorb}
-          disabled={pending}
+          disabled={busy}
           className={`${primaryButton} min-h-12 text-sm`}
         >
           {pending ? 'Riassorbo…' : 'Riassorbi'}
+        </button>
+        <button
+          type="button"
+          onClick={onMoveDay}
+          disabled={busy}
+          data-testid="drift-move-day"
+          aria-label={`Sposta di 1 giorno le ${count} task in ritardo`}
+          className={`${secondaryButton} min-h-12 text-sm`}
+        >
+          {movePending ? 'Sposto…' : 'Sposta di 1 giorno'}
         </button>
         {drift.shouldRecalculate && (
           <button
             type="button"
             onClick={(e) => onRecalculate(e.currentTarget)}
-            disabled={pending}
-            className={`${secondaryButton} min-h-12`}
+            disabled={busy}
+            className={`${secondaryButton} col-span-2 min-h-12`}
           >
             Ricalcola il piano
           </button>

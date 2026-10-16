@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server';
 import { BulkPlanActionRequestSchema } from '@studyhub/contracts';
 import { getDb } from '@/lib/db';
-import { applyBulkToDraft, MoveRefusedError, NoDraftPlanError } from '@/lib/plan';
+import {
+  applyBulk,
+  MoveRefusedError,
+  NoDraftPlanError,
+  PlanNotFoundError,
+  PlanRequestError,
+} from '@/lib/plan';
 import { formatError, SubjectNotFoundError } from '@/lib/errors';
 
 export const dynamic = 'force-dynamic';
@@ -24,9 +30,20 @@ export async function POST(request: Request, { params }: RouteParams) {
     );
   }
   try {
-    return NextResponse.json({ plan: await applyBulkToDraft(getDb(), slug, parsed.data) });
+    const { plan, skipped } = await applyBulk(getDb(), slug, parsed.data);
+    return NextResponse.json({ plan, skipped });
   } catch (err) {
-    if (err instanceof SubjectNotFoundError || err instanceof NoDraftPlanError) {
+    if (err instanceof PlanRequestError) {
+      return NextResponse.json(
+        { error: { code: 'invalid_request', message: err.message } },
+        { status: 400 },
+      );
+    }
+    if (
+      err instanceof SubjectNotFoundError ||
+      err instanceof NoDraftPlanError ||
+      err instanceof PlanNotFoundError
+    ) {
       return NextResponse.json(
         { error: { code: 'not_found', message: err.message } },
         { status: 404 },

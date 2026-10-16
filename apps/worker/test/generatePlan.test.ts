@@ -405,6 +405,117 @@ describe('processGeneratePlan', () => {
     ).toBe(false);
   });
 
+  it('keeps the open pinned tasks of the active plan it will replace, leaves the active plan untouched', async () => {
+    await addParsedDocument(20);
+    const activeId = randomUUID();
+    await db.insert(studyPlans).values({
+      id: activeId,
+      subjectId,
+      startDate: '2026-01-05',
+      targetDate: '2026-02-04',
+      availability: baseInput().availability,
+      prefs: baseInput().prefs,
+      feasibility: {
+        feasible: true,
+        requiredMinutes: 0,
+        availableMinutes: 0,
+        shortfallMinutes: 0,
+        unscheduledTopicKeys: [],
+        strategies: [],
+      },
+      warnings: [],
+      model: 'fake-v1',
+      promptVersion: 'x',
+      status: 'active',
+    });
+    const mk = (over: Partial<typeof tasks.$inferInsert>) => ({
+      id: randomUUID(),
+      subjectId,
+      planId: activeId,
+      taskKey: `read:old:${randomUUID().slice(0, 4)}`,
+      date: '2026-01-13',
+      kind: 'read' as const,
+      minutes: 40,
+      title: 'Fissata',
+      description: '',
+      payload: { action: 'read' as const },
+      status: 'todo' as const,
+      pinned: true,
+      ...over,
+    });
+    await db
+      .insert(tasks)
+      .values([
+        mk({ title: 'Tienila' }),
+        mk({ title: 'Già fatta', status: 'done' }),
+        mk({ title: 'Non fissata', pinned: false }),
+        mk({ title: 'Nel passato', date: '2025-12-01' }),
+      ]);
+
+    const result = await processGeneratePlan(db, baseInput(), new FakeProvider());
+    const draft = await db.select().from(tasks).where(eq(tasks.planId, result.planId));
+    const kept = draft.filter((t) => t.pinned);
+    expect(kept.map((t) => t.title)).toEqual(['Tienila']);
+    expect(kept[0]?.date).toBe('2026-01-13');
+    expect(kept[0]?.taskKey.startsWith('pin:')).toBe(true);
+    expect(new Set(draft.map((t) => t.taskKey)).size).toBe(draft.length);
+    expect(kept[0]?.status).toBe('proposed');
+
+    const [active] = await db.select().from(studyPlans).where(eq(studyPlans.id, activeId));
+    expect(active?.status).toBe('active');
+    expect(await db.select().from(tasks).where(eq(tasks.planId, activeId))).toHaveLength(4);
+  });
+
+  it('pin keys stay unique even when the active plan already holds pin: tasks with the same suffix', async () => {
+    await addParsedDocument(20);
+    const activeId = randomUUID();
+    await db.insert(studyPlans).values({
+      id: activeId,
+      subjectId,
+      startDate: '2026-01-05',
+      targetDate: '2026-02-04',
+      availability: baseInput().availability,
+      prefs: baseInput().prefs,
+      feasibility: {
+        feasible: true,
+        requiredMinutes: 0,
+        availableMinutes: 0,
+        shortfallMinutes: 0,
+        unscheduledTopicKeys: [],
+        strategies: [],
+      },
+      warnings: [],
+      model: 'fake-v1',
+      promptVersion: 'x',
+      status: 'active',
+    });
+    const mk = (taskKey: string, date: string) => ({
+      id: randomUUID(),
+      subjectId,
+      planId: activeId,
+      taskKey,
+      date,
+      kind: 'read' as const,
+      minutes: 30,
+      title: taskKey,
+      description: '',
+      payload: { action: 'read' as const },
+      status: 'todo' as const,
+      pinned: true,
+    });
+    await db
+      .insert(tasks)
+      .values([
+        mk('pin:read:a:01', '2026-01-13'),
+        mk('read:a:01', '2026-01-14'),
+        mk('read:b:01', '2026-01-15'),
+      ]);
+    const result = await processGeneratePlan(db, baseInput(), new FakeProvider());
+    const draft = await db.select().from(tasks).where(eq(tasks.planId, result.planId));
+    expect(new Set(draft.map((t) => t.taskKey)).size).toBe(draft.length);
+    expect(draft.filter((t) => t.pinned)).toHaveLength(3);
+  });
+
   it('groups documents tagged to the same topic into one planning unit, and persists the real topic id on tasks', async () => {
     const docA = await addParsedDocument(20);
     const docB = await addParsedDocument(20);

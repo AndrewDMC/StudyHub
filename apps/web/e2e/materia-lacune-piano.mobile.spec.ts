@@ -761,7 +761,7 @@ test.describe('Materia mobile — Piano: azioni sulle task e ritardo', () => {
     slug = seed.slug;
     await page.goto(pianoUrl(seed));
     await page.getByRole('button', { name: 'Ricalcola il piano' }).click({ timeout: 30_000 });
-    await expect(page.getByRole('dialog', { name: 'Rigenera bozza' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Modifica ritmo' })).toBeVisible();
   });
 
   test('"Sposta di 1 giorno": ok cambia la data; un 409 resta nello sheet con il motivo', async ({

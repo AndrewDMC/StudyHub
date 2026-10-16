@@ -80,6 +80,14 @@ export class MoveRefusedError extends Error {
   }
 }
 
+/** A well-formed request that makes no sense for the plan it targets (maps to 400). */
+export class PlanRequestError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PlanRequestError';
+  }
+}
+
 export class InvalidScopeError extends Error {
   constructor() {
     super('Alcuni argomenti scelti non appartengono a questa materia.');
@@ -403,8 +411,20 @@ export async function updateDraftTask(
 ): Promise<TaskDto> {
   const subject = await requireSubject(db, subjectSlug);
   const row = await requireTask(db, subject.id, taskId);
-  if (row.status !== 'proposed')
-    throw new Error('Solo le task in bozza sono modificabili prima del commit.');
+  if (row.status !== 'proposed') {
+    // An open task of an active plan can still be pinned ("Fissa"), nothing else.
+    const [plan] = await db.select().from(studyPlans).where(eq(studyPlans.id, row.planId));
+    const open = row.status === 'todo' || row.status === 'doing';
+    if (!open || plan?.status !== 'active')
+      throw new Error('Solo le task in bozza sono modificabili prima del commit.');
+    if (
+      request.pinned === undefined ||
+      request.title !== undefined ||
+      request.description !== undefined ||
+      request.minutes !== undefined
+    )
+      throw new PlanRequestError('Su un piano attivo si può solo fissare o sbloccare una task.');
+  }
 
   const patch: Partial<Task> = { updatedAt: new Date() };
   if (request.title !== undefined) patch.title = request.title;
@@ -483,17 +503,27 @@ async function loadMoveContext(db: AnyDb, subject: { id: string }, taskId: strin
     topics: [],
     prefs: plan.prefs,
   } as PlannerInput);
-  const taskLikes = planTasks.map((t) => ({
-    key: t.taskKey,
-    date: t.date,
-    kind: t.kind,
-    topicKey: t.topicKey,
-    minutes: t.minutes,
-    pinned: t.pinned,
-    title: t.title,
-  }));
+  const taskLikes = toMoveState(planTasks);
 
   return { target, plan, planTasks, capacity, taskLikes };
+}
+
+/**
+ * Task set handed to the pure move engine. Done tasks keep weighing on their day but are fixed (pinned
+ * in this state only, never written); skipped/moved ones no longer take time, so they are left out.
+ */
+function toMoveState(planTasks: Task[]) {
+  return planTasks
+    .filter((t) => t.status !== 'skipped' && t.status !== 'moved')
+    .map((t) => ({
+      key: t.taskKey,
+      date: t.date,
+      kind: t.kind,
+      topicKey: t.topicKey,
+      minutes: t.minutes,
+      pinned: t.pinned || t.status === 'done',
+      title: t.title,
+    }));
 }
 
 /** Persists a successful `coreMoveTask` result (the moved task plus any displaced siblings) and returns the refreshed plan. */
@@ -506,7 +536,7 @@ async function applyMoveResult(
   const byKey = new Map(planTasks.map((t) => [t.taskKey, t]));
   for (const t of result.tasks) {
     const original = byKey.get(t.key);
-    if (!original) continue;
+    if (!original || original.status === 'done') continue;
     if (original.date === t.date && original.pinned === t.pinned) continue;
     await db
       .update(tasks)
@@ -550,13 +580,72 @@ export async function applyBulkToDraft(
   subjectSlug: string,
   action: BulkPlanActionRequest,
 ): Promise<PlanDto> {
+  return (await applyBulk(db, subjectSlug, action)).plan;
+}
+
+/**
+ * Bulk action on the draft — or, for `exclude_topic` only, on an active plan: its open (todo/doing)
+ * lessons of the topic, on any date, become `skipped`; done ones stay, nothing is redistributed.
+ * Plan resolution: `planId` if given; else the draft, else the subject's only active plan (several → 400).
+ * `skipped` is how many tasks were skipped (always 0 on a draft).
+ */
+export async function applyBulk(
+  db: AnyDb,
+  subjectSlug: string,
+  action: BulkPlanActionRequest,
+): Promise<{ plan: PlanDto; skipped: number }> {
   const subject = await requireSubject(db, subjectSlug);
-  const [plan] = await db
-    .select()
-    .from(studyPlans)
-    .where(and(eq(studyPlans.subjectId, subject.id), eq(studyPlans.status, 'draft')));
+  const planId = action.type === 'exclude_topic' ? action.planId : undefined;
+  let plan: StudyPlan | undefined;
+  if (planId) {
+    [plan] = await db
+      .select()
+      .from(studyPlans)
+      .where(and(eq(studyPlans.id, planId), eq(studyPlans.subjectId, subject.id)));
+    if (!plan || plan.status === 'superseded') throw new PlanNotFoundError(planId);
+  } else {
+    [plan] = await db
+      .select()
+      .from(studyPlans)
+      .where(and(eq(studyPlans.subjectId, subject.id), eq(studyPlans.status, 'draft')));
+    if (!plan && action.type === 'exclude_topic') {
+      const actives: StudyPlan[] = await db
+        .select()
+        .from(studyPlans)
+        .where(and(eq(studyPlans.subjectId, subject.id), eq(studyPlans.status, 'active')));
+      if (actives.length > 1)
+        throw new PlanRequestError('Più piani attivi: indica il piano (planId).');
+      plan = actives[0];
+    }
+  }
   if (!plan) throw new NoDraftPlanError();
 
+  if (plan.status === 'active') {
+    if (action.type !== 'exclude_topic')
+      throw new PlanRequestError('Su un piano attivo si può solo escludere un argomento.');
+    const skippedRows: { id: string }[] = await db.transaction(async (tx: AnyDb) =>
+      tx
+        .update(tasks)
+        .set({ status: 'skipped', updatedAt: new Date() })
+        .where(
+          and(
+            eq(tasks.planId, plan!.id),
+            eq(tasks.topicKey, action.topicKey),
+            inArray(tasks.status, ['todo', 'doing']),
+          ),
+        )
+        .returning({ id: tasks.id }),
+    );
+    if (skippedRows.length === 0)
+      throw new MoveRefusedError("Nessuna lezione da saltare per l'argomento scelto.");
+    const taskRows: Task[] = await db.select().from(tasks).where(eq(tasks.planId, plan.id));
+    return { plan: await toPlanDto(db, plan, taskRows), skipped: skippedRows.length };
+  }
+
+  const coreAction =
+    action.type === 'exclude_topic'
+      ? { type: 'exclude_topic' as const, topicKey: action.topicKey }
+      : action;
   const planTasks: Task[] = await db.select().from(tasks).where(eq(tasks.planId, plan.id));
   const capacity = buildCapacity({
     startDate: plan.startDate,
@@ -576,7 +665,7 @@ export async function applyBulkToDraft(
       pinned: t.pinned,
       title: t.title,
     })),
-    action,
+    coreAction,
     { capacity, targetDate: plan.targetDate, prerequisites: new Map() },
   );
   if (!result.ok) throw new MoveRefusedError(result.reason);
@@ -595,7 +684,82 @@ export async function applyBulkToDraft(
   if (removedIds.length > 0) await db.delete(tasks).where(inArray(tasks.id, removedIds));
 
   const taskRows: Task[] = await db.select().from(tasks).where(eq(tasks.planId, plan.id));
-  return await toPlanDto(db, plan, taskRows);
+  return { plan: await toPlanDto(db, plan, taskRows), skipped: 0 };
+}
+
+/**
+ * Moves several open tasks of one active plan forward by `days` each ("Sposta di 1 giorno" on the late
+ * tasks). The plan is derived from the tasks (all must belong to the same plan of this subject, active,
+ * and be todo/doing — else `PlanRequestError`). Each task gets the single-move rule (`coreMoveTask`, the
+ * moved task becomes pinned, displaced siblings cascade) towards its own date + `days`; latest date first
+ * so a task never lands on one still waiting its turn. All-or-nothing: a refusal (`MoveRefusedError`)
+ * writes nothing, the writes share one transaction.
+ */
+export async function moveTasksInPlan(
+  db: AnyDb,
+  subjectSlug: string,
+  taskIds: readonly string[],
+  days: number,
+): Promise<PlanDto> {
+  const subject = await requireSubject(db, subjectSlug);
+  const ids = [...new Set(taskIds)];
+  const targets: Task[] = await db
+    .select()
+    .from(tasks)
+    .where(and(eq(tasks.subjectId, subject.id), inArray(tasks.id, ids)));
+  const found = new Set(targets.map((t) => t.id));
+  const missing = ids.find((id) => !found.has(id));
+  if (missing) throw new TaskNotFoundError(missing);
+  if (new Set(targets.map((t) => t.planId)).size !== 1)
+    throw new PlanRequestError('Le task devono appartenere allo stesso piano.');
+  if (targets.some((t) => t.status !== 'todo' && t.status !== 'doing'))
+    throw new PlanRequestError('Si possono spostare solo task ancora da fare.');
+  const [plan] = await db.select().from(studyPlans).where(eq(studyPlans.id, targets[0]!.planId));
+  if (!plan || plan.status !== 'active')
+    throw new PlanRequestError('Le task devono appartenere a un piano attivo.');
+
+  const planTasks: Task[] = await db.select().from(tasks).where(eq(tasks.planId, plan.id));
+  const capacity = buildCapacity({
+    startDate: plan.startDate,
+    targetDate: plan.targetDate,
+    availability: plan.availability,
+    topics: [],
+    prefs: plan.prefs,
+  } as PlannerInput);
+  let state = toMoveState(planTasks);
+  const order = [...targets].sort((a, b) => b.date.localeCompare(a.date));
+  for (const target of order) {
+    // First day from date + days with time to give (Sundays etc. have none), within two weeks.
+    const wanted = addDays(target.date, days);
+    const limit = addDays(wanted, 14);
+    const day = [...capacity.keys()]
+      .sort()
+      .find((d) => d >= wanted && d <= limit && (capacity.get(d) ?? 0) > 0);
+    if (!day)
+      throw new MoveRefusedError(`Nessun giorno con tempo disponibile dal ${wanted} nel piano.`);
+    const result = coreMoveTask(state, target.taskKey, day, {
+      capacity,
+      targetDate: plan.targetDate,
+      prerequisites: new Map(),
+    });
+    if (!result.ok) throw new MoveRefusedError(result.reason);
+    state = result.tasks;
+  }
+
+  return await db.transaction(async (tx: AnyDb) => {
+    const byKey = new Map(planTasks.map((t) => [t.taskKey, t]));
+    for (const t of state) {
+      const original = byKey.get(t.key);
+      if (!original || original.status === 'done') continue;
+      if (original.date === t.date && original.pinned === t.pinned) continue;
+      await tx
+        .update(tasks)
+        .set({ date: t.date, pinned: t.pinned, updatedAt: new Date() })
+        .where(eq(tasks.id, original.id));
+    }
+    const taskRows: Task[] = await tx.select().from(tasks).where(eq(tasks.planId, plan.id));
+    return await toPlanDto(tx, plan, taskRows);
+  });
 }
 
 /**

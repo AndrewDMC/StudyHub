@@ -318,7 +318,6 @@ Nessun nuovo endpoint.
 
 Non ancora:
 
-- ritmo e minuti modificabili sul piano attivo (nessuna route: si cambiano rigenerando la bozza);
 - cerca e menu (kebab) nell'header del piano;
 - il fallimento del worker durante la generazione non è rilevabile: lo spinner dura fino a 60 s, come su desktop.
 
@@ -358,3 +357,37 @@ Non ancora / limiti:
 - nessuna esclusione persistente: una card staccata a mano può tornare in automatico se cambia argomento
   o se si rigenera la bozza;
 - "oggi" è calcolato in UTC, come nel resto dell'app.
+
+## Aggiornamento — residui mobile, slice C: modifiche a un piano attivo (2026-10-17)
+
+Su un piano `active` si possono fare tre cose che prima richiedevano di rigenerare la bozza a mano. Piano e
+decisioni in `.claude/work/materia-mobile-residui-c/` (non versionati). Spec UI in [F2](F2-materie.md) ("residui mobile, slice C").
+
+- **Modifica ritmo** (`PlanMobile`, card del piano attivo): sheet precompilato con ritmo, minuti e data esame
+  dell'attivo. Genera una nuova bozza con la `POST` del piano esistente. L'attivo resta finché la bozza non è
+  confermata; alla conferma diventa `superseded`.
+- **Escludi argomento su attivo**: `POST /api/subjects/[slug]/plan/bulk` con `type: "exclude_topic"` accetta
+  `planId?` (uuid). Tutte le task `todo`/`doing` del `topicKey` diventano `skipped` in una transazione, qualunque
+  sia la data; le `done` restano. Nessuna ridistribuzione. Risposta `{ plan, skipped }`. Senza `planId`: se c'è un
+  solo piano attivo, si usa quello; con più attivi, 400. `shift` e `reduce_load` restano solo sulla bozza (400 sull'attivo).
+  Nessuna task aperta → 409; `planId` sconosciuto o `superseded` → 404.
+- **Sposta di 1 giorno a gruppo** (DriftCard): nuova `POST /api/subjects/[slug]/plan/tasks/move`, body
+  `MoveTasksRequest { taskIds: uuid[] (1..100), days: int (1..30) }`, risposta `{ plan }`. Tutte le task devono
+  appartenere allo stesso piano attivo e essere `todo`/`doing`; altrimenti 400 (piano o stato), 404 (id sconosciuto).
+  Ogni task va al primo giorno con tempo disponibile tra data+`days` e data+`days`+14 (es. sabato → lunedì, con
+  domenica a 0 minuti); se non c'è spazio, 409 `move_refused`. In transazione: o si spostano tutte o nessuna.
+  Le task spostate diventano `pinned`, come nel movimento singolo.
+- **Fissa / Sblocca su attivo**: `PATCH .../plan/tasks/[taskId]` accetta solo `pinned` sulle task di un piano attivo
+  in stato `todo`/`doing`. Gli altri campi restano solo per la bozza; altrimenti 400 `invalid_request`.
+- **Pin nel planner**: il worker `generatePlan` ([`generatePlan.ts`](../../apps/worker/src/processors/planner/generatePlan.ts))
+  passa al planner le task fissate aperte dell'attivo con data ≥ oggi. Una nuova bozza le tiene alla stessa data.
+- **Correzione** (vale per movimento singolo, riassorbi e gruppo): le task `done` non vengono più spostate dalla
+  cascata e le `skipped` non occupano capacità.
+
+Non ancora / limiti:
+
+- la nuova bozza non esclude le task già fatte dell'attivo: un argomento fissato può comparire anche ripianificato;
+- shift e riduzione del carico non sono disponibili sul piano attivo.
+
+Test: unit e integration `apps/web/test/planActive.test.ts`, `apps/web/test/planMobile.test.ts`,
+`apps/worker/test/generatePlan.test.ts`; e2e [`materia-residui-c.mobile.spec.ts`](../../apps/web/e2e/materia-residui-c.mobile.spec.ts).

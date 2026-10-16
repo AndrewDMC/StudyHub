@@ -509,7 +509,7 @@ Test: unit [`coverageMobile.test.ts`](../../apps/web/test/coverageMobile.test.ts
 [`e2e/fixtures/lacune-piano-seed.ts`](../../apps/web/e2e/fixtures/lacune-piano-seed.ts).
 `materia.mobile.spec.ts` ora usa `/review` come sottorotta con header globale.
 
-Non ancora: ritmo e minuti del piano modificabili da mobile (si cambiano rigenerando la bozza); il fallimento del worker durante la generazione non è rilevabile (spinner fino a
+Non ancora: ritmo e minuti del piano modificabili da mobile (chiuso in slice C: si genera una nuova bozza); il fallimento del worker durante la generazione non è rilevabile (spinner fino a
 60 s, come su desktop).
 
 ## Aggiornamento — vista mobile di `/materie/[slug]/sessione/[sessionId]`, slice 6 (2026-10-15)
@@ -632,3 +632,24 @@ Non ancora:
 
 - il per-item vale solo per la Chiusura mobile; il desktop continua a creare le flashcard di tutti i punti chiave;
 - con meno di 10 review con tempo registrato la stima usa il default di 20 s per card.
+
+## Aggiornamento — residui mobile, slice C (2026-10-17)
+
+Modifiche a un piano attivo da mobile. Piano e spec in
+`.claude/work/materia-mobile-residui-c/` (non versionati). Dettagli di piano in
+[F6](F6-planner-calendario.md) ("residui mobile, slice C").
+
+- **Modifica ritmo** sulla card del piano attivo: lo sheet si apre con ritmo, minuti e data esame dell'attivo
+  precompilati e genera una nuova bozza. L'attivo resta finché la bozza non viene confermata, poi diventa `superseded`.
+- **Escludi un argomento** anche sul piano attivo: le lezioni aperte dell'argomento diventano `skipped`, le fatte
+  restano, nessuna ridistribuzione. Prima della conferma compare "N lezioni verranno segnate come saltate".
+- **Sposta di 1 giorno** a gruppo nella DriftCard, sulle task in ritardo, accanto a "Riassorbi". Tutto o niente.
+- **Fissa / Sblocca** su task di un piano attivo: le task fissate restano alla stessa data anche nella bozza rigenerata.
+- **Correzione**: nello spostamento singolo, nel riassorbi e nello spostamento a gruppo le task fatte non vengono più
+  spostate e le saltate non occupano capacità.
+
+Non ancora:
+
+- la nuova bozza non tiene conto delle task già fatte dell'attivo: il planner non riceve l'elenco delle lezioni completate;
+- un argomento fissato può comparire anche ripianificato nella bozza;
+- shift e riduzione del carico non sono disponibili sul piano attivo.
