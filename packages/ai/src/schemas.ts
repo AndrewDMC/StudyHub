@@ -136,6 +136,21 @@ export type SimulationItemKind = z.infer<typeof SimulationItemKindSchema>;
  * how *this* course examines — structure, item kinds, weights, timing.
  * User-editable after extraction, so every field is plain data.
  */
+/**
+ * A recurring exam topic and in how many past exercises it appears (`null` = not counted).
+ * Profiles extracted with `exam_profile/v1` stored bare strings: the preprocess upgrades them to
+ * `{ name, count: null }`. The JSON schema handed to the model is the object only (zod-to-json-schema
+ * reads the input side of a preprocess), so new extractions are asked for the object form.
+ */
+export const RecurringTopicSchema = z.preprocess(
+  (v) => (typeof v === 'string' ? { name: v, count: null } : v),
+  z.object({
+    name: z.string().trim().min(1),
+    count: z.number().int().positive().nullable(),
+  }),
+);
+export type RecurringTopic = z.infer<typeof RecurringTopicSchema>;
+
 export const ExamProfileSchema = z.object({
   itemCount: z.number().int().positive(),
   durationMin: z.number().int().positive(),
@@ -143,7 +158,7 @@ export const ExamProfileSchema = z.object({
   kindDistribution: z.record(SimulationItemKindSchema, z.number().min(0).max(1)),
   avgMinutesPerItem: z.number().positive(),
   verbosity: z.enum(['breve', 'media', 'estesa']),
-  recurringTopics: z.array(z.string().min(1)),
+  recurringTopics: z.array(RecurringTopicSchema),
   notes: z.string(),
 });
 export type ExamProfile = z.infer<typeof ExamProfileSchema>;

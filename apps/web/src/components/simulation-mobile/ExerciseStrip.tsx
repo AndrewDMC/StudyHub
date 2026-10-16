@@ -8,11 +8,14 @@ import type { ExamItemDto } from '@studyhub/contracts';
 export function ExerciseStrip({
   items,
   answers,
+  photoCounts = {},
   index,
   onSelect,
 }: {
   items: ExamItemDto[];
   answers: Record<string, string>;
+  /** Ready photos per item: an exercise with only photos counts as answered. */
+  photoCounts?: Record<string, number>;
   index: number;
   onSelect: (index: number) => void;
 }) {
@@ -28,7 +31,8 @@ export function ExerciseStrip({
       className="flex shrink-0 gap-2 overflow-x-auto border-b border-border bg-bg-surface px-4 py-2"
     >
       {items.map((item, i) => {
-        const answered = (answers[item.id] ?? '').trim().length > 0;
+        const answered =
+          (answers[item.id] ?? '').trim().length > 0 || (photoCounts[item.id] ?? 0) > 0;
         const current = i === index;
         const label = `Esercizio ${item.ord + 1}, ${answered ? 'con risposta' : 'senza risposta'}${current ? ', corrente' : ''}`;
         return (

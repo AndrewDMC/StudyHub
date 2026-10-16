@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 import { ArrowRight, X } from 'lucide-react';
 import type { SessionCitationDto, SessionFocus, StudySessionDto } from '@studyhub/contracts';
 import { AnswerMarkdown, formatEur, useSessionChat } from '@/components/SessionChat';
-import { MODEL_OPTIONS } from '../ModelPicker';
+import { MODEL_OPTIONS, modelLabel } from '../ModelPicker';
 import { fieldClass } from '../simulation-mobile/styles';
 import { SectionError, SkeletonRows } from '../subject-mobile/SectionState';
 import type { SourceRef } from './SourceSheet';
@@ -233,7 +233,7 @@ export function ChatMobile({
           >
             {MODEL_OPTIONS.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.label}
+                {modelLabel(m, MODEL_OPTIONS[0].id)}
               </option>
             ))}
           </select>

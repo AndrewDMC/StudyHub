@@ -41,6 +41,8 @@ const PROFILE = {
   notes: '',
 };
 
+const UPDATE_PROFILE = { ...PROFILE, recurringTopics: [{ name: 'entropia', count: null }] };
+
 function fakeQueue() {
   return { add: vi.fn().mockResolvedValue({ id: 'job-1' }) };
 }
@@ -100,7 +102,9 @@ describe('exam prep (web)', () => {
   describe('exam profile', () => {
     it('is null before extraction; a user edit marks it as edited (re-extraction will respect it)', async () => {
       expect(await getExamProfile(db, slug)).toBeNull();
-      await expect(updateExamProfile(db, slug, PROFILE)).rejects.toBeInstanceOf(NotFoundError);
+      await expect(updateExamProfile(db, slug, UPDATE_PROFILE)).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
 
       await db.insert(examProfiles).values({
         id: randomUUID(),
@@ -110,9 +114,25 @@ describe('exam prep (web)', () => {
         model: 'fake-v1',
         promptVersion: 'exam_profile/v1',
       });
-      const updated = await updateExamProfile(db, slug, { ...PROFILE, durationMin: 90 });
+      const updated = await updateExamProfile(db, slug, { ...UPDATE_PROFILE, durationMin: 90 });
       expect(updated.edited).toBe(true);
       expect(updated.profile.durationMin).toBe(90);
+    });
+
+    it('normalizes legacy string recurringTopics to { name, count: null } on read', async () => {
+      await db.insert(examProfiles).values({
+        id: randomUUID(),
+        subjectId,
+        sourceDocIds: [],
+        profile: { ...PROFILE, recurringTopics: ['entropia', { name: 'Fourier', count: 4 }] },
+        model: 'fake-v1',
+        promptVersion: 'exam_profile/v1',
+      });
+      const dto = await getExamProfile(db, slug);
+      expect(dto?.profile.recurringTopics).toEqual([
+        { name: 'entropia', count: null },
+        { name: 'Fourier', count: 4 },
+      ]);
     });
   });
 

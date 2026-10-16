@@ -6,8 +6,10 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { SimulationSummaryDto } from '@studyhub/contracts';
 import { answeredCount, formatPoints } from '@/lib/simulationMobile';
+import { useAttemptPhotos } from '@/lib/useAttemptPhotos';
 import type { ExamAttemptState } from '@/lib/useExamAttempt';
 import { getJson } from '../ExamPrepPanel';
+import { AnswerPhotos } from './AnswerPhotos';
 import { ExamFooter } from './ExamFooter';
 import { ExamHeader } from './ExamHeader';
 import { ExitSheet } from './ExitSheet';
@@ -53,6 +55,11 @@ export function ExamMobile({
   const headingRef = useRef<HTMLHeadingElement>(null);
   const firstRender = useRef(true);
   const answerId = useId();
+  const photos = useAttemptPhotos({
+    slug,
+    attemptId: attempt?.id,
+    initial: attempt?.photos,
+  });
 
   const sims = useQuery({
     queryKey: ['simulations', slug],
@@ -146,6 +153,10 @@ export function ExamMobile({
   const item = items[Math.min(index, items.length - 1)]!;
   const itemIndex = items.indexOf(item);
   const locked = expired || remaining === 0 || isSubmitting;
+  const photoCounts: Record<string, number> = {};
+  for (const [itemId, list] of Object.entries(photos.photosByItem)) {
+    photoCounts[itemId] = list.filter((e) => e.status === 'ready').length;
+  }
   const saveFailed = saveState === 'error';
   const saveText =
     saveState === 'saving'
@@ -181,7 +192,13 @@ export function ExamMobile({
           Le ultime modifiche potrebbero non essere salvate.
         </p>
       )}
-      <ExerciseStrip items={items} answers={answers} index={itemIndex} onSelect={setIndex} />
+      <ExerciseStrip
+        items={items}
+        answers={answers}
+        photoCounts={photoCounts}
+        index={itemIndex}
+        onSelect={setIndex}
+      />
 
       <main ref={mainRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         <div className="mb-2 flex items-baseline justify-between gap-3 text-xs text-fg-muted">
@@ -219,6 +236,19 @@ export function ExamMobile({
           placeholder={PLACEHOLDERS[item.kind]}
           className={`${fieldClass} min-h-[220px] resize-none py-2`}
         />
+        <AnswerPhotos
+          itemId={item.id}
+          ord={item.ord}
+          entries={photos.photosByItem[item.id] ?? []}
+          locked={locked}
+          onPick={(files) => photos.upload(item.id, files)}
+          onRetry={(localId) => photos.retry(item.id, localId)}
+          onRemove={(entry) => void photos.remove(item.id, entry)}
+          rowError={photos.rowErrors[item.id] ?? null}
+        />
+        <p role="status" aria-live="polite" className="sr-only">
+          {photos.announce}
+        </p>
       </main>
 
       <ExamFooter
@@ -244,9 +274,10 @@ export function ExamMobile({
       <SubmitSheet
         open={submitOpen}
         onOpenChange={setSubmitOpen}
-        answered={answeredCount(items, answers)}
+        answered={answeredCount(items, answers, photoCounts)}
         total={items.length}
         isSubmitting={isSubmitting}
+        photosUploading={photos.uploadingCount > 0}
         error={submitError}
         onSubmit={() => void exam.submit()}
         returnFocusRef={submitRef}

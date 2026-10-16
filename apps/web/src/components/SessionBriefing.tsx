@@ -458,7 +458,12 @@ export function SessionBriefing({
 
   const generateControls = (
     <div className="space-y-2">
-      <ModelPicker value={model} onChange={setModel} disabled={start.isPending || inFlight} />
+      <ModelPicker
+        value={model}
+        onChange={setModel}
+        disabled={start.isPending || inFlight}
+        defaultId={MODEL_OPTIONS[1].id}
+      />
       <Button
         type="button"
         disabled={!active || !hasDocuments || start.isPending || inFlight}

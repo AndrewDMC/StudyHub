@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import type { Ref } from 'react';
-import { formatPoints } from '@/lib/simulationMobile';
+import { Check, X } from 'lucide-react';
+import { attemptVerdict, formatPoints } from '@/lib/simulationMobile';
 import { cardClass, primaryButton } from './styles';
 
 /** Total score, the "under half" count and the drill call to action. */
@@ -31,6 +32,7 @@ export function ScoreCard({
   drillError: string | null;
 }) {
   const hasScore = awarded !== null && max !== null;
+  const verdict = attemptVerdict(awarded, max);
   return (
     <section
       aria-label="Punteggio"
@@ -52,13 +54,29 @@ export function ScoreCard({
           '—'
         )}
       </p>
-      {belowHalf !== null && (
-        <p className="text-[15px] text-fg-secondary">
-          {belowHalf === 0
-            ? 'Nessun esercizio sotto la metà'
-            : belowHalf === 1
-              ? '1 esercizio sotto la metà'
-              : `${belowHalf} esercizi sotto la metà`}
+      {(verdict || belowHalf !== null) && (
+        <p className="text-[15px] text-fg-secondary" data-testid="attempt-verdict-line">
+          {verdict && (
+            <span
+              data-testid="attempt-verdict"
+              data-verdict={verdict}
+              className={`inline-flex items-center gap-1 font-semibold ${verdict === 'pass' ? 'text-ok' : 'text-danger'}`}
+            >
+              {verdict === 'pass' ? (
+                <Check className="size-4" aria-hidden="true" />
+              ) : (
+                <X className="size-4" aria-hidden="true" />
+              )}
+              {verdict === 'pass' ? 'Sufficiente' : 'Insufficiente'}
+            </span>
+          )}
+          {verdict && belowHalf !== null && <span aria-hidden="true"> · </span>}
+          {belowHalf !== null &&
+            (belowHalf === 0
+              ? 'Nessun esercizio sotto la metà'
+              : belowHalf === 1
+                ? '1 esercizio sotto la metà'
+                : `${belowHalf} esercizi sotto la metà`)}
         </p>
       )}
       {weakCount > 0 && (

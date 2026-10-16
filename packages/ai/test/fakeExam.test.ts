@@ -48,7 +48,7 @@ function profileFixture(overrides: Partial<ExamProfile> = {}): ExamProfile {
     kindDistribution: { open: 0.4, numeric: 0.3, proof: 0.3, mcq: 0 },
     avgMinutesPerItem: 40,
     verbosity: 'media',
-    recurringTopics: ['entropia'],
+    recurringTopics: [{ name: 'entropia', count: 2 }],
     notes: '',
     ...overrides,
   };
@@ -73,7 +73,17 @@ describe('fakeExtractExamProfile', () => {
     expect(profile.kindDistribution.numeric).toBeGreaterThan(0);
     expect(profile.kindDistribution.proof).toBeGreaterThan(0);
     // "termodinamica" appears in the exercises of both exams.
-    expect(profile.recurringTopics).toContain('termodinamica');
+    expect(profile.recurringTopics).toContainEqual({ name: 'termodinamica', count: 2 });
+    // Counts are the number of past exams the topic appears in: positive integers, most frequent first.
+    const counts = profile.recurringTopics.map((t) => t.count ?? 0);
+    expect(counts.every((c) => Number.isInteger(c) && c >= 1 && c <= 2)).toBe(true);
+    expect(counts).toEqual([...counts].sort((a, b) => b - a));
+  });
+
+  it('is deterministic: the same exams give the same recurring topics and counts', () => {
+    const a = fakeExtractExamProfile({ subjectName: 'Fisica 1', chunks: PAST_EXAMS });
+    const b = fakeExtractExamProfile({ subjectName: 'Fisica 1', chunks: [...PAST_EXAMS] });
+    expect(b.recurringTopics).toEqual(a.recurringTopics);
   });
 
   it('falls back to conservative defaults when nothing is recognisable, and says so', () => {
@@ -84,6 +94,50 @@ describe('fakeExtractExamProfile', () => {
     expect(ExamProfileSchema.safeParse(profile).success).toBe(true);
     expect(profile.totalPoints).toBe(30);
     expect(profile.notes).toMatch(/simulato/);
+  });
+});
+
+describe('ExamProfileSchema recurringTopics', () => {
+  const base = fakeExtractExamProfile({ subjectName: 'Fisica 1', chunks: PAST_EXAMS });
+
+  it('accepts the legacy string form (exam_profile/v1) as { name, count: null }', () => {
+    const parsed = ExamProfileSchema.parse({ ...base, recurringTopics: ['entropia', 'carnot'] });
+    expect(parsed.recurringTopics).toEqual([
+      { name: 'entropia', count: null },
+      { name: 'carnot', count: null },
+    ]);
+  });
+
+  it('accepts a mix of strings and objects, and keeps the counts', () => {
+    const parsed = ExamProfileSchema.parse({
+      ...base,
+      recurringTopics: [
+        'entropia',
+        { name: 'Integrali', count: 6 },
+        { name: 'Serie', count: null },
+      ],
+    });
+    expect(parsed.recurringTopics).toEqual([
+      { name: 'entropia', count: null },
+      { name: 'Integrali', count: 6 },
+      { name: 'Serie', count: null },
+    ]);
+  });
+
+  it('rejects empty names and non-positive or fractional counts', () => {
+    for (const bad of [
+      '',
+      { name: '  ', count: 1 },
+      { name: 'x', count: 0 },
+      { name: 'x', count: 1.5 },
+    ]) {
+      expect(ExamProfileSchema.safeParse({ ...base, recurringTopics: [bad] }).success).toBe(false);
+    }
+  });
+
+  it('parsing is idempotent on its own output', () => {
+    const once = ExamProfileSchema.parse({ ...base, recurringTopics: ['entropia'] });
+    expect(ExamProfileSchema.parse(once)).toEqual(once);
   });
 });
 

@@ -362,13 +362,31 @@ describe('FakeProvider.transcribeSchema', () => {
 describe('FakeProvider.ocrText', () => {
   const provider = new FakeProvider();
 
-  it('honestly punts with empty, illegible text rather than fabricating a reading', async () => {
-    const { data } = await provider.ocrText(
+  it('honestly punts with empty, illegible text for documents and scanned pages', async () => {
+    const { data, usage } = await provider.ocrText(
       { imagePath: '/irrelevant.jpg', mime: 'image/jpeg' },
       'irrelevant',
     );
     expect(data.text).toBe('');
     expect(data.confidence).toBe('illegible');
+    expect(usage).toEqual({ inputTokens: 0, outputTokens: 0 });
+  });
+
+  it('for an answer photo returns a deterministic, marked placeholder from the file name and mime', async () => {
+    const input = {
+      imagePath: '/tmp/some/dir/foglio-1.jpg',
+      mime: 'image/jpeg',
+      purpose: 'answer_photo' as const,
+    };
+    const a = await provider.ocrText(input, 'irrelevant');
+    const b = await provider.ocrText(input, 'other-model');
+    expect(a.data).toEqual(b.data);
+    expect(a.data.text).toContain('[Trascrizione simulata]');
+    expect(a.data.text).toContain('foglio-1.jpg');
+    expect(a.data.text).not.toContain('/tmp/some/dir');
+    expect(a.data.confidence).toBe('uncertain');
+    const other = await provider.ocrText({ ...input, imagePath: '/x/foglio-2.jpg' }, 'irrelevant');
+    expect(other.data.text).not.toBe(a.data.text);
   });
 });
 

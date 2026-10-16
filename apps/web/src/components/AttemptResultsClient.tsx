@@ -1,9 +1,12 @@
 'use client';
 
+import { Check, X } from 'lucide-react';
 import Link from 'next/link';
 import { WEAK_RATIO_UI } from '@/lib/format';
+import { attemptVerdict, photoTranscriptNote } from '@/lib/simulationMobile';
 import { useAttemptResults } from '@/lib/useAttemptResults';
 import { useIsMobile } from '@/lib/useIsMobile';
+import { PhotoImage } from './simulation-mobile/PhotoImage';
 import { ResultsMobile } from './simulation-mobile/ResultsMobile';
 
 /**
@@ -50,6 +53,24 @@ function AttemptResultsDesktop({
           <p className="mt-3 font-mono text-2xl tabular-nums">
             {attempt.totalAwarded} / {attempt.totalMax}
           </p>
+          {(() => {
+            const verdict = attemptVerdict(attempt.totalAwarded, attempt.totalMax);
+            if (!verdict) return null;
+            return (
+              <p
+                data-testid="attempt-verdict"
+                data-verdict={verdict}
+                className={`mt-1 flex items-center gap-1 text-sm font-medium ${verdict === 'pass' ? 'text-ok' : 'text-danger'}`}
+              >
+                {verdict === 'pass' ? (
+                  <Check className="size-4" aria-hidden="true" />
+                ) : (
+                  <X className="size-4" aria-hidden="true" />
+                )}
+                {verdict === 'pass' ? 'Sufficiente' : 'Insufficiente'}
+              </p>
+            );
+          })()}
           {attempt.weakTopics && attempt.weakTopics.length > 0 && (
             <div className="mt-3 rounded-[var(--radius-control)] border border-warn/40 bg-bg-inset px-3 py-2 text-xs text-warn">
               Argomenti deboli rilevati: la mastery è stata aggiornata e il piano li considererà.
@@ -102,8 +123,45 @@ function AttemptResultsDesktop({
                   </div>
 
                   <p className="mt-2 whitespace-pre-wrap rounded-[var(--radius-control)] bg-bg-inset px-3 py-2 text-xs text-fg-secondary">
-                    {r.answer || <span className="italic text-fg-muted">Nessuna risposta</span>}
+                    {r.answer || (
+                      <span className="italic text-fg-muted">
+                        {r.photos.length > 0 ? 'Risposta nella foto' : 'Nessuna risposta'}
+                      </span>
+                    )}
                   </p>
+                  {r.photos.length > 0 && (
+                    <ul className="mt-2 flex flex-wrap gap-2" data-testid="result-photos">
+                      {r.photos.map((p, i) => (
+                        <li key={p.id}>
+                          <a
+                            href={p.url}
+                            target="_blank"
+                            rel="noopener"
+                            aria-label={`Apri la foto ${i + 1} a dimensione intera`}
+                            className="block size-20 overflow-hidden rounded-[var(--radius-control)] border border-border bg-bg-inset"
+                          >
+                            <PhotoImage
+                              src={p.url}
+                              alt={`Foto ${i + 1} della tua risposta, esercizio ${r.ord + 1}`}
+                            />
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {(() => {
+                    const note = photoTranscriptNote(r.photos);
+                    if (!note) return null;
+                    return (
+                      <p
+                        role={note.kind === 'unreadable' ? 'status' : undefined}
+                        data-testid="photo-transcript-note"
+                        className={`mt-1 text-xs ${note.kind === 'unreadable' ? 'text-warn' : 'text-fg-muted'}`}
+                      >
+                        {note.text}
+                      </p>
+                    );
+                  })()}
 
                   <ul className="mt-3 space-y-1 text-xs">
                     {r.criteria.map((c) => (

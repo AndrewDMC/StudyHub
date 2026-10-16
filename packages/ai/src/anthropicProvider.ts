@@ -260,7 +260,7 @@ export class AnthropicProvider implements AiProvider {
     input: ExamProfilePromptInput,
     model: string,
   ): Promise<GeneratedWithMeta<ExamProfile>> {
-    const { text: system, promptVersion } = loadPrompt('exam_profile', 1);
+    const { text: system, promptVersion } = loadPrompt('exam_profile', 2);
     const images = await Promise.all(
       (input.pageImages ?? []).map(async (img) => ({
         mediaType: img.mime as Anthropic.ImageBlockParam.Source['media_type'],
@@ -382,7 +382,7 @@ export class AnthropicProvider implements AiProvider {
     toolName: string,
     system: string,
     userPrompt: string,
-    schema: z.ZodType<T>,
+    schema: z.ZodType<T, z.ZodTypeDef, unknown>,
     model: string,
     maxTokens: number,
     image?:

@@ -81,6 +81,12 @@ export interface SchemaPromptInput {
 export interface OcrTextPromptInput {
   imagePath: string;
   mime: string;
+  /**
+   * What the text is for. Real providers read the same way regardless; it only lets the
+   * FakeProvider return a placeholder transcription for handwritten-answer photos while keeping
+   * its "honest punt" (empty, illegible) for documents and scanned pages.
+   */
+  purpose?: 'answer_photo';
 }
 
 /** A document to suggest a type for — whichever sample is available (text extract or photo). */

@@ -3,6 +3,11 @@ import { attemptItemResults, simulationAttempts, simulationItems } from '@studyh
 import { estimateCostEur, resolveProvider, type AiProvider, resolveModel } from '@studyhub/ai';
 import type { GradeItemSecondOpinionJobInput } from '@studyhub/contracts';
 import { checkBudget } from '../generation/shared.js';
+import {
+  composeAnswer,
+  findSimulationSubjectSlug,
+  transcribeAnswerPhotos,
+} from './answerPhotos.js';
 import { reconcileWithRubric } from './gradeAttempt.js';
 
 const MODEL_ROUTING_SECOND_OPINION = 'claude-opus-5-5'; // docs/fasi/F5 "Rischi": "modello superiore"
@@ -12,6 +17,8 @@ export interface GradeItemSecondOpinionResult {
   itemId: string;
   awarded: number;
   max: number;
+  /** Photos of the answer that could not be read: the re-grade used the typed text only. */
+  warnings: string[];
   costEur: number;
   usage: { inputTokens: number; outputTokens: number };
 }
@@ -26,6 +33,7 @@ export interface GradeItemSecondOpinionResult {
 export async function processGradeItemSecondOpinion(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any,
+  dataRoot: string,
   input: GradeItemSecondOpinionJobInput,
   provider: AiProvider = resolveProvider(),
 ): Promise<GradeItemSecondOpinionResult> {
@@ -58,7 +66,19 @@ export async function processGradeItemSecondOpinion(
   if (!existing) throw new Error(`Nessuna correzione esistente per questo esercizio: ${item.id}`);
 
   const model = input.model ?? resolveModel(MODEL_ROUTING_SECOND_OPINION);
-  const answer = attempt.answers[item.id] ?? '';
+  // Same input the first grade saw: typed text plus the transcription of the answer's photos.
+  const subjectSlug = await findSimulationSubjectSlug(db, attempt.simulationId);
+  const photos = subjectSlug
+    ? await transcribeAnswerPhotos(
+        db,
+        dataRoot,
+        subjectSlug,
+        attempt.id,
+        new Set([item.id]),
+        provider,
+      )
+    : null;
+  const answer = composeAnswer(attempt.answers[item.id] ?? '', photos?.byItem.get(item.id));
   const result = await provider.gradeAnswer(
     {
       item: {
@@ -75,11 +95,9 @@ export async function processGradeItemSecondOpinion(
     },
     model,
   );
-  const costEur = estimateCostEur(
-    result.model,
-    result.usage.inputTokens,
-    result.usage.outputTokens,
-  );
+  const costEur =
+    (photos?.costEur ?? 0) +
+    estimateCostEur(result.model, result.usage.inputTokens, result.usage.outputTokens);
   await checkBudget(db, costEur, input.force);
 
   const criteria = reconcileWithRubric(item, result.data.criteria);
@@ -102,7 +120,11 @@ export async function processGradeItemSecondOpinion(
     itemId: item.id,
     awarded,
     max: item.points,
+    warnings: photos?.warnings ?? [],
     costEur,
-    usage: result.usage,
+    usage: {
+      inputTokens: result.usage.inputTokens + (photos?.usage.inputTokens ?? 0),
+      outputTokens: result.usage.outputTokens + (photos?.usage.outputTokens ?? 0),
+    },
   };
 }

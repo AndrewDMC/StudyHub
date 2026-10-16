@@ -9,12 +9,16 @@ import {
   type SimulationItemRow,
 } from '@studyhub/db';
 import { estimateCostEur, resolveProvider, type AiProvider, resolveModel } from '@studyhub/ai';
+import { isPassing } from '@studyhub/core';
 import type { GradeAttemptJobInput } from '@studyhub/contracts';
 import { checkBudget } from '../generation/shared.js';
+import {
+  composeAnswer,
+  findSimulationSubjectSlug,
+  transcribeAnswerPhotos,
+} from './answerPhotos.js';
 
 const MODEL_ROUTING_GRADE = 'claude-sonnet-5-5'; // docs/03 §4: simulation_grade
-/** An item scored below this ratio is "weak" and feeds `weak_topics[]` for the Planner. */
-export const WEAK_ITEM_THRESHOLD = 0.6;
 
 export interface GradeAttemptResult {
   attemptId: string;
@@ -24,6 +28,8 @@ export interface GradeAttemptResult {
   /** Items whose topic is weak — the UI offers a drill/cards on these (docs/fasi/F5 Correzione). */
   weakItemIds: string[];
   alreadyGraded: boolean;
+  /** Photos of handwritten answers that could not be read: the item was graded on its typed text only. */
+  warnings: string[];
   costEur: number;
   usage: { inputTokens: number; outputTokens: number };
 }
@@ -59,7 +65,7 @@ export function reconcileWithRubric(
 export async function processGradeAttempt(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any,
-  _dataRoot: string,
+  dataRoot: string,
   input: GradeAttemptJobInput,
   provider: AiProvider = resolveProvider(),
 ): Promise<GradeAttemptResult> {
@@ -69,7 +75,7 @@ export async function processGradeAttempt(
     .where(eq(simulationAttempts.id, input.attemptId));
   if (!attempt) throw new Error(`attempt not found: ${input.attemptId}`);
 
-  const zero = { costEur: 0, usage: { inputTokens: 0, outputTokens: 0 } };
+  const zero = { warnings: [], costEur: 0, usage: { inputTokens: 0, outputTokens: 0 } };
   if (attempt.status === 'graded') {
     return {
       attemptId: attempt.id,
@@ -96,9 +102,29 @@ export async function processGradeAttempt(
   const model = input.model ?? resolveModel(MODEL_ROUTING_GRADE);
   const usage = { inputTokens: 0, outputTokens: 0 };
   let costEur = 0;
+
+  // Handwritten answers: photos attached to the attempt are transcribed (vision) and appended to the
+  // typed text, so the grader (and `GradePromptInput`) only ever deal with text.
+  const subjectSlug = await findSimulationSubjectSlug(db, attempt.simulationId);
+  const photos = subjectSlug
+    ? await transcribeAnswerPhotos(
+        db,
+        dataRoot,
+        subjectSlug,
+        attempt.id,
+        new Set(items.map((i) => i.id)),
+        provider,
+      )
+    : null;
+  if (photos) {
+    usage.inputTokens += photos.usage.inputTokens;
+    usage.outputTokens += photos.usage.outputTokens;
+    costEur += photos.costEur;
+  }
+
   const graded = [];
   for (const item of items) {
-    const answer = attempt.answers[item.id] ?? '';
+    const answer = composeAnswer(attempt.answers[item.id] ?? '', photos?.byItem.get(item.id));
     const result = await provider.gradeAnswer(
       {
         item: {
@@ -150,7 +176,8 @@ export async function processGradeAttempt(
   const totalAwarded = Math.round(graded.reduce((s, g) => s + g.awarded, 0) * 100) / 100;
   const totalMax = Math.round(items.reduce((s, i) => s + i.points, 0) * 100) / 100;
   const weakItems = graded.filter(
-    (g) => g.item.points > 0 && g.awarded / g.item.points < WEAK_ITEM_THRESHOLD,
+    // Weak = not passing, with the same bar the UI verdict uses (PASS_RATIO in @studyhub/core).
+    (g) => g.item.points > 0 && !isPassing(g.awarded / g.item.points),
   );
   const weakTopics = [
     ...new Set(weakItems.map((g) => g.item.topicId).filter((t): t is string => !!t)),
@@ -173,6 +200,7 @@ export async function processGradeAttempt(
     weakTopics,
     weakItemIds: weakItems.map((g) => g.item.id),
     alreadyGraded: false,
+    warnings: photos?.warnings ?? [],
     costEur,
     usage,
   };

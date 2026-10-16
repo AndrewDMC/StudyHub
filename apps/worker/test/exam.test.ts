@@ -150,6 +150,19 @@ describe('F5 worker pipeline', () => {
       expect(onDisk.profile.itemCount).toBe(2);
     });
 
+    it('stores recurring topics as { name, count } (exam_profile/v2)', async () => {
+      const result = await extractProfile();
+      const [row] = await db
+        .select()
+        .from(examProfiles)
+        .where(eq(examProfiles.id, result.profileId));
+      expect(row?.promptVersion).toBe('exam_profile/v2');
+      for (const t of row!.profile.recurringTopics) {
+        expect(typeof t).toBe('object');
+        expect(t).toMatchObject({ name: expect.any(String) });
+      }
+    });
+
     it('does not re-spend when nothing changed', async () => {
       await extractProfile();
       const again = await extractProfile();
@@ -349,6 +362,33 @@ describe('F5 worker pipeline', () => {
       expect(result.discardedCount).toBe(2);
     });
 
+    it('still generates from a profile stored before counts existed (recurringTopics as plain strings)', async () => {
+      const { profileId } = await extractProfile();
+      const [row] = await db.select().from(examProfiles).where(eq(examProfiles.id, profileId));
+      await db
+        .update(examProfiles)
+        .set({ profile: { ...row!.profile, recurringTopics: ['termodinamica', 'entropia'] } })
+        .where(eq(examProfiles.id, profileId));
+
+      let seenTopics: unknown;
+      const spy = providerWith({
+        async generateSimulation(input, model) {
+          seenTopics = input.profile.recurringTopics;
+          return new FakeProvider().generateSimulation(input, model);
+        },
+      });
+      await processGenerateSimulation(
+        db,
+        dataRoot,
+        { subjectId, mode: 'esame_completo', difficulty: 2, force: false },
+        spy,
+      );
+      expect(seenTopics).toEqual([
+        { name: 'termodinamica', count: null },
+        { name: 'entropia', count: null },
+      ]);
+    });
+
     it('tags a full-exam item with an existing subject topic when its content matches', async () => {
       const result = await generateExam();
       const items = await db
@@ -530,6 +570,7 @@ describe('F5 worker pipeline', () => {
 
       const result = await processGradeItemSecondOpinion(
         db,
+        dataRoot,
         { attemptId, itemId, force: false },
         new FakeProvider(),
       );
@@ -557,6 +598,7 @@ describe('F5 worker pipeline', () => {
       await expect(
         processGradeItemSecondOpinion(
           db,
+          dataRoot,
           { attemptId, itemId: item!.id, force: false },
           new FakeProvider(),
         ),
@@ -582,6 +624,7 @@ describe('F5 worker pipeline', () => {
       await expect(
         processGradeItemSecondOpinion(
           db,
+          dataRoot,
           { attemptId, itemId: otherItem!.id, force: false },
           new FakeProvider(),
         ),

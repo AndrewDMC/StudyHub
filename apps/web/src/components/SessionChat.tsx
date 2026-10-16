@@ -453,7 +453,12 @@ export function SessionChat({
         />
         <div className="flex items-center gap-2">
           <div className="min-w-0 flex-1">
-            <ModelPicker value={model} onChange={setModel} disabled={sending} />
+            <ModelPicker
+              value={model}
+              onChange={setModel}
+              disabled={sending}
+              defaultId={MODEL_OPTIONS[0].id}
+            />
           </div>
           <Button type="submit" size="sm" disabled={sending || !input.trim()}>
             {sending ? 'Risponde…' : 'Invia'}

@@ -52,7 +52,7 @@ export async function setDocumentTopics(
   }
 }
 
-async function resolveDocumentType(
+export async function resolveDocumentType(
   slug: string,
   documentId: string,
   accept: boolean,

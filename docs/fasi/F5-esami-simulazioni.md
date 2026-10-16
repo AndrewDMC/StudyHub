@@ -170,3 +170,35 @@ Vale per desktop e mobile (vedi [`docs/fasi/F2-materie.md`](F2-materie.md) "slic
 Logica in [`apps/web/src/lib/useExamAttempt.ts`](../../apps/web/src/lib/useExamAttempt.ts) e
 [`examAttemptLogic.ts`](../../apps/web/src/lib/examAttemptLogic.ts). Test:
 [`examAttemptLogic.test.ts`](../../apps/web/test/examAttemptLogic.test.ts).
+
+## Aggiornamento — residui mobile, slice E (2026-10-16)
+
+- **Profilo d'esame `exam_profile/v2`**: `recurringTopics` è `{ name, count: number | null }[]`
+  ([`simulation.ts`](../../packages/contracts/src/simulation.ts)). Lo schema accetta ancora le stringhe della v1
+  (`count: null`). UI: pill "Integrali ×6", senza × se il conteggio manca.
+- **Foto del foglio** (esame mobile): tabella `attempt_answer_photos` (migrazione `0023`; colonne di trascrizione
+  `transcript`, `transcript_status` `ok|illegible|failed`, `transcribed_at` in `0024`). File in
+  `subjects/<slug>/.studyhub/attempts/<attemptId>/`, con gli helper di path-safety di
+  [`paths.ts`](../../packages/core/src/paths.ts) e realpath controllato anche sul file.
+  - Route (tentativo `simulation_attempts`): `POST`/`GET .../attempts/[attemptId]/items/[itemId]/photos`, `DELETE .../photos/[photoId]`,
+    `GET .../photos/[photoId]/file` (`X-Content-Type-Options: nosniff`).
+  - Solo jpeg/png/webp, max 5 MB, mime dai magic bytes. Max 4 per esercizio: count e insert in transazione con
+    `pg_advisory_xact_lock` sul tentativo. Solo tentativo aperto.
+  - Compressione nel browser prima dell'invio: lato lungo 2048 px, JPEG 0.85, ricompressione sopra 3,5 MB.
+- **OCR in correzione** (`grade_attempt`, `ocrText` con Sonnet): il testo trascritto entra nella risposta prima di
+  `gradeAnswer`. La trascrizione è salvata e riusata da retry e seconda opinione (nessuna nuova chiamata).
+  - Errori transitori del provider (429, overloaded/5xx, rete, timeout): il job rilancia, nessun voto scritto.
+  - `failed` (fuori limite, mime non valido, file mancante, path non sicuro) e `illegible` solo per cause locali o di
+    contenuto: la correzione usa il solo testo. Il provider non viene chiamato per le foto `failed` fuori limite.
+- **Risultati** (mobile e desktop): "Il testo scritto nelle foto è stato trascritto per la correzione" solo se tutte
+  le foto dell'item sono `ok`; altrimenti "Non è stato possibile leggere N foto: la correzione si basa sul testo scritto."
+- **Verdetto**: "Sufficiente" / "Insufficiente" con soglia fissa `PASS_RATIO` = 0.6 in
+  [`scoring.ts`](../../packages/core/src/scoring.ts).
+
+Non ancora:
+
+- il costo OCR di una run fallita non entra nel budget della run riuscita;
+- rifare l'OCR di una foto `failed` richiede di toglierla e ricaricarla.
+
+Test: unit `residuiE`, `attemptPhotos`, `attemptPhotoFileRoute`, `gradeAttemptPhotos`, `scoring`; e2e
+`materia-residui-e.mobile.spec.ts` e `materia-residui-e-desktop.spec.ts`.

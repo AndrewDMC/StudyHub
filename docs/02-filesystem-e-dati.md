@@ -90,6 +90,10 @@ tasks(id, plan_id, subject_id, topic_id, date, slot /*morning|afternoon|evening*
 task_flashcards(task_id → tasks cascade, flashcard_id → flashcards cascade,
                 source /*auto|user*/, PK(task_id, flashcard_id))   -- migrazione 0022
 
+attempt_answer_photos(id, attempt_id → simulation_attempts cascade, item_id, rel_path, mime, size, created_at,
+                      transcript, transcript_status /*ok|illegible|failed*/, transcribed_at)
+                      -- migrazioni 0023 (tabella), 0024 (colonne di trascrizione)
+
 sessions(id, task_id, subject_id, started_at, ended_at, focus_score, notes)
 
 jobs(id, type, subject_id, status, input jsonb, output jsonb,

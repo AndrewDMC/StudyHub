@@ -1,5 +1,12 @@
-/** Mirrors the worker's WEAK_ITEM_THRESHOLD (apps/worker/src/processors/exam/gradeAttempt.ts) for highlighting. */
-export const WEAK_RATIO_UI = 0.6;
+import { PASS_RATIO } from '@studyhub/core/browser';
+
+/** Below this ratio an exercise is highlighted as weak: the shared pass bar `PASS_RATIO` of @studyhub/core. */
+export const WEAK_RATIO_UI = PASS_RATIO;
+
+/** Recurring-topic label of the exam profile: "Integrali ×6", or just the name without a count. */
+export function formatRecurringTopic(t: { name: string; count: number | null }): string {
+  return t.count === null ? t.name : `${t.name} ×${t.count}`;
+}
 
 export function formatExamCountdown(isoDate: string): string {
   const days = Math.ceil((new Date(isoDate).getTime() - Date.now()) / (24 * 60 * 60 * 1000));

@@ -15,6 +15,7 @@ import {
 import { resolveSubjectSubpath } from '@studyhub/core';
 import {
   estimateCostEur,
+  ExamProfileSchema,
   resolveProvider,
   SimulationItemSchema,
   type AiProvider,
@@ -91,7 +92,11 @@ export async function processGenerateSimulation(
       "Estrai prima il profilo d'esame: la simulazione completa ne imita il formato.",
     );
   }
-  const profile: ExamProfile = profileRow?.profile ?? DRILL_FALLBACK_PROFILE;
+  // Stored profiles may predate `{ name, count }` topics (bare strings): the schema upgrades them,
+  // so the prompt and every downstream reader (`.name`) only ever see the object form.
+  const profile: ExamProfile = profileRow
+    ? ExamProfileSchema.parse(profileRow.profile)
+    : DRILL_FALLBACK_PROFILE;
 
   let topicName: string | undefined;
   if (input.topicId) {
