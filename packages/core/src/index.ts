@@ -24,4 +24,5 @@ export * from './sessionBriefing.js';
 export * from './timeFactor.js';
 export * from './scoring.js';
 export * from './attemptPhotos.js';
+export * from './simulation.js';
 export * from './reviewEstimate.js';

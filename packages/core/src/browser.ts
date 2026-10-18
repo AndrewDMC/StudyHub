@@ -12,4 +12,5 @@ export * from './examTimer.js';
 export * from './pomodoro.js';
 export * from './scoring.js';
 export * from './attemptPhotos.js';
+export * from './simulation.js';
 export * from './reviewEstimate.js';

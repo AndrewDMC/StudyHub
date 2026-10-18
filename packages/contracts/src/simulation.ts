@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ExamProfileSchema, SimulationItemKindSchema } from '@studyhub/ai';
+import { SIMULATION_DRILL_MAX_TOPICS } from '@studyhub/core';
 
 /** Job: extract the exam profile from the subject's `esami` documents (or a chosen subset). */
 export const ExtractExamProfileJobInputSchema = z.object({
@@ -19,8 +20,8 @@ export type ExtractExamProfileJobInput = z.infer<typeof ExtractExamProfileJobInp
 
 export const SimulationModeSchema = z.enum(['esame_completo', 'drill_argomento']);
 
-/** Max topics of one `drill_argomento`. */
-export const SIMULATION_DRILL_MAX_TOPICS = 5;
+// Lives in @studyhub/core (browser-safe) so clients can import it; re-exported here for servers.
+export { SIMULATION_DRILL_MAX_TOPICS };
 
 /** Topics of a drill: `topicId` (legacy, single) and/or `topicIds`, deduplicated. The one place that merges them. */
 export function resolveSimulationTopicIds(v: {

@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import type { DocumentDto, SubjectDto, TopicDto } from '@studyhub/contracts';
+import { SIMULATION_DRILL_MAX_TOPICS } from '@studyhub/core/browser';
 import { useSelection } from '@/lib/selection';
 import { MODEL_OPTIONS } from '../ModelPicker';
 import { enqueue, fetchEstimate, formatCost, scopeKey, type ScopeInput } from '../GenerationPanel';
@@ -26,9 +27,6 @@ import { BottomSheet } from './BottomSheet';
 import { SectionError, SkeletonRows } from './SectionState';
 
 type GenKind = 'flashcards' | 'summary' | 'schema' | 'exercises';
-
-/** Same cap as the drill contract (SIMULATION_DRILL_MAX_TOPICS): the client cannot import runtime values from contracts. */
-const EXERCISES_MAX_TOPICS = 5;
 
 const GEN_TILES: { kind: GenKind; label: string; verb: string; Icon: typeof Layers }[] = [
   { kind: 'flashcards', label: 'Flashcard', verb: 'flashcard', Icon: Layers },
@@ -124,8 +122,8 @@ export function AssistantSheet({
     ? null
     : topicIds.size === 0
       ? 'Scegli almeno un argomento'
-      : topicIds.size > EXERCISES_MAX_TOPICS
-        ? `Massimo ${EXERCISES_MAX_TOPICS} argomenti`
+      : topicIds.size > SIMULATION_DRILL_MAX_TOPICS
+        ? `Massimo ${SIMULATION_DRILL_MAX_TOPICS} argomenti`
         : null;
   const askScope: AskScope =
     explicitDocIds.length > 0
