@@ -14,9 +14,11 @@ import {
   simulations,
   topics,
 } from '@studyhub/db';
+import { GenerateSimulationJobInputSchema, resolveSimulationTopicIds } from '@studyhub/contracts';
 import { createSubject } from '../src/lib/subjects';
 import {
   ConflictError,
+  InvalidRequestError,
   NotFoundError,
   enqueueSimulation,
   getAttempt,
@@ -149,6 +151,75 @@ describe('exam prep (web)', () => {
         expect.objectContaining({ subjectId }),
         { jobId: expect.any(String) },
       );
+    });
+
+    describe('drill_argomento topics', () => {
+      async function addTopic(forSubject: string, name: string) {
+        const id = randomUUID();
+        await db
+          .insert(topics)
+          .values({ id, subjectId: forSubject, name, slug: `${name}-${id.slice(0, 4)}` });
+        return id;
+      }
+
+      it('puts a topicIds list in the job, folding a legacy single topicId into it', async () => {
+        const a = await addTopic(subjectId, 'a');
+        const b = await addTopic(subjectId, 'b');
+        const queue = fakeQueue();
+        const base = { mode: 'drill_argomento' as const, difficulty: 2 as const, force: false };
+
+        await enqueueSimulation(db, queue, slug, { ...base, topicIds: [a, b] });
+        await enqueueSimulation(db, queue, slug, { ...base, topicId: a });
+
+        const [multi, single] = queue.add.mock.calls.map((c) => c[1]);
+        expect(multi).toMatchObject({ topicIds: [a, b], subjectId });
+        expect(single).toMatchObject({ topicIds: [a], subjectId });
+        expect(single).not.toHaveProperty('topicId');
+      });
+
+      it('rejects topics of another subject (400) without enqueueing', async () => {
+        const other = await createSubject(db, dataRoot, { name: 'Chimica', color: 'rose' });
+        const foreign = await addTopic(other.id, 'x');
+        const mine = await addTopic(subjectId, 'm');
+        const queue = fakeQueue();
+        await expect(
+          enqueueSimulation(db, queue, slug, {
+            mode: 'drill_argomento',
+            difficulty: 2,
+            force: false,
+            topicIds: [mine, foreign],
+          }),
+        ).rejects.toBeInstanceOf(InvalidRequestError);
+        expect(queue.add).not.toHaveBeenCalled();
+      });
+
+      it('validates 1..5 topics for a drill and keeps topicId alone valid', () => {
+        const ids = Array.from({ length: 6 }, () => randomUUID());
+        const base = { subjectId, mode: 'drill_argomento' as const };
+        expect(GenerateSimulationJobInputSchema.safeParse({ ...base, topicIds: ids }).success).toBe(
+          false,
+        );
+        expect(
+          GenerateSimulationJobInputSchema.safeParse({ ...base, topicIds: ids.slice(0, 5) })
+            .success,
+        ).toBe(true);
+        expect(
+          GenerateSimulationJobInputSchema.safeParse({ ...base, topicId: ids[0] }).success,
+        ).toBe(true);
+        expect(GenerateSimulationJobInputSchema.safeParse(base).success).toBe(false);
+        // Several topics only make sense for a drill; a single legacy topicId stays accepted.
+        const exam = { subjectId, mode: 'esame_completo' as const };
+        expect(
+          GenerateSimulationJobInputSchema.safeParse({ ...exam, topicIds: ids.slice(0, 2) })
+            .success,
+        ).toBe(false);
+        expect(
+          GenerateSimulationJobInputSchema.safeParse({ ...exam, topicId: ids[0] }).success,
+        ).toBe(true);
+        expect(
+          resolveSimulationTopicIds({ topicId: ids[0]!, topicIds: [ids[0]!, ids[1]!] }),
+        ).toEqual([ids[0], ids[1]]);
+      });
     });
 
     it('lists simulations with item count and the history trend (last graded score)', async () => {

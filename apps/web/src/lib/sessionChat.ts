@@ -43,10 +43,37 @@ type AnyDb = any;
 /** The fast tier of `ModelPicker`: a tutor chat is many short turns, so cost matters more than depth. */
 export const CHAT_DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
 /** Top-k of the session retrieval (docs/08 §5.3). */
-const SOURCE_LIMIT = 8;
+export const SOURCE_LIMIT = 8;
 /** Per-source cap: pages can be long and every source is paid for on every turn. */
-const SOURCE_MAX_CHARS = 1800;
+export const SOURCE_MAX_CHARS = 1800;
 const FOCUS_QUERY_CHARS = 300;
+
+/** Retrieved chunks → the numbered sources the model may cite (shared with the subject-level "Chiedi"). */
+export function toChatSources(
+  found: RetrievedChunk[],
+): (SessionChatSource & { chunkId: string })[] {
+  return found.map((c, i) => ({
+    ref: i + 1,
+    chunkId: c.chunkId,
+    docId: c.documentId,
+    documentName: c.documentName,
+    page: c.pageFrom,
+    text: truncate(c.text, SOURCE_MAX_CHARS),
+  }));
+}
+
+/** The sources actually cited by a parsed answer, as stored/sent citations. */
+export function toCitations(
+  cited: { ref: number; chunkId: string; docId: string; documentName: string; page: number }[],
+): SessionCitation[] {
+  return cited.map((s) => ({
+    ref: s.ref,
+    chunkId: s.chunkId,
+    docId: s.docId,
+    documentName: s.documentName,
+    page: s.page,
+  }));
+}
 
 async function requireSession(db: AnyDb, slug: string, sessionId: string) {
   const [subject] = await db.select().from(subjects).where(eq(subjects.slug, slug));
@@ -153,14 +180,7 @@ export async function startChatTurn(
         : undefined;
 
       const found = await gatherSources(db, subject.id, session.documentIds, request);
-      const sources: (SessionChatSource & { chunkId: string })[] = found.map((c, i) => ({
-        ref: i + 1,
-        chunkId: c.chunkId,
-        docId: c.documentId,
-        documentName: c.documentName,
-        page: c.pageFrom,
-        text: truncate(c.text, SOURCE_MAX_CHARS),
-      }));
+      const sources = toChatSources(found);
 
       const topicRows: { name: string }[] = session.topicIds.length
         ? await db
@@ -200,13 +220,7 @@ export async function startChatTurn(
 
       // A marker to a source that was never provided is dropped, never turned into a fake citation.
       const parsed = parseAnswerCitations(answer, sources);
-      const citations: SessionCitation[] = parsed.cited.map((s) => ({
-        ref: s.ref,
-        chunkId: s.chunkId,
-        docId: s.docId,
-        documentName: s.documentName,
-        page: s.page,
-      }));
+      const citations = toCitations(parsed.cited);
       const usage = done?.usage ?? { inputTokens: 0, outputTokens: 0 };
       const usedModel = done?.model ?? model;
 

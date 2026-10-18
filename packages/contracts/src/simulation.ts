@@ -19,21 +19,55 @@ export type ExtractExamProfileJobInput = z.infer<typeof ExtractExamProfileJobInp
 
 export const SimulationModeSchema = z.enum(['esame_completo', 'drill_argomento']);
 
-export const GenerateSimulationJobInputSchema = z
-  .object({
-    subjectId: z.string().uuid(),
-    mode: SimulationModeSchema,
-    /** Study material the items come from. Omit to use every parsed non-`esami` document. */
-    docIds: z.array(z.string().uuid()).optional(),
-    topicId: z.string().uuid().optional(),
-    itemCount: z.number().int().positive().max(30).optional(),
-    difficulty: z.union([z.literal(1), z.literal(2), z.literal(3)]).default(2),
-    model: z.string().optional(),
-    force: z.boolean().default(false),
-  })
-  .refine((v) => v.mode !== 'drill_argomento' || !!v.topicId, {
-    message: 'Il drill richiede un argomento (topicId)',
-  });
+/** Max topics of one `drill_argomento`. */
+export const SIMULATION_DRILL_MAX_TOPICS = 5;
+
+/** Topics of a drill: `topicId` (legacy, single) and/or `topicIds`, deduplicated. The one place that merges them. */
+export function resolveSimulationTopicIds(v: {
+  topicId?: string | undefined;
+  topicIds?: string[] | undefined;
+}): string[] {
+  return [...new Set([...(v.topicIds ?? []), ...(v.topicId ? [v.topicId] : [])])];
+}
+
+export const GenerateSimulationJobBaseSchema = z.object({
+  subjectId: z.string().uuid(),
+  mode: SimulationModeSchema,
+  /** Study material the items come from. Omit to use every parsed non-`esami` document. */
+  docIds: z.array(z.string().uuid()).optional(),
+  /** Single topic of a drill (legacy). Equivalent to `topicIds: [topicId]`; see `resolveSimulationTopicIds`. */
+  topicId: z.string().uuid().optional(),
+  /** Topics of a drill (1..5). */
+  topicIds: z.array(z.string().uuid()).min(1).max(SIMULATION_DRILL_MAX_TOPICS).optional(),
+  itemCount: z.number().int().positive().max(30).optional(),
+  difficulty: z.union([z.literal(1), z.literal(2), z.literal(3)]).default(2),
+  model: z.string().optional(),
+  force: z.boolean().default(false),
+});
+
+/** Cross-field rule shared by the job input and the HTTP request. */
+export function refineSimulationTopics<
+  T extends { mode: string; topicId?: string | undefined; topicIds?: string[] | undefined },
+>(v: T, ctx: z.RefinementCtx): void {
+  if (v.mode !== 'drill_argomento') {
+    if (v.topicIds && v.topicIds.length > 1) {
+      ctx.addIssue({ code: 'custom', message: 'Più argomenti sono ammessi solo nel drill' });
+    }
+    return;
+  }
+  const ids = resolveSimulationTopicIds(v);
+  if (ids.length === 0) {
+    ctx.addIssue({ code: 'custom', message: 'Il drill richiede un argomento (topicIds)' });
+  } else if (ids.length > SIMULATION_DRILL_MAX_TOPICS) {
+    ctx.addIssue({
+      code: 'custom',
+      message: `Il drill accetta al massimo ${SIMULATION_DRILL_MAX_TOPICS} argomenti`,
+    });
+  }
+}
+
+export const GenerateSimulationJobInputSchema =
+  GenerateSimulationJobBaseSchema.superRefine(refineSimulationTopics);
 export type GenerateSimulationJobInput = z.infer<typeof GenerateSimulationJobInputSchema>;
 
 export const GradeAttemptJobInputSchema = z.object({

@@ -14,6 +14,7 @@ import type {
   SchemaTranscriptionPromptInput,
   SessionBriefingPromptInput,
   SessionChatPromptInput,
+  SubjectAskPromptInput,
   SimulationPromptInput,
   SortFlashcardsPromptInput,
   SummaryPromptInput,
@@ -42,7 +43,7 @@ import { basename } from 'node:path';
 import { estimateTokens } from './pricing.js';
 import { keywordCoverage, keywords, splitSentences, truncate } from './text.js';
 import { normalizeTopicName } from './topicMatch.js';
-import { renderSessionChatUserPrompt } from './promptRender.js';
+import { renderSessionChatUserPrompt, renderSubjectAskUserPrompt } from './promptRender.js';
 import { fakeExtractExamProfile, fakeGenerateSimulation, fakeGradeAnswer } from './fakeExam.js';
 import {
   CLASSIFY_DOCUMENT_TYPE_PROMPT_VERSION,
@@ -57,6 +58,7 @@ import {
   SCHEMA_TRANSCRIPTION_PROMPT_VERSION,
   SESSION_BRIEFING_PROMPT_VERSION,
   SESSION_CHAT_PROMPT_VERSION,
+  SUBJECT_ASK_PROMPT_VERSION,
   SIMULATION_PROMPT_VERSION,
   SORT_FLASHCARDS_PROMPT_VERSION,
   SUMMARY_PROMPT_VERSION,
@@ -540,6 +542,48 @@ export class FakeProvider implements AiProvider {
       },
       model: FAKE_MODEL,
       promptVersion: SESSION_CHAT_PROMPT_VERSION,
+    };
+  }
+
+  /**
+   * Extractive stand-in for "Chiedi" on a subject. Always cites the first source (its best-matching
+   * sentence, or its first one) and adds the best match from the other sources when it overlaps the
+   * question; with no sources at all it says the material is not enough. Streamed in small pieces.
+   */
+  async *askStream(input: SubjectAskPromptInput, _model: string): AsyncIterable<ChatDelta> {
+    const [first, ...others] = input.sources;
+    let answer: string;
+    if (!first) {
+      answer =
+        'Le fonti selezionate non bastano per rispondere: prova a riformulare la domanda o a includere più documenti.';
+    } else {
+      const best = (sources: typeof input.sources) =>
+        sources
+          .flatMap((source) =>
+            splitSentences(source.text).map((sentence) => ({
+              ref: source.ref,
+              sentence,
+              score: keywordCoverage(input.question, sentence),
+            })),
+          )
+          .sort((a, b) => b.score - a.score || a.ref - b.ref)[0];
+      const lines = [best([first]) ?? { ref: first.ref, sentence: first.text, score: 0 }];
+      const other = best(others);
+      if (other && other.score > 0) lines.push(other);
+      answer = `Dal materiale:\n\n${lines.map((c) => `- ${truncate(c.sentence, 400)} [${c.ref}]`).join('\n')}`;
+    }
+
+    for (let i = 0; i < answer.length; i += 24) {
+      yield { type: 'text', text: answer.slice(i, i + 24) };
+    }
+    yield {
+      type: 'done',
+      usage: {
+        inputTokens: estimateTokens(renderSubjectAskUserPrompt(input)),
+        outputTokens: estimateTokens(answer),
+      },
+      model: FAKE_MODEL,
+      promptVersion: SUBJECT_ASK_PROMPT_VERSION,
     };
   }
 }

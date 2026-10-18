@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { GenerateSimulationJobInputSchema } from '@studyhub/contracts';
+import { GenerateSimulationJobBaseSchema, refineSimulationTopics } from '@studyhub/contracts';
 import { getDb } from '@/lib/db';
 import { getJobQueue } from '@/lib/queue';
 import { enqueueSimulation, listSimulations } from '@/lib/examPrep';
@@ -10,11 +10,9 @@ export const dynamic = 'force-dynamic';
 type RouteParams = { params: Promise<{ slug: string }> };
 
 // subjectId comes from the URL, never from the body.
-const RequestSchema = GenerateSimulationJobInputSchema.innerType()
-  .omit({ subjectId: true })
-  .refine((v) => v.mode !== 'drill_argomento' || !!v.topicId, {
-    message: 'Il drill richiede un argomento (topicId)',
-  });
+const RequestSchema = GenerateSimulationJobBaseSchema.omit({ subjectId: true }).superRefine(
+  refineSimulationTopics,
+);
 
 export async function GET(_request: Request, { params }: RouteParams) {
   const { slug } = await params;

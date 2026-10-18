@@ -202,3 +202,19 @@ Non ancora:
 
 Test: unit `residuiE`, `attemptPhotos`, `attemptPhotoFileRoute`, `gradeAttemptPhotos`, `scoring`; e2e
 `materia-residui-e.mobile.spec.ts` e `materia-residui-e-desktop.spec.ts`.
+
+## Aggiornamento — residui mobile, slice D (2026-10-18)
+
+- **Drill su più argomenti**: `POST /api/subjects/[slug]/simulations` accetta `topicIds` (1..5) solo con
+  `drill_argomento`, accanto a `topicId` singolo (ancora valido). 400 se la lista è vuota, supera 5 o contiene
+  argomenti di un'altra materia. Gli esercizi sono distribuiti round-robin fra gli argomenti; titolo
+  "Drill — A, B (n esercizi)". Prompt `simulation/v3`, unione degli argomenti in
+  [`generateSimulation.ts`](../../apps/worker/src/processors/exam/generateSimulation.ts).
+- Dal mobile il drill si avvia dallo sheet Azioni della materia (vedi [F2](F2-materie.md), slice D).
+
+Non ancora:
+
+- i documenti selezionati non entrano nel drill; è scope di soli argomenti;
+- nessuna simulazione d'esame completa avviabile dallo sheet Azioni.
+
+Test: unit `examPrep`, `exam` (worker), `fakeExam`; e2e `materia-residui-d.mobile.spec.ts`.

@@ -19,6 +19,7 @@ import type {
   SchemaTranscriptionPromptInput,
   SessionBriefingPromptInput,
   SessionChatPromptInput,
+  SubjectAskPromptInput,
   SimulationPromptInput,
   SortFlashcardsPromptInput,
   SummaryPromptInput,
@@ -64,6 +65,7 @@ import {
   renderSchemaTranscriptionUserPrompt,
   renderSchemaUserPrompt,
   renderSessionChatUserPrompt,
+  renderSubjectAskUserPrompt,
   renderSessionBriefingUserPrompt,
   renderSimulationUserPrompt,
   renderSortFlashcardsUserPrompt,
@@ -373,7 +375,7 @@ export class ClaudeCliProvider implements AiProvider {
     input: SimulationPromptInput,
     model: string,
   ): Promise<GeneratedWithMeta<SimulationOutput>> {
-    const { text: system, promptVersion } = loadPrompt('simulation', 2);
+    const { text: system, promptVersion } = loadPrompt('simulation', 3);
     const { data, usage } = await this.callWithSchema(
       system,
       renderSimulationUserPrompt(input),
@@ -432,6 +434,21 @@ export class ClaudeCliProvider implements AiProvider {
    */
   async *chatStream(input: SessionChatPromptInput, model: string): AsyncIterable<ChatDelta> {
     const { text: system, promptVersion } = loadPrompt('session_chat', 1);
+    yield* this.streamText(system, promptVersion, renderSessionChatUserPrompt(input), model);
+  }
+
+  /** Streams the one-off "Chiedi" answer on a subject (prompt `subject_ask`), same CLI plumbing as the chat. */
+  async *askStream(input: SubjectAskPromptInput, model: string): AsyncIterable<ChatDelta> {
+    const { text: system, promptVersion } = loadPrompt('subject_ask', 1);
+    yield* this.streamText(system, promptVersion, renderSubjectAskUserPrompt(input), model);
+  }
+
+  private async *streamText(
+    system: string,
+    promptVersion: string,
+    userPrompt: string,
+    model: string,
+  ): AsyncIterable<ChatDelta> {
     const args = [
       '--print',
       '--output-format',
@@ -451,7 +468,7 @@ export class ClaudeCliProvider implements AiProvider {
     let sawPartial = false;
     let assistantText = '';
     let finalText: string | null = null;
-    for await (const raw of this.runStream(args, renderSessionChatUserPrompt(input))) {
+    for await (const raw of this.runStream(args, userPrompt)) {
       let line: ClaudeCliStreamLine;
       try {
         line = JSON.parse(raw) as ClaudeCliStreamLine;

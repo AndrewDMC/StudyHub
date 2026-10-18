@@ -10,15 +10,18 @@ import {
   artifacts,
   attemptItemResults,
   chunks,
+  documentTopics,
   documents,
   examProfiles,
   simulationAttempts,
   simulationItems,
+  simulations,
   subjects,
   topics,
 } from '@studyhub/db';
 import { createManifest, scaffoldSubject } from '@studyhub/core';
 import { FakeProvider, type AiProvider } from '@studyhub/ai';
+import { GenerateSimulationJobInputSchema } from '@studyhub/contracts';
 import { processExtractExamProfile } from '../src/processors/exam/extractExamProfile.js';
 import { processGenerateSimulation } from '../src/processors/exam/generateSimulation.js';
 import { processGradeAttempt, reconcileWithRubric } from '../src/processors/exam/gradeAttempt.js';
@@ -423,6 +426,202 @@ describe('F5 worker pipeline', () => {
             subjectId,
             mode: 'drill_argomento',
             topicId: randomUUID(),
+            difficulty: 1,
+            force: false,
+          },
+          new FakeProvider(),
+        ),
+      ).rejects.toThrow(/Argomento non trovato/);
+    });
+
+    it('treats a lone topicId as topicIds [topicId]: same simulation, topic stored on it', async () => {
+      const viaId = await processGenerateSimulation(
+        db,
+        dataRoot,
+        { subjectId, mode: 'drill_argomento', topicId, itemCount: 2, difficulty: 1, force: false },
+        new FakeProvider(),
+      );
+      const viaIds = await processGenerateSimulation(
+        db,
+        dataRoot,
+        {
+          subjectId,
+          mode: 'drill_argomento',
+          topicIds: [topicId],
+          itemCount: 2,
+          difficulty: 1,
+          force: false,
+        },
+        new FakeProvider(),
+      );
+      for (const drill of [viaId, viaIds]) {
+        const [sim] = await db
+          .select()
+          .from(simulations)
+          .where(eq(simulations.artifactId, drill.artifactId));
+        expect(sim?.topicId).toBe(topicId);
+        const [artifact] = await db
+          .select()
+          .from(artifacts)
+          .where(eq(artifacts.id, drill.artifactId));
+        expect(artifact?.title).toBe('Drill — Carnot (2 esercizi)');
+      }
+    });
+
+    it('spreads a drill over several topics: every item tagged with one of them, none on the simulation', async () => {
+      const entropiaId = randomUUID();
+      await db
+        .insert(topics)
+        .values({ id: entropiaId, subjectId, name: 'Entropia', slug: 'entropia' });
+
+      let seen: { topicName?: string; topicNames?: string[] } = {};
+      const spy = providerWith({
+        async generateSimulation(input, model) {
+          seen = { topicName: input.topicName, topicNames: input.topicNames };
+          return new FakeProvider().generateSimulation(input, model);
+        },
+      });
+      const drill = await processGenerateSimulation(
+        db,
+        dataRoot,
+        {
+          subjectId,
+          mode: 'drill_argomento',
+          topicIds: [topicId, entropiaId],
+          itemCount: 4,
+          difficulty: 1,
+          force: false,
+        },
+        spy,
+      );
+      expect(seen).toEqual({ topicName: undefined, topicNames: ['Carnot', 'Entropia'] });
+
+      const items = await db
+        .select()
+        .from(simulationItems)
+        .where(eq(simulationItems.simulationId, drill.artifactId));
+      expect(items).toHaveLength(4);
+      expect(new Set(items.map((i) => i.topicId))).toEqual(new Set([topicId, entropiaId]));
+      expect(
+        items.filter((i) => i.topicId === topicId).every((i) => /carnot/i.test(i.sourceRef.quote)),
+      ).toBe(true);
+      expect(
+        items
+          .filter((i) => i.topicId === entropiaId)
+          .every((i) => /entropia/i.test(i.sourceRef.quote)),
+      ).toBe(true);
+
+      const [sim] = await db
+        .select()
+        .from(simulations)
+        .where(eq(simulations.artifactId, drill.artifactId));
+      expect(sim?.mode).toBe('drill_argomento');
+      expect(sim?.topicId).toBeNull();
+      const [artifact] = await db
+        .select()
+        .from(artifacts)
+        .where(eq(artifacts.id, drill.artifactId));
+      expect(artifact?.title).toBe('Drill — Carnot, Entropia (4 esercizi)');
+      const file = JSON.parse(await readFile(artifact!.path, 'utf-8'));
+      expect(file.topics).toEqual(['Carnot', 'Entropia']);
+    });
+
+    it('draws a multi-topic drill from the study documents tagged with those topics, when there are any', async () => {
+      const entropiaId = randomUUID();
+      await db
+        .insert(topics)
+        .values({ id: entropiaId, subjectId, name: 'Entropia', slug: 'entropia' });
+      const taggedDocId = await addDoc(
+        'appunti',
+        "L'entropia cresce in ogni trasformazione irreversibile di un sistema isolato.",
+      );
+      await addDoc('appunti', 'Questo documento non è collegato a nessun argomento della materia.');
+      await db.insert(documentTopics).values({ documentId: taggedDocId, topicId: entropiaId });
+
+      const drill = await processGenerateSimulation(
+        db,
+        dataRoot,
+        {
+          subjectId,
+          mode: 'drill_argomento',
+          topicIds: [topicId, entropiaId],
+          itemCount: 2,
+          difficulty: 1,
+          force: false,
+        },
+        new FakeProvider(),
+      );
+      const items = await db
+        .select()
+        .from(simulationItems)
+        .where(eq(simulationItems.simulationId, drill.artifactId));
+      expect(items.every((i) => i.sourceRef.docId === taggedDocId)).toBe(true);
+    });
+
+    it('ignores topicIds in esame_completo (defence in depth: the job schema already rejects several)', async () => {
+      const entropiaId = randomUUID();
+      await db
+        .insert(topics)
+        .values({ id: entropiaId, subjectId, name: 'Entropia', slug: 'entropia' });
+      await extractProfile();
+
+      // The job schema refuses this payload; the processor is called directly to test its own guard.
+      expect(
+        GenerateSimulationJobInputSchema.safeParse({
+          subjectId,
+          mode: 'esame_completo',
+          topicIds: [topicId, entropiaId],
+        }).success,
+      ).toBe(false);
+
+      let seen: { topicName?: string; topicNames?: string[] } = {};
+      const spy = providerWith({
+        async generateSimulation(input, model) {
+          seen = { topicName: input.topicName, topicNames: input.topicNames };
+          return new FakeProvider().generateSimulation(input, model);
+        },
+      });
+      const exam = await processGenerateSimulation(
+        db,
+        dataRoot,
+        {
+          subjectId,
+          mode: 'esame_completo',
+          topicIds: [topicId, entropiaId],
+          difficulty: 2,
+          force: false,
+        },
+        spy,
+      );
+      expect(seen).toEqual({ topicName: undefined, topicNames: undefined });
+      const [sim] = await db
+        .select()
+        .from(simulations)
+        .where(eq(simulations.artifactId, exam.artifactId));
+      expect(sim?.topicId).toBeNull();
+      const [artifact] = await db.select().from(artifacts).where(eq(artifacts.id, exam.artifactId));
+      expect(artifact?.title).toMatch(/^Simulazione d'esame/);
+      const items = await db
+        .select()
+        .from(simulationItems)
+        .where(eq(simulationItems.simulationId, exam.artifactId));
+      // tagged by content like any full exam, not forced onto one of the passed topics
+      expect(items.find((i) => /carnot/i.test(i.sourceRef.quote))?.topicId).toBe(topicId);
+      // no item is tagged with a topic its content does not match (Entropia is not forced on the rest)
+      expect(
+        items.filter((i) => !/carnot/i.test(i.sourceRef.quote)).every((i) => i.topicId !== topicId),
+      ).toBe(true);
+    });
+
+    it('rejects a multi-topic drill when one of the topics is not in the subject', async () => {
+      await expect(
+        processGenerateSimulation(
+          db,
+          dataRoot,
+          {
+            subjectId,
+            mode: 'drill_argomento',
+            topicIds: [topicId, randomUUID()],
             difficulty: 1,
             force: false,
           },

@@ -10,6 +10,7 @@ import type {
   SessionChatPromptInput,
   SimulationPromptInput,
   SortFlashcardsPromptInput,
+  SubjectAskPromptInput,
   SummaryPromptInput,
 } from './provider.js';
 
@@ -54,14 +55,21 @@ export function renderSchemaTranscriptionUserPrompt(input: SchemaTranscriptionPr
 }
 
 export function renderSimulationUserPrompt(input: SimulationPromptInput): string {
+  // A drill over several topics spreads the items across them and tags each with one of the names.
+  const drillTopics = input.mode === 'drill_argomento' ? (input.topicNames ?? []) : [];
+  const multiTopicDrill = drillTopics.length > 1;
   const modeLine =
     input.mode === 'esame_completo'
       ? `Modalità: esame completo, ${input.itemCount} esercizi, imitando il profilo.`
-      : `Modalità: drill sull'argomento "${input.topicName ?? 'non specificato'}", ${input.itemCount} esercizi di difficoltà crescente.`;
+      : multiTopicDrill
+        ? `Modalità: drill sugli argomenti ${drillTopics.map((n) => `"${n}"`).join(', ')}, ${input.itemCount} esercizi di difficoltà crescente, distribuiti su tutti gli argomenti indicati.`
+        : `Modalità: drill sull'argomento "${input.topicName ?? 'non specificato'}", ${input.itemCount} esercizi di difficoltà crescente.`;
   const topicsLine =
     input.mode === 'esame_completo'
       ? `Argomenti della materia (assegna a ogni esercizio il nome esatto di uno di questi, o null se nessuno calza): ${JSON.stringify(input.topics.map((t) => t.name))}`
-      : null;
+      : multiTopicDrill
+        ? `Argomenti della materia (assegna a ogni esercizio il nome esatto di uno di questi, o null se nessuno calza): ${JSON.stringify(drillTopics)}`
+        : null;
   return [
     `Materia: ${input.subjectName}`,
     modeLine,
@@ -209,6 +217,30 @@ export function renderSessionChatUserPrompt(input: SessionChatPromptInput): stri
   }
   parts.push('', `<question>\n${escapeClosingTag(input.question, 'question')}\n</question>`);
   return parts.join('\n');
+}
+
+/**
+ * Everything the "Chiedi" model sees besides its system prompt: numbered sources and the question, each in
+ * its own escaped tag (both are document/student-controlled).
+ */
+export function renderSubjectAskUserPrompt(input: SubjectAskPromptInput): string {
+  const attr = (value: string) => value.replace(/"/g, "'");
+  const sources =
+    input.sources.length > 0
+      ? input.sources
+          .map(
+            (s) =>
+              `<source n="${s.ref}" documento="${attr(s.documentName)}" pagina="${s.page}">\n${escapeClosingTag(s.text, 'source')}\n</source>`,
+          )
+          .join('\n\n')
+      : '(Nessuna fonte trovata nei documenti selezionati per questa domanda.)';
+  return [
+    `Materia: ${input.subjectName}`,
+    '',
+    sources,
+    '',
+    `<question>\n${escapeClosingTag(input.question, 'question')}\n</question>`,
+  ].join('\n');
 }
 
 /** Material, counts and (when known) the exam style for the study-session briefing. */

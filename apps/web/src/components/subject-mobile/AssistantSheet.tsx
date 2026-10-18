@@ -2,21 +2,39 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Archive, ArchiveRestore, Check, Layers, ListTree, Pencil, Trash2, X } from 'lucide-react';
+import Link from 'next/link';
+import {
+  Archive,
+  ArchiveRestore,
+  Check,
+  ClipboardCheck,
+  Layers,
+  ListTree,
+  Pencil,
+  Trash2,
+  X,
+} from 'lucide-react';
 import type { DocumentDto, SubjectDto, TopicDto } from '@studyhub/contracts';
 import { useSelection } from '@/lib/selection';
 import { MODEL_OPTIONS } from '../ModelPicker';
 import { enqueue, fetchEstimate, formatCost, scopeKey, type ScopeInput } from '../GenerationPanel';
+import { postJson } from '../ExamPrepPanel';
 import { useSubjectActions } from '../SubjectActions';
+import type { AskScope } from '@/lib/askStream';
+import { AskSubject } from './AskSubject';
 import { BottomSheet } from './BottomSheet';
 import { SectionError, SkeletonRows } from './SectionState';
 
-type GenKind = 'flashcards' | 'summary' | 'schema';
+type GenKind = 'flashcards' | 'summary' | 'schema' | 'exercises';
+
+/** Same cap as the drill contract (SIMULATION_DRILL_MAX_TOPICS): the client cannot import runtime values from contracts. */
+const EXERCISES_MAX_TOPICS = 5;
 
 const GEN_TILES: { kind: GenKind; label: string; verb: string; Icon: typeof Layers }[] = [
   { kind: 'flashcards', label: 'Flashcard', verb: 'flashcard', Icon: Layers },
   { kind: 'summary', label: 'Riassunto', verb: 'riassunto', Icon: Pencil },
   { kind: 'schema', label: 'Schema', verb: 'schema', Icon: ListTree },
+  { kind: 'exercises', label: 'Esercizi', verb: 'esercizi', Icon: ClipboardCheck },
 ];
 
 const rowClass =
@@ -82,14 +100,47 @@ export function AssistantSheet({
   });
 
   const generate = useMutation({
-    mutationFn: () => enqueue(slug, kind, scope, model),
+    mutationFn: () =>
+      kind === 'exercises'
+        ? postJson(`/api/subjects/${slug}/simulations`, {
+            mode: 'drill_argomento',
+            topicIds: [...topicIds],
+            model,
+          })
+        : enqueue(slug, kind, scope, model),
     onSuccess: () => {
-      setTimeout(() => queryClient.invalidateQueries({ queryKey: ['artifacts', slug] }), 3000);
+      if (kind === 'exercises') {
+        queryClient.invalidateQueries({ queryKey: ['simulations', slug] });
+        setTimeout(() => queryClient.invalidateQueries({ queryKey: ['simulations', slug] }), 3000);
+      } else {
+        setTimeout(() => queryClient.invalidateQueries({ queryKey: ['artifacts', slug] }), 3000);
+      }
     },
   });
 
+  // Exercises are a topic drill: documents are ignored, 1..5 topics are needed.
+  const isExercises = kind === 'exercises';
+  const exercisesHint = !isExercises
+    ? null
+    : topicIds.size === 0
+      ? 'Scegli almeno un argomento'
+      : topicIds.size > EXERCISES_MAX_TOPICS
+        ? `Massimo ${EXERCISES_MAX_TOPICS} argomenti`
+        : null;
+  const askScope: AskScope =
+    explicitDocIds.length > 0
+      ? { docIds: explicitDocIds }
+      : useTopicScope
+        ? { topicIds: [...topicIds] }
+        : {};
+
+  const selectKind = (next: GenKind) => {
+    setKind(next);
+    generate.reset();
+  };
+
   const activeTile = GEN_TILES.find((t) => t.kind === kind) ?? GEN_TILES[0]!;
-  const costEntry = estimate.data?.perKind[kind];
+  const costEntry = estimate.data?.perKind[isExercises ? 'simulation' : kind];
 
   const onTileKeyDown = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
     const delta =
@@ -101,7 +152,7 @@ export function AssistantSheet({
     if (delta === 0) return;
     e.preventDefault();
     const next = (index + delta + GEN_TILES.length) % GEN_TILES.length;
-    setKind(GEN_TILES[next]!.kind);
+    selectKind(GEN_TILES[next]!.kind);
     tileRefs.current[next]?.focus();
   };
 
@@ -215,7 +266,7 @@ export function AssistantSheet({
                   + Scegli
                 </button>
               </div>
-              {explicitDocIds.length > 0 && topicIds.size > 0 && (
+              {!isExercises && explicitDocIds.length > 0 && topicIds.size > 0 && (
                 <p className="mt-1 text-xs text-fg-muted">
                   Hai scelto dei documenti: gli argomenti selezionati non vengono usati.
                 </p>
@@ -224,7 +275,7 @@ export function AssistantSheet({
               <div
                 role="radiogroup"
                 aria-label="Cosa generare"
-                className="mt-4 grid grid-cols-3 gap-2"
+                className="mt-4 grid grid-cols-2 gap-2"
               >
                 {GEN_TILES.map((tile, i) => {
                   const selected = tile.kind === kind;
@@ -238,16 +289,17 @@ export function AssistantSheet({
                       role="radio"
                       aria-checked={selected}
                       tabIndex={selected ? 0 : -1}
-                      onClick={() => setKind(tile.kind)}
+                      data-testid={`gen-tile-${tile.kind}`}
+                      onClick={() => selectKind(tile.kind)}
                       onKeyDown={(e) => onTileKeyDown(e, i)}
-                      className={`relative flex min-h-[72px] flex-col items-center justify-center gap-1 rounded-[var(--radius-card)] border text-[13px] ${
+                      className={`relative flex min-h-[72px] flex-col items-start justify-center gap-1.5 rounded-[var(--radius-card)] border p-3 text-left text-sm ${
                         selected
                           ? 'border-accent bg-accent-subtle text-fg-primary'
                           : 'border-border bg-bg-raised text-fg-secondary'
                       }`}
                     >
                       <tile.Icon
-                        className={`h-5 w-5 ${selected ? 'text-accent' : ''}`}
+                        className={`h-[18px] w-[18px] ${selected ? 'text-accent' : ''}`}
                         aria-hidden="true"
                       />
                       {tile.label}
@@ -262,18 +314,40 @@ export function AssistantSheet({
                 })}
               </div>
 
-              <p className="mt-3 text-[13px] text-fg-secondary">
-                {scopeEmpty
-                  ? 'Nessun documento con testo estratto. Carica un PDF e attendi lo stato "Pronto".'
-                  : estimate.isLoading
-                    ? 'Stima in corso…'
-                    : estimate.isError || !costEntry
-                      ? 'Stima costo non disponibile.'
-                      : `Costo stimato: ${formatCost(costEntry.costEur)}`}
-              </p>
+              {isExercises ? (
+                <div className="mt-3 text-[13px] text-fg-secondary">
+                  {exercisesHint ? (
+                    <p id="exercises-hint" data-testid="exercises-hint">
+                      {exercisesHint}
+                    </p>
+                  ) : (
+                    <p>
+                      Esercizi su {topicIds.size} {topicIds.size === 1 ? 'argomento' : 'argomenti'}
+                      {costEntry ? ` · Costo stimato: ${formatCost(costEntry.costEur)}` : ''}
+                    </p>
+                  )}
+                  {explicitDocIds.length > 0 && (
+                    <p className="mt-1 text-xs text-fg-muted">
+                      Gli esercizi usano gli argomenti, non i documenti.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="mt-3 text-[13px] text-fg-secondary">
+                  {scopeEmpty
+                    ? 'Nessun documento con testo estratto. Carica un PDF e attendi lo stato "Pronto".'
+                    : estimate.isLoading
+                      ? 'Stima in corso…'
+                      : estimate.isError || !costEntry
+                        ? 'Stima costo non disponibile.'
+                        : `Costo stimato: ${formatCost(costEntry.costEur)}`}
+                </p>
+              )}
               <button
                 type="button"
-                disabled={scopeEmpty || generate.isPending}
+                data-testid="gen-submit"
+                disabled={(isExercises ? exercisesHint !== null : scopeEmpty) || generate.isPending}
+                aria-describedby={exercisesHint ? 'exercises-hint' : undefined}
                 onClick={() => generate.mutate()}
                 className="mt-2 min-h-11 w-full rounded-[var(--radius-control)] bg-accent text-sm font-semibold text-bg-base disabled:opacity-50"
               >
@@ -284,11 +358,34 @@ export function AssistantSheet({
                   {(generate.error as Error).message}
                 </p>
               )}
-              {generate.isSuccess && (
+              {generate.isSuccess && isExercises && (
+                <div
+                  role="status"
+                  data-testid="exercises-started"
+                  className="mt-2 text-[13px] text-ok"
+                >
+                  Esercizi in preparazione.{' '}
+                  <Link
+                    href={`/materie/${slug}?tab=simulazioni`}
+                    onClick={() => onOpenChange(false)}
+                    className="inline-flex min-h-11 items-center text-accent underline"
+                  >
+                    Vai a Simulazioni
+                  </Link>
+                </div>
+              )}
+              {generate.isSuccess && !isExercises && (
                 <p role="status" className="mt-2 text-[13px] text-ok">
                   Job avviato — l&apos;elenco si aggiorna a breve.
                 </p>
               )}
+              <AskSubject
+                open={open}
+                slug={slug}
+                scope={askScope}
+                scopeEmpty={scopeEmpty}
+                onOpenSource={() => onOpenChange(false)}
+              />
             </>
           )}
 

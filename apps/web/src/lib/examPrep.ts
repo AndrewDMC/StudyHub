@@ -28,6 +28,7 @@ import {
   sniffAttemptPhotoMime,
 } from '@studyhub/core';
 import {
+  resolveSimulationTopicIds,
   type AttemptAnswerPhotoDto,
   type AttemptDto,
   type AttemptItemResultDto,
@@ -170,8 +171,27 @@ export async function enqueueSimulation(
   input: Omit<GenerateSimulationJobInput, 'subjectId'>,
 ): Promise<{ jobId: string }> {
   const subject = await requireSubject(db, subjectSlug);
+
+  // The job always carries `topicIds` (a list); the legacy single `topicId` is folded into it here.
+  const rest: Omit<typeof input, 'topicId'> & { topicId?: string | undefined } = { ...input };
+  delete rest.topicId;
+  const topicIds = resolveSimulationTopicIds(input);
+  if (topicIds.length > 0) {
+    const found: { id: string }[] = await db
+      .select({ id: topics.id })
+      .from(topics)
+      .where(and(eq(topics.subjectId, subject.id), inArray(topics.id, topicIds)));
+    if (found.length !== topicIds.length) {
+      throw new InvalidRequestError('Argomenti non appartenenti a questa materia');
+    }
+  }
+
   const jobId = randomUUID();
-  await queue.add('generate_simulation', { ...input, subjectId: subject.id }, { jobId });
+  await queue.add(
+    'generate_simulation',
+    { ...rest, ...(topicIds.length > 0 ? { topicIds } : {}), subjectId: subject.id },
+    { jobId },
+  );
   return { jobId };
 }
 
