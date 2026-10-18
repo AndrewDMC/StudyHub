@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { z, ZodTypeAny } from 'zod';
-import { formatError, SubjectNotFoundError } from './errors';
+import { BudgetExceededError, formatError, SubjectNotFoundError } from './errors';
 import { AttemptPhotoError, ConflictError, InvalidRequestError, NotFoundError } from './examPrep';
 
 export function errorResponse(err: unknown): NextResponse {
@@ -8,6 +8,12 @@ export function errorResponse(err: unknown): NextResponse {
     return NextResponse.json(
       { error: { code: 'subject_not_found', message: err.message } },
       { status: 404 },
+    );
+  }
+  if (err instanceof BudgetExceededError) {
+    return NextResponse.json(
+      { error: { code: 'budget_exceeded', message: err.message } },
+      { status: 429 },
     );
   }
   if (err instanceof NotFoundError) {

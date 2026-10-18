@@ -202,6 +202,47 @@ describe('fakeGenerateSimulation', () => {
     expect(output.items.every((i) => /carnot/i.test(i.sourceRef.quote))).toBe(true);
   });
 
+  it('spreads a multi-topic drill across its topics, each item tagged with one of them', () => {
+    const input = {
+      subjectName: 'Fisica 1',
+      chunks: STUDY_MATERIAL,
+      profile: profileFixture(),
+      mode: 'drill_argomento' as const,
+      itemCount: 4,
+      difficulty: 1 as const,
+      topicNames: ['Carnot', 'Entropia'],
+      topics: [],
+    };
+    const output = fakeGenerateSimulation(input);
+    expect(SimulationOutputSchema.safeParse(output).success).toBe(true);
+    expect(output.items.map((i) => i.topicName)).toEqual([
+      'Carnot',
+      'Entropia',
+      'Carnot',
+      'Entropia',
+    ]);
+    for (const item of output.items) {
+      expect(item.sourceRef.quote).toMatch(item.topicName === 'Carnot' ? /carnot/i : /entropia/i);
+    }
+    // deterministic
+    expect(fakeGenerateSimulation(input)).toEqual(output);
+  });
+
+  it('a one-name topicNames list behaves like the legacy single topicName', () => {
+    const base = {
+      subjectName: 'Fisica 1',
+      chunks: STUDY_MATERIAL,
+      profile: profileFixture(),
+      mode: 'drill_argomento' as const,
+      itemCount: 2,
+      difficulty: 1 as const,
+      topics: [],
+    };
+    const legacy = fakeGenerateSimulation({ ...base, topicName: 'Carnot' });
+    const single = fakeGenerateSimulation({ ...base, topicName: 'Carnot', topicNames: ['Carnot'] });
+    expect(single).toEqual(legacy);
+  });
+
   it('tags an esame_completo item with the best-matching topic name, or null', () => {
     const output = fakeGenerateSimulation({
       subjectName: 'Fisica 1',

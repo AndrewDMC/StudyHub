@@ -20,10 +20,11 @@ export const DISTILL_HANDWRITING_PROFILE_PROMPT_VERSION = loadPrompt(
   1,
 ).promptVersion;
 export const EXAM_PROFILE_PROMPT_VERSION = loadPrompt('exam_profile', 2).promptVersion;
-export const SIMULATION_PROMPT_VERSION = loadPrompt('simulation', 2).promptVersion;
+export const SIMULATION_PROMPT_VERSION = loadPrompt('simulation', 3).promptVersion;
 export const GRADING_PROMPT_VERSION = loadPrompt('grading', 1).promptVersion;
 export const ESTIMATE_TOPICS_PROMPT_VERSION = loadPrompt('estimate_topics', 2).promptVersion;
 export const EXTRACT_TOPICS_PROMPT_VERSION = loadPrompt('extract_topics', 2).promptVersion;
 export const SESSION_BRIEFING_PROMPT_VERSION = loadPrompt('session_briefing', 1).promptVersion;
 export const SESSION_CHAT_PROMPT_VERSION = loadPrompt('session_chat', 1).promptVersion;
+export const SUBJECT_ASK_PROMPT_VERSION = loadPrompt('subject_ask', 1).promptVersion;
 export const SORT_FLASHCARDS_PROMPT_VERSION = loadPrompt('sort_flashcards', 1).promptVersion;

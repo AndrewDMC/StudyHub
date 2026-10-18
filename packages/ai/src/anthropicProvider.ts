@@ -19,6 +19,7 @@ import type {
   SchemaTranscriptionPromptInput,
   SessionBriefingPromptInput,
   SessionChatPromptInput,
+  SubjectAskPromptInput,
   SimulationPromptInput,
   SortFlashcardsPromptInput,
   SummaryPromptInput,
@@ -63,6 +64,7 @@ import {
   renderSchemaTranscriptionUserPrompt,
   renderSchemaUserPrompt,
   renderSessionChatUserPrompt,
+  renderSubjectAskUserPrompt,
   renderSessionBriefingUserPrompt,
   renderSimulationUserPrompt,
   renderSortFlashcardsUserPrompt,
@@ -283,7 +285,7 @@ export class AnthropicProvider implements AiProvider {
     input: SimulationPromptInput,
     model: string,
   ): Promise<GeneratedWithMeta<SimulationOutput>> {
-    const { text: system, promptVersion } = loadPrompt('simulation', 2);
+    const { text: system, promptVersion } = loadPrompt('simulation', 3);
     const { data, usage } = await this.callWithTool(
       'emit_simulation',
       system,
@@ -349,12 +351,27 @@ export class AnthropicProvider implements AiProvider {
    */
   async *chatStream(input: SessionChatPromptInput, model: string): AsyncIterable<ChatDelta> {
     const { text: system, promptVersion } = loadPrompt('session_chat', 1);
+    yield* this.streamText(system, promptVersion, renderSessionChatUserPrompt(input), model);
+  }
+
+  /** Streams the one-off "Chiedi" answer on a subject (prompt `subject_ask`), same wire format as the chat. */
+  async *askStream(input: SubjectAskPromptInput, model: string): AsyncIterable<ChatDelta> {
+    const { text: system, promptVersion } = loadPrompt('subject_ask', 1);
+    yield* this.streamText(system, promptVersion, renderSubjectAskUserPrompt(input), model);
+  }
+
+  private async *streamText(
+    system: string,
+    promptVersion: string,
+    userPrompt: string,
+    model: string,
+  ): AsyncIterable<ChatDelta> {
     const stream = (await this.client.messages.create({
       model,
       max_tokens: 2048,
       system,
       stream: true,
-      messages: [{ role: 'user', content: renderSessionChatUserPrompt(input) }],
+      messages: [{ role: 'user', content: userPrompt }],
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any)) as unknown as AsyncIterable<{
       type: string;

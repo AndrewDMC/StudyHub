@@ -159,7 +159,7 @@ describe('AnthropicProvider — F5 capabilities against a mocked client', () => 
     );
 
     expect(result.data.items).toHaveLength(1);
-    expect(result.promptVersion).toBe('simulation/v2');
+    expect(result.promptVersion).toBe('simulation/v3');
   });
 
   it('extractExamProfile escapes a </document> inside exam text', async () => {

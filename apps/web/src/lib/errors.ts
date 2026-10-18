@@ -12,6 +12,17 @@ export class SubjectNotFoundError extends Error {
   }
 }
 
+/** The daily AI budget (`settings['budget.dailyCapEur']`) is used up: HTTP 429, nothing was sent to the model. */
+export class BudgetExceededError extends Error {
+  constructor(
+    readonly capEur: number,
+    readonly spentEur: number,
+  ) {
+    super('Budget giornaliero raggiunto. Riprova domani.');
+    this.name = 'BudgetExceededError';
+  }
+}
+
 export function formatError(err: unknown): string {
   if (err instanceof AggregateError && err.errors.length > 0) {
     const inner = err.errors.map((e) => (e instanceof Error ? e.message : String(e))).join('; ');

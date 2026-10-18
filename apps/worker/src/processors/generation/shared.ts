@@ -149,6 +149,8 @@ const AI_JOB_TYPES = [
   'extract_topics',
   'prepare_session',
   'sort_flashcards',
+  'session_chat',
+  'subject_ask',
 ] as const;
 
 /**

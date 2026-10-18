@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq, inArray, ne } from 'drizzle-orm';
 import {
   artifactSources,
   artifacts,
+  documentTopics,
   documents,
   examProfiles,
   simulationItems,
@@ -23,7 +24,7 @@ import {
   type SimulationItem,
   resolveModel,
 } from '@studyhub/ai';
-import type { GenerateSimulationJobInput } from '@studyhub/contracts';
+import { resolveSimulationTopicIds, type GenerateSimulationJobInput } from '@studyhub/contracts';
 import { checkBudget, resolveScopeChunks } from '../generation/shared.js';
 
 const MODEL_ROUTING_SIMULATION = 'claude-opus-5-5'; // docs/03 §4: "opus per ragionare"
@@ -98,15 +99,22 @@ export async function processGenerateSimulation(
     ? ExamProfileSchema.parse(profileRow.profile)
     : DRILL_FALLBACK_PROFILE;
 
-  let topicName: string | undefined;
-  if (input.topicId) {
+  // A drill covers 1..5 topics: `topicIds`, or the legacy single `topicId` read as `[topicId]`.
+  // Ignored in `esame_completo`, whose items are tagged against all the subject's topics instead.
+  const drillTopicIds = input.mode === 'drill_argomento' ? resolveSimulationTopicIds(input) : [];
+  const drillTopics: { id: string; name: string }[] = [];
+  for (const id of drillTopicIds) {
     const [topic] = await db
       .select()
       .from(topics)
-      .where(and(eq(topics.id, input.topicId), eq(topics.subjectId, input.subjectId)));
-    if (!topic) throw new Error(`Argomento non trovato in questa materia: ${input.topicId}`);
-    topicName = topic.name;
+      .where(and(eq(topics.id, id), eq(topics.subjectId, input.subjectId)));
+    if (!topic) throw new Error(`Argomento non trovato in questa materia: ${id}`);
+    drillTopics.push({ id: topic.id, name: topic.name });
   }
+  const multiTopicDrill = drillTopics.length > 1;
+  // Exactly one topic: the drill is "on" that topic (name, simulation.topicId, every item tagged with it).
+  const topicName: string | undefined = drillTopics.length === 1 ? drillTopics[0]!.name : undefined;
+  const drillTopicNames = drillTopics.map((t) => t.name);
 
   // Per-item topic tagging in `esame_completo` mode (docs/fasi/F5-esami-simulazioni.md
   // "Non implementato": prima solo i drill avevano un topicId, fisso e unico).
@@ -115,6 +123,8 @@ export async function processGenerateSimulation(
     .from(topics)
     .where(eq(topics.subjectId, input.subjectId));
   const topicIdByName = new Map(subjectTopics.map((t) => [t.name.toLowerCase(), t.id]));
+
+  const drillTopicIdByName = new Map(drillTopics.map((t) => [t.name.toLowerCase(), t.id]));
 
   let docIds = input.docIds;
   if (!docIds || docIds.length === 0) {
@@ -130,6 +140,21 @@ export async function processGenerateSimulation(
         ),
       );
     docIds = studyDocs.map((d) => d.id);
+
+    // Several topics: prefer the study material tagged with any of them (union); a single-topic drill
+    // keeps drawing from all the study material, and so does a multi-topic one with nothing tagged.
+    if (multiTopicDrill && docIds.length > 0) {
+      const linked: { documentId: string }[] = await db
+        .select({ documentId: documentTopics.documentId })
+        .from(documentTopics)
+        .where(
+          and(
+            inArray(documentTopics.topicId, drillTopicIds),
+            inArray(documentTopics.documentId, docIds),
+          ),
+        );
+      if (linked.length > 0) docIds = [...new Set(linked.map((l) => l.documentId))];
+    }
   }
   if (docIds.length === 0) {
     throw new Error(
@@ -150,6 +175,7 @@ export async function processGenerateSimulation(
       itemCount,
       difficulty: input.difficulty,
       topicName,
+      topicNames: multiTopicDrill ? drillTopicNames : undefined,
       topics: subjectTopics,
     },
     model,
@@ -177,7 +203,7 @@ export async function processGenerateSimulation(
   const title =
     input.mode === 'esame_completo'
       ? `Simulazione d'esame — ${kept.length} esercizi`
-      : `Drill — ${topicName ?? 'argomento'} (${kept.length} esercizi)`;
+      : `Drill — ${drillTopicNames.length > 0 ? drillTopicNames.join(', ') : 'argomento'} (${kept.length} esercizi)`;
 
   const dir = resolveSubjectSubpath(subject.slug, ['artifacts', 'simulations'], dataRoot);
   await fs.mkdir(dir, { recursive: true });
@@ -194,6 +220,7 @@ export async function processGenerateSimulation(
         createdAt: new Date().toISOString(),
         mode: input.mode,
         topic: topicName ?? null,
+        ...(multiTopicDrill ? { topics: drillTopicNames } : {}),
         timeBudgetMin: result.data.timeBudgetMin,
         items: kept,
       },
@@ -216,7 +243,8 @@ export async function processGenerateSimulation(
   await db.insert(simulations).values({
     artifactId,
     mode: input.mode,
-    topicId: input.topicId ?? null,
+    // A multi-topic drill has no single topic: its items carry theirs.
+    topicId: drillTopics.length === 1 ? drillTopics[0]!.id : null,
     timeBudgetMin: result.data.timeBudgetMin,
     totalPoints,
   });
@@ -226,8 +254,11 @@ export async function processGenerateSimulation(
       simulationId: artifactId,
       ord,
       topicId:
-        input.topicId ??
-        (item.topicName ? (topicIdByName.get(item.topicName.toLowerCase()) ?? null) : null),
+        drillTopics.length === 1
+          ? drillTopics[0]!.id
+          : ((multiTopicDrill ? drillTopicIdByName : topicIdByName).get(
+              item.topicName?.toLowerCase() ?? '',
+            ) ?? null),
       prompt: item.prompt,
       kind: item.kind,
       points: item.points,

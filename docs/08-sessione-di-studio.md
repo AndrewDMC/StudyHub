@@ -423,3 +423,25 @@ migrazione 0016).
 
 - Omessi su mobile: modalità Libero / Salta e durate del
   timer, selettore del modello della chat, viewer del documento dentro la sessione, trascrizione nella chiusura.
+
+## Chiedi alla materia (residui mobile, slice D, 2026-10-18)
+
+Domanda singola dallo sheet Azioni della materia, senza sessione e senza storico. Non è la chat di sessione: stessa
+forma di risposta, ma nessuna riga in `session_messages` e nessun `study_sessions`.
+
+- **Endpoint**: `POST /api/subjects/[slug]/ask` (SSE), body `{ question 1..2000, docIds?, topicIds? }` (il client non manda
+  il modello). Eventi `data:` `{type:'delta', text}`, poi `{type:'done', answer, citations}` oppure `{type:'error', message}`.
+  Errori prima dello stream in JSON: 404, 400, 429.
+- **Scope**: `docIds` vincono; altrimenti `topicIds` via `document_topics`; altrimenti tutti i documenti della materia.
+  Retrieval con `retrieveChunks` ([`search.ts`](../apps/web/src/lib/search.ts)). Se lo scope non ha documenti o il
+  retrieval non trova fonti, risponde che le fonti non bastano senza chiamare il modello.
+- **Prompt** `subject_ask/v1` ([`packages/ai/prompts/subject_ask/`](../packages/ai/prompts/subject_ask/)), default Haiku.
+  Citazioni `SessionCitationDto` (`docId`, `documentName`, `page`), come la chat.
+- **Costi**: una riga `jobs` di tipo `subject_ask`, scritta anche se lo stream viene interrotto.
+- **Budget**: se `budget.dailyCapEur` è superato, 429 `budget_exceeded` prima della chiamata, con testo
+  "Budget giornaliero raggiunto. Riprova domani.".
+- **Client**: il parser SSE è condiviso con la chat in [`sseClient.ts`](../apps/web/src/lib/sseClient.ts); il comportamento
+  della chat non cambia. Chiudere lo sheet scarta la risposta.
+
+Non ancora: selettore del modello nello sheet; citazioni verso il documento senza pagina (il viewer non supporta
+`?page=`); cronologia delle domande.

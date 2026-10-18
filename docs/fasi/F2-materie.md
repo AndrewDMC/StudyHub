@@ -653,3 +653,27 @@ Non ancora:
 - la nuova bozza non tiene conto delle task già fatte dell'attivo: il planner non riceve l'elenco delle lezioni completate;
 - un argomento fissato può comparire anche ripianificato nella bozza;
 - shift e riduzione del carico non sono disponibili sul piano attivo.
+
+## Aggiornamento — residui mobile, slice D (2026-10-18)
+
+Chiude "Chiedi" ed "Esercizi" nello sheet Azioni, rimasti aperti dalla slice A. Piano in
+`.claude/work/materia-mobile-residui-d/` (non versionato). Dettagli in [docs/08](08-sessione-di-studio.md)
+("Chiedi alla materia") e [F5](F5-esami-simulazioni.md) ("residui mobile, slice D").
+
+- **Chiedi** ([`AskSubject.tsx`](../../apps/web/src/components/subject-mobile/AskSubject.tsx), nello sheet
+  [`AssistantSheet.tsx`](../../apps/web/src/components/subject-mobile/AssistantSheet.tsx)): domanda singola, risposta
+  in streaming, citazioni cliccabili verso il documento. Scope: documenti selezionati, poi argomenti, poi tutta la
+  materia. Nessuno storico: chiudere lo sheet scarta la risposta.
+- **Esercizi**: drill su 1–5 argomenti selezionati (documenti ignorati). La tile è disabilitata senza argomenti
+  ("Scegli almeno un argomento") o con più di 5 ("Massimo 5 argomenti"). Dopo l'avvio compare "Esercizi in
+  preparazione." con link alla tab Simulazioni.
+
+Non ancora:
+
+- Chiedi: nessun selettore del modello (risponde il default, Haiku); le citazioni portano al documento senza
+  pagina; nessuna cronologia delle domande;
+- Esercizi: i documenti selezionati non entrano nel drill.
+
+Test: unit [`subjectAsk.test.ts`](../../apps/web/test/subjectAsk.test.ts) e
+[`sseClient.test.ts`](../../apps/web/test/sseClient.test.ts); e2e
+[`materia-residui-d.mobile.spec.ts`](../../apps/web/e2e/materia-residui-d.mobile.spec.ts) (10 test).

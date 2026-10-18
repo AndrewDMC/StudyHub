@@ -17,6 +17,7 @@ import type {
 import { Button } from '@/components/ui/button';
 import { ModelPicker, MODEL_OPTIONS } from '@/components/ModelPicker';
 import { ObsidianMarkdown } from '@/components/ObsidianMarkdown';
+import { readSse } from '@/lib/sseClient';
 
 async function fetchChat(slug: string, sessionId: string): Promise<SessionChatDto> {
   const res = await fetch(`/api/subjects/${slug}/sessions/${sessionId}/messages`);
@@ -51,24 +52,7 @@ async function streamMessage(
     const body = await res.json().catch(() => null);
     throw new Error(body?.error?.message ?? 'Invio della domanda non riuscito');
   }
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffered = '';
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffered += decoder.decode(value, { stream: true });
-    let end = buffered.indexOf('\n\n');
-    while (end >= 0) {
-      const line = buffered
-        .slice(0, end)
-        .split('\n')
-        .find((l) => l.startsWith('data: '));
-      buffered = buffered.slice(end + 2);
-      if (line) onEvent(JSON.parse(line.slice(6)) as SessionChatEvent);
-      end = buffered.indexOf('\n\n');
-    }
-  }
+  await readSse<SessionChatEvent>(res, onEvent);
 }
 
 export function formatEur(value: number): string {

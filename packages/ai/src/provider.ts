@@ -135,8 +135,13 @@ export interface SimulationPromptInput {
   mode: 'esame_completo' | 'drill_argomento';
   itemCount: number;
   difficulty: 1 | 2 | 3;
-  /** Only for `drill_argomento`. */
+  /** Only for `drill_argomento`: the topic when the drill covers exactly one. */
   topicName?: string | undefined;
+  /**
+   * Only for `drill_argomento` over more than one topic (names, 2..5): the items are spread across them
+   * and each is tagged with one of these names in `topicName`. Absent for a single-topic drill.
+   */
+  topicNames?: string[] | undefined;
   /**
    * Every topic in the subject, for `esame_completo` per-item tagging — the
    * model must pick `topicName` from these names (or `null`), never invent
@@ -218,7 +223,18 @@ export interface SessionChatPromptInput {
   question: string;
 }
 
-/** What `AiProvider.chatStream` yields: text pieces, then exactly one `done` with the usage. */
+/**
+ * One-off question on a whole subject ("Chiedi" in the mobile Azioni sheet): same numbered sources as the
+ * study-session chat (the model cites `[n]`, parsed with `parseAnswerCitations`), but no history, no
+ * focus and no session topics.
+ */
+export interface SubjectAskPromptInput {
+  subjectName: string;
+  sources: SessionChatSource[];
+  question: string;
+}
+
+/** What `AiProvider.chatStream` / `askStream` yield: text pieces, then exactly one `done` with the usage. */
 export type ChatDelta =
   | { type: 'text'; text: string }
   | { type: 'done'; usage: AiUsage; model: string; promptVersion: string };
@@ -284,4 +300,6 @@ export interface AiProvider {
   ): Promise<GeneratedWithMeta<SortFlashcardsAiOutput>>;
   /** Streaming, free-text answer for the study-session chat (docs/08-sessione-di-studio.md §5.3). */
   chatStream(input: SessionChatPromptInput, model: string): AsyncIterable<ChatDelta>;
+  /** Streaming, free-text answer to a single question on the subject (prompt `subject_ask`). */
+  askStream(input: SubjectAskPromptInput, model: string): AsyncIterable<ChatDelta>;
 }

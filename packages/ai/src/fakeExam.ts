@@ -218,17 +218,26 @@ export function fakeGenerateSimulation(input: SimulationPromptInput): Simulation
     );
   }
 
-  let pool = candidates;
-  if (input.mode === 'drill_argomento' && input.topicName) {
-    const topicWords = keywords(input.topicName);
+  const onTopicPool = (topicName: string) => {
+    const topicWords = keywords(topicName);
     const onTopic = candidates.filter((c) =>
       topicWords.some((w) => keywords(c.sentence).includes(w)),
     );
-    if (onTopic.length > 0) pool = onTopic;
-  }
+    return onTopic.length > 0 ? onTopic : candidates;
+  };
   // Drill: "N esercizi crescenti" — longer sentences stand in for harder items.
+  const byLength = (pool: typeof candidates) =>
+    [...pool].sort((a, b) => a.sentence.length - b.sentence.length);
+
+  // A drill over several topics (2..5) takes the items round-robin, one pool per topic, so every
+  // topic is represented and each item carries the name of the topic it was drawn for.
+  const drillTopics = input.mode === 'drill_argomento' ? (input.topicNames ?? []) : [];
+  const perTopicPools =
+    drillTopics.length > 1 ? drillTopics.map((n) => byLength(onTopicPool(n))) : null;
+
+  let pool = candidates;
   if (input.mode === 'drill_argomento') {
-    pool = [...pool].sort((a, b) => a.sentence.length - b.sentence.length);
+    pool = byLength(input.topicName ? onTopicPool(input.topicName) : candidates);
   }
 
   const itemCount = Math.max(1, input.itemCount);
@@ -243,7 +252,10 @@ export function fakeGenerateSimulation(input: SimulationPromptInput): Simulation
   const itemPoints = splitPoints(Math.round(totalPoints * 10) / 10, itemCount);
 
   const items: SimulationItem[] = kinds.map((kind, i) => {
-    const { chunk, sentence } = pool[i % pool.length]!;
+    const topicPool = perTopicPools ? perTopicPools[i % perTopicPools.length]! : pool;
+    const { chunk, sentence } = perTopicPools
+      ? topicPool[Math.floor(i / perTopicPools.length) % topicPool.length]!
+      : topicPool[i % topicPool.length]!;
     const expected = clauses(sentence);
     const points = itemPoints[i]!;
     const criterionPoints = splitPoints(points, expected.length);
@@ -262,7 +274,9 @@ export function fakeGenerateSimulation(input: SimulationPromptInput): Simulation
       topicName:
         input.mode === 'esame_completo'
           ? matchTopicName(sentence, input.topics)
-          : (input.topicName ?? null),
+          : perTopicPools
+            ? drillTopics[i % drillTopics.length]!
+            : (input.topicName ?? null),
     };
   });
 
