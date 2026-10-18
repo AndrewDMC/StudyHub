@@ -3,6 +3,7 @@ import {
   and,
   desc,
   eq,
+  gt,
   gte,
   ilike,
   inArray,
@@ -28,6 +29,10 @@ import {
   type ReviewPrevSchedule,
 } from '@studyhub/db';
 import {
+  REVIEW_ESTIMATE_MAX_ELAPSED_MS,
+  REVIEW_ESTIMATE_SAMPLE,
+  averageMsPerCard,
+  estimateReviewMinutes,
   newCardSchedule,
   previewIntervals,
   scheduleReview,
@@ -328,47 +333,65 @@ export async function getReviewOverview(
   now: Date = new Date(),
 ): Promise<ReviewOverviewDto> {
   const live = isNull(subjects.archivedAt);
-  const [subjectRows, topicRows, dueRows, countRows, examRows, [next]] = await Promise.all([
-    db
-      .select({ id: subjects.id, slug: subjects.slug, name: subjects.name, color: subjects.color })
-      .from(subjects)
-      .where(live)
-      .orderBy(subjects.sortOrder, subjects.name),
-    db
-      .select({
-        id: topics.id,
-        subjectId: topics.subjectId,
-        name: topics.name,
-        mastery: topics.mastery,
-      })
-      .from(topics)
-      .innerJoin(subjects, eq(topics.subjectId, subjects.id))
-      .where(live)
-      .orderBy(topics.orderIndex, topics.name),
-    loadDueRows(db, {}, now),
-    db
-      .select({
-        subjectId: artifacts.subjectId,
-        topicId: flashcards.topicId,
-        count: sql<number>`count(*)::int`,
-      })
-      .from(flashcards)
-      .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
-      .innerJoin(subjects, eq(artifacts.subjectId, subjects.id))
-      .where(and(...reviewableConditions(), live))
-      .groupBy(artifacts.subjectId, flashcards.topicId),
-    db
-      .select({ subjectId: exams.subjectId, title: exams.title, date: exams.date })
-      .from(exams)
-      .where(and(eq(exams.status, 'scheduled'), gte(exams.date, startOfDay(now))))
-      .orderBy(exams.date),
-    db
-      .select({ at: sql<Date | string | null>`min(${flashcards.dueAt})` })
-      .from(flashcards)
-      .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
-      .innerJoin(subjects, eq(artifacts.subjectId, subjects.id))
-      .where(and(...reviewableConditions(), live, not(dueCardConditions(now)))),
-  ]);
+  const [subjectRows, topicRows, dueRows, countRows, examRows, [next], recentReviews] =
+    await Promise.all([
+      db
+        .select({
+          id: subjects.id,
+          slug: subjects.slug,
+          name: subjects.name,
+          color: subjects.color,
+        })
+        .from(subjects)
+        .where(live)
+        .orderBy(subjects.sortOrder, subjects.name),
+      db
+        .select({
+          id: topics.id,
+          subjectId: topics.subjectId,
+          name: topics.name,
+          mastery: topics.mastery,
+        })
+        .from(topics)
+        .innerJoin(subjects, eq(topics.subjectId, subjects.id))
+        .where(live)
+        .orderBy(topics.orderIndex, topics.name),
+      loadDueRows(db, {}, now),
+      db
+        .select({
+          subjectId: artifacts.subjectId,
+          topicId: flashcards.topicId,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(flashcards)
+        .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
+        .innerJoin(subjects, eq(artifacts.subjectId, subjects.id))
+        .where(and(...reviewableConditions(), live))
+        .groupBy(artifacts.subjectId, flashcards.topicId),
+      db
+        .select({ subjectId: exams.subjectId, title: exams.title, date: exams.date })
+        .from(exams)
+        .where(and(eq(exams.status, 'scheduled'), gte(exams.date, startOfDay(now))))
+        .orderBy(exams.date),
+      db
+        .select({ at: sql<Date | string | null>`min(${flashcards.dueAt})` })
+        .from(flashcards)
+        .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
+        .innerJoin(subjects, eq(artifacts.subjectId, subjects.id))
+        .where(and(...reviewableConditions(), live, not(dueCardConditions(now)))),
+      // Real response times, to estimate the minutes: latest reviews, outliers (forgotten tab) left out.
+      db
+        .select({ elapsedMs: reviews.elapsedMs })
+        .from(reviews)
+        .where(
+          and(gt(reviews.elapsedMs, 0), lte(reviews.elapsedMs, REVIEW_ESTIMATE_MAX_ELAPSED_MS)),
+        )
+        .orderBy(desc(reviews.reviewedAt))
+        .limit(REVIEW_ESTIMATE_SAMPLE),
+    ]);
+  const avgMs = averageMsPerCard(
+    (recentReviews as { elapsedMs: number }[]).map((r) => r.elapsedMs),
+  );
 
   const key = (subjectId: string, topicId: string | null) => `${subjectId}|${topicId ?? ''}`;
   const cardCounts = new Map<string, number>();
@@ -411,19 +434,24 @@ export async function getReviewOverview(
       });
     }
     const exam = firstExam.get(s.id);
+    const subjectDue = pickForSubject(due, DEFAULT_NEW_LIMIT).length;
     return {
       slug: s.slug,
       name: s.name,
       color: s.color as SubjectColor,
       nextExam: exam ? { title: exam.title, date: exam.date.toISOString() } : null,
-      due: pickForSubject(due, DEFAULT_NEW_LIMIT).length,
+      due: subjectDue,
+      estimatedMinutes: estimateReviewMinutes(subjectDue, avgMs),
       cardCount: topicsOut.reduce((sum, t) => sum + t.cardCount, 0),
       topics: topicsOut,
     };
   });
 
+  const totalDue = subjectsOut.reduce((sum, s) => sum + s.due, 0);
   return {
-    totalDue: subjectsOut.reduce((sum, s) => sum + s.due, 0),
+    totalDue,
+    estimatedMinutes: estimateReviewMinutes(totalDue, avgMs),
+    avgMsPerCard: avgMs,
     totalCards: subjectsOut.reduce((sum, s) => sum + s.cardCount, 0),
     nextDueAt: next?.at ? new Date(next.at).toISOString() : null,
     subjects: subjectsOut,

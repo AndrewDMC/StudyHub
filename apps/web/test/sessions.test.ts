@@ -7,7 +7,13 @@ import { eq } from 'drizzle-orm';
 import { createTestDb } from '@studyhub/db/testDb';
 import { documents, documentTopics, studyPlans, tasks, topics } from '@studyhub/db';
 import { createSubject } from '../src/lib/subjects';
-import { endSession, getSession, startSession, updateSession } from '../src/lib/sessions';
+import {
+  endSession,
+  getSession,
+  setSessionMood,
+  startSession,
+  updateSession,
+} from '../src/lib/sessions';
 import { SubjectNotFoundError } from '../src/lib/errors';
 import { ConflictError, NotFoundError } from '../src/lib/examPrep';
 
@@ -210,5 +216,30 @@ describe('study sessions', () => {
     // the task is done now, but the student can still start again from it
     const again = await startSession(db, slug, { taskId });
     expect(again.id).not.toBe(first.id);
+  });
+  describe('mood', () => {
+    it('defaults to null and is saved by end when passed', async () => {
+      const t1 = await addTopic('Limiti');
+      const a = await startSession(db, slug, { topicIds: [t1] });
+      expect(a.mood).toBeNull();
+      expect((await endSession(db, slug, a.id)).mood).toBeNull();
+
+      const b = await startSession(db, slug, { topicIds: [t1] });
+      expect((await endSession(db, slug, b.id, { mood: 'good' })).mood).toBe('good');
+      expect((await getSession(db, slug, b.id)).mood).toBe('good');
+    });
+
+    it('is set and cleared after the end, but refused while the session is active', async () => {
+      const t1 = await addTopic('Limiti');
+      const s = await startSession(db, slug, { topicIds: [t1] });
+      await expect(setSessionMood(db, slug, s.id, 'ok')).rejects.toBeInstanceOf(ConflictError);
+      await endSession(db, slug, s.id);
+      expect((await setSessionMood(db, slug, s.id, 'hard')).mood).toBe('hard');
+      expect((await getSession(db, slug, s.id)).mood).toBe('hard');
+      expect((await setSessionMood(db, slug, s.id, null)).mood).toBeNull();
+      await expect(setSessionMood(db, slug, randomUUID(), 'ok')).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+    });
   });
 });

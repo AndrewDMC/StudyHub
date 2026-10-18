@@ -825,6 +825,8 @@ export const studySessions = pgTable(
       onDelete: 'set null',
     }),
     drillId: uuid('drill_id').references(() => artifacts.id, { onDelete: 'set null' }),
+    // How the student felt the session went ('hard' | 'ok' | 'good'), picked in the closing; null = not said.
+    mood: text('mood').$type<'hard' | 'ok' | 'good'>(),
     startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
     endedAt: timestamp('ended_at', { withTimezone: true }),
   },

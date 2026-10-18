@@ -34,9 +34,8 @@ per materia attuale (`/materie/[slug]/review`, tastiera-first) e il link al ripa
 2. **Solo mobile**: niente user-agent sniffing. Il gate è CSS (`md:hidden` sulla tab bar e sul
    contenuto); a `≥ md` `/ripasso` mostra un rimando "Il ripasso rapido è pensato per il telefono"
    con i link ai ripassi per materia. Così ruotare un tablet o ridimensionare la finestra non rompe nulla.
-3. **Confidenza pre-risposta** (1-3, docs/06 #4): il prototipo non la ha. Proposta: **omessa** su mobile
-   (`confidence = null`, già ammesso dallo schema) per non aggiungere un tap a ogni card. La calibrazione
-   continua a usare i dati del ripasso desktop.
+3. **Confidenza pre-risposta** (1-3, docs/06 #4): il prototipo non la ha. Decisione **superata** dalla slice B
+   (vedi "Residui mobile, slice B" sotto): la confidenza è presente anche su mobile, ma resta opzionale.
 4. **"Di nuovo" ri-accoda la card a fine sessione** (comportamento del prototipo), oltre all'aggiornamento FSRS
    lato server. "Ripassa gli errori" rilancia le card con almeno un "Di nuovo".
 5. **Swipe**: → = Bene (3), ← = Di nuovo (1), soglia 70 px, solo a risposta visibile. Facile/Difficile solo dai bottoni.
@@ -271,8 +270,21 @@ File come da struttura sopra, più `components/quick-review/useReviewOutbox.ts` 
   invece che a `/ripasso`. Il link "Fonte" compare nella sessione, accanto alla citazione già prevista in §4 C2.
 - L'uscita dalla sessione attende lo svuotamento dell'outbox; se resta un errore di invio, resta su `/ripasso`
   con il toast invece di chiudere. Alla chiusura si invalidano le query della materia.
-- Il passo "Quanto sei sicuro?" del design resta omesso, come da decisione 3 in §1.
+- Il passo "Quanto sei sicuro?" del design, omesso in questa slice, è stato aggiunto in slice B (vedi sotto).
 - Dettagli in [`docs/fasi/F2-materie.md`](fasi/F2-materie.md) "Aggiornamento — slice 3".
+
+### Residui mobile, slice B (2026-10-16)
+
+- **Confidenza**: sopra i bottoni di valutazione compare "Quanto sei sicuro?" con tre opzioni, Non lo so (1) / Forse (2) /
+  Lo so (3), come radio. Selezionarne una non rivela la risposta; riselezionare la stessa la annulla. Il voto la invia nel
+  grade (`confidence` in `POST /api/subjects/[slug]/review/[cardId]`). Senza scelta il corpo non contiene `confidence`.
+  Il componente è condiviso: vale anche per `/ripasso` su desktop, dove il gate resta `md`.
+  Su "Annulla" la confidenza della valutazione annullata viene ripristinata.
+- **Stima dei minuti**: la card "Ripasso" mostra "~ N min" accanto al conteggio delle card da ripassare oggi. Il calcolo
+  è in [`packages/core/src/reviewEstimate.ts`](../packages/core/src/reviewEstimate.ts): media dei `elapsedMs` delle ultime
+  200 review con tempo ≤ 5 min, limitata tra 3 e 120 s per card; con meno di 10 campioni usa 20 s per card. L'overview
+  (`GET /api/review/overview`) espone `avgMsPerCard` ed `estimatedMinutes`, totale e per materia. Sotto i 10 campioni
+  la stima è solo indicativa.
 
 ---
 

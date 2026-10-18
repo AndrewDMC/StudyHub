@@ -20,6 +20,7 @@ import {
   startSession,
   summarize,
   undoLast,
+  type Confidence,
   type Rating,
   type ReviewScope,
   type SessionLimit,
@@ -115,6 +116,9 @@ export function QuickReviewClient({
   const linkSlug = deepSlug && scope.subjectSlug === deepSlug ? deepSlug : undefined;
   const [session, setSession] = useState<SessionState>(() => startSession([]));
   const [revealed, setRevealed] = useState(false);
+  const [confidence, setConfidence] = useState<Confidence | null>(null);
+  // Confidence given to each rated card (by rating key), restored when the rating is undone.
+  const confidenceByKeyRef = useRef(new Map<string, Confidence>());
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -145,6 +149,7 @@ export function QuickReviewClient({
     setScope(nextScope);
     setSession(startSession(queue));
     setRevealed(false);
+    setConfidence(null);
     setScreen('session');
     shownAtRef.current = Date.now();
   }, []);
@@ -240,9 +245,12 @@ export function QuickReviewClient({
       cardId: card.id,
       rating,
       elapsedMs,
+      ...(confidence ? { confidence } : {}),
     });
+    if (confidence) confidenceByKeyRef.current.set(key, confidence);
     setSession(next);
     setRevealed(false);
+    setConfidence(null);
     shownAtRef.current = now;
     if (isFinished(next)) setScreen('summary');
   };
@@ -253,6 +261,8 @@ export function QuickReviewClient({
     outbox.undo(undone.entry.key);
     setSession(undone.state);
     setRevealed(true);
+    setConfidence(confidenceByKeyRef.current.get(undone.entry.key) ?? null);
+    confidenceByKeyRef.current.delete(undone.entry.key);
     setScreen('session');
     shownAtRef.current = Date.now();
   };
@@ -260,6 +270,7 @@ export function QuickReviewClient({
   const afterRemoval = (next: SessionState) => {
     setSession(next);
     setRevealed(false);
+    setConfidence(null);
     shownAtRef.current = Date.now();
     if (isFinished(next)) {
       if (next.history.length) setScreen('summary');
@@ -327,6 +338,8 @@ export function QuickReviewClient({
                 total={session.queue.length}
                 done={session.idx}
                 revealed={revealed}
+                confidence={confidence}
+                onConfidence={setConfidence}
                 canUndo={session.history.length > 0}
                 onReveal={() => setRevealed(true)}
                 onRate={rate}

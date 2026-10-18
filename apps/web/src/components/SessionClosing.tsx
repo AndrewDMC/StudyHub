@@ -48,10 +48,20 @@ export function useSessionClosing(
   const right = answered.filter((i) => i.state === 'correct').length;
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: sessionKey });
-  const deck = useMutation({
-    mutationFn: async () =>
+  // `itemIds` undefined = no body = every key point (desktop); mobile sends the selected ones.
+  const deck = useMutation<SessionDeckResult, Error, string[] | undefined>({
+    mutationFn: async (itemIds) =>
       readJson<SessionDeckResult>(
-        await fetch(`${base(slug, sessionId)}/flashcards`, { method: 'POST' }),
+        await fetch(
+          `${base(slug, sessionId)}/flashcards`,
+          itemIds
+            ? {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ itemIds }),
+              }
+            : { method: 'POST' },
+        ),
         'Creazione del mazzo non riuscita',
       ),
     onSuccess: refresh,

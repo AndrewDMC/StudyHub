@@ -20,15 +20,26 @@ export function ReviewHeroCard({ slug }: { slug: string }) {
       aria-busy={review.isLoading || stats.isLoading || undefined}
       className="flex flex-col gap-3.5 rounded-[var(--radius-card)] border border-border bg-bg-surface p-4"
     >
-      <div className="flex items-baseline gap-2.5">
-        {review.isLoading ? (
-          <span aria-hidden="true" className="h-8 w-14 animate-pulse rounded bg-bg-raised" />
-        ) : (
-          <b className="font-mono text-[34px] font-semibold leading-none text-fg-primary">
-            {review.due}
-          </b>
+      <div className="flex items-end justify-between gap-2.5">
+        <div className="flex min-w-0 items-baseline gap-2.5">
+          {review.isLoading ? (
+            <span aria-hidden="true" className="h-8 w-14 animate-pulse rounded bg-bg-raised" />
+          ) : (
+            <b className="font-mono text-[34px] font-semibold leading-none text-fg-primary">
+              {review.due}
+            </b>
+          )}
+          <span className="min-w-0 text-[13px] text-fg-secondary">card da ripassare oggi</span>
+        </div>
+        {!review.isLoading && !review.isError && review.due > 0 && review.estimatedMinutes > 0 && (
+          <span
+            data-testid="review-estimate"
+            className="shrink-0 whitespace-nowrap text-[13px] text-fg-secondary"
+          >
+            <span aria-hidden="true">~ {review.estimatedMinutes} min</span>
+            <span className="sr-only">circa {review.estimatedMinutes} minuti</span>
+          </span>
         )}
-        <span className="text-[13px] text-fg-secondary">card da ripassare oggi</span>
       </div>
 
       {review.isLoading ? (

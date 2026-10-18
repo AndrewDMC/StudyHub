@@ -1,4 +1,9 @@
-import type { StudySessionDto, TopicDto, UpdateSessionRequest } from '@studyhub/contracts';
+import type {
+  SessionMood,
+  StudySessionDto,
+  TopicDto,
+  UpdateSessionRequest,
+} from '@studyhub/contracts';
 
 export async function readJson<T>(res: Response, fallback: string): Promise<T> {
   const body = await res.json().catch(() => null);
@@ -42,6 +47,22 @@ export async function postEnd(
       body: JSON.stringify(totals),
     }),
     'Impossibile terminare la sessione',
+  );
+  return body.session;
+}
+
+export async function patchSessionMood(
+  slug: string,
+  id: string,
+  mood: SessionMood | null,
+): Promise<StudySessionDto> {
+  const body = await readJson<{ session: StudySessionDto }>(
+    await fetch(`/api/subjects/${slug}/sessions/${id}/mood`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mood }),
+    }),
+    'Impossibile salvare. Riprova.',
   );
   return body.session;
 }

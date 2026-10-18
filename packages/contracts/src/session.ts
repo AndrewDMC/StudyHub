@@ -19,11 +19,26 @@ export const UpdateSessionRequestSchema = z.object({
 });
 export type UpdateSessionRequest = z.infer<typeof UpdateSessionRequestSchema>;
 
+/** Com'è andata la sessione, scelto dallo studente in chiusura. */
+export const SessionMoodSchema = z.enum(['hard', 'ok', 'good']);
+export type SessionMood = z.infer<typeof SessionMoodSchema>;
+
 export const EndSessionRequestSchema = z.object({
   activeMs: z.number().int().min(0).optional(),
   pomodoros: z.number().int().min(0).optional(),
+  mood: SessionMoodSchema.optional(),
 });
 export type EndSessionRequest = z.infer<typeof EndSessionRequestSchema>;
+
+/** `null` toglie il mood già scelto. */
+export const SetSessionMoodRequestSchema = z.object({ mood: SessionMoodSchema.nullable() });
+export type SetSessionMoodRequest = z.infer<typeof SetSessionMoodRequestSchema>;
+
+/** Body opzionale di «Crea flashcard dai punti chiave»: assente = tutti i punti chiave della sessione. */
+export const CreateKeyPointDeckRequestSchema = z.object({
+  itemIds: z.array(z.string().uuid()).min(1).max(200).optional(),
+});
+export type CreateKeyPointDeckRequest = z.infer<typeof CreateKeyPointDeckRequestSchema>;
 
 export const SessionDocumentDtoSchema = z.object({
   id: z.string().uuid(),
@@ -57,6 +72,7 @@ export const StudySessionDtoSchema = z.object({
   flashcardDeckId: z.string().uuid().nullable(),
   /** Drill creato dagli esercizi sbagliati alla chiusura (fase 4), se c'è. */
   drillId: z.string().uuid().nullable(),
+  mood: SessionMoodSchema.nullable().default(null),
 });
 export type StudySessionDto = z.infer<typeof StudySessionDtoSchema>;
 

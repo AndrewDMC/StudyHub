@@ -20,10 +20,12 @@ export function useFlashcardStats(slug: string) {
 /** Cards due today for this subject, from the review overview (same rule as the queue). */
 export function useReviewDue(slug: string) {
   const query = useQuery({ queryKey: REVIEW_OVERVIEW_KEY, queryFn: fetchReviewOverview });
+  const subject = query.data?.subjects.find((s) => s.slug === slug);
   return {
     isLoading: query.isLoading,
     isError: query.isError,
-    due: query.data?.subjects.find((s) => s.slug === slug)?.due ?? 0,
+    due: subject?.due ?? 0,
+    estimatedMinutes: subject?.estimatedMinutes ?? 0,
   };
 }
 
