@@ -116,8 +116,23 @@ describe('planMobile', () => {
       task({ topicKey: 'c', kind: 'flashcards', title: 'Flashcard' }),
     ]);
     expect(excludableTopics(p)).toEqual([
-      { key: 'a', label: 'Limiti' },
-      { key: 'b', label: 'Derivate' },
+      { key: 'a', label: 'Limiti', openCount: 2 },
+      { key: 'b', label: 'Derivate', openCount: 1 },
+    ]);
+  });
+
+  it('counts open tasks per topic and drops closed topics on an active plan', () => {
+    const tasks = [
+      task({ topicKey: 'a', title: 'Studia Limiti', status: 'done' }),
+      task({ topicKey: 'a', kind: 'flashcards', title: 'Flashcard', status: 'doing' }),
+      task({ topicKey: 'b', title: 'Studia Derivate', status: 'done' }),
+      task({ topicKey: 'c', title: 'Studia Integrali', status: 'skipped' }),
+    ];
+    expect(excludableTopics(plan(tasks))).toEqual([{ key: 'a', label: 'Limiti', openCount: 1 }]);
+    expect(excludableTopics(plan(tasks, 'draft')).map((t) => [t.key, t.openCount])).toEqual([
+      ['a', 2],
+      ['b', 1],
+      ['c', 1],
     ]);
   });
 

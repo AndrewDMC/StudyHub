@@ -132,17 +132,27 @@ export function TaskSheet({
                   Riapri
                 </button>
               )}
-              {draft && task.kind !== 'rest' && (
-                <button
-                  type="button"
-                  disabled={pending}
-                  onClick={() =>
-                    void run(() => mutations.pin.mutateAsync({ id: task.id, pinned: !task.pinned }))
-                  }
-                  className={`${secondaryButton} min-h-12`}
-                >
-                  {task.pinned ? 'Sblocca' : 'Fissa'}
-                </button>
+              {(draft || open) && task.kind !== 'rest' && (
+                <>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    data-testid="task-pin"
+                    onClick={() =>
+                      void run(() =>
+                        mutations.pin.mutateAsync({ id: task.id, pinned: !task.pinned }),
+                      )
+                    }
+                    className={`${secondaryButton} min-h-12`}
+                  >
+                    {task.pinned ? 'Sblocca' : 'Fissa'}
+                  </button>
+                  {!draft && task.date >= today && (
+                    <p className="text-xs text-fg-muted">
+                      Una nuova bozza la tiene alla stessa data.
+                    </p>
+                  )}
+                </>
               )}
               {(draft || open || task.kind === 'rest') && (
                 <button

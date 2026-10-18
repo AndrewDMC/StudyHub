@@ -2,13 +2,21 @@
 
 import type { PlanDto } from '@studyhub/contracts';
 import { INTENSITY_LABELS, averageMinutes, formatUntil, planProgress } from '@/lib/planMobile';
-import { cardClass } from '../simulation-mobile/styles';
+import { cardClass, secondaryButton } from '../simulation-mobile/styles';
 
 const PILL_OK = 'border-[color-mix(in_srgb,var(--ok)_40%,transparent)] text-ok';
 const PILL_WARN = 'border-[color-mix(in_srgb,var(--warn)_40%,transparent)] text-warn';
 
 /** "Piano di studio": status, deadline, progress and the read-only pace tiles. */
-export function PlanSummaryCard({ plan }: { plan: PlanDto }) {
+export function PlanSummaryCard({
+  plan,
+  onEditPace,
+  editDisabled,
+}: {
+  plan: PlanDto;
+  onEditPace?: (trigger: HTMLElement) => void;
+  editDisabled?: boolean;
+}) {
   const draft = plan.status === 'draft';
   const { total, done } = planProgress(plan.tasks);
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
@@ -74,6 +82,18 @@ export function PlanSummaryCard({ plan }: { plan: PlanDto }) {
           </dd>
         </div>
       </dl>
+      {!draft && onEditPace && (
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          data-testid="plan-edit-pace"
+          disabled={editDisabled}
+          onClick={(e) => onEditPace(e.currentTarget)}
+          className={`${secondaryButton} mt-3 min-h-11 w-full text-sm`}
+        >
+          Modifica ritmo
+        </button>
+      )}
     </section>
   );
 }

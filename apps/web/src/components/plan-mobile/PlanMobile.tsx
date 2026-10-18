@@ -25,7 +25,16 @@ import { PlanSummaryCard } from './PlanSummaryCard';
 import { TaskSheet } from './TaskSheet';
 import { usePlanMutations, usePlanQueries } from './usePlanData';
 
-type Sheet = { type: 'task'; taskId: string } | { type: 'plan' | 'exclude' | 'delete' } | null;
+type Sheet =
+  | { type: 'task'; taskId: string }
+  | { type: 'plan'; planId?: string }
+  | { type: 'exclude' | 'delete' }
+  | null;
+
+// The server explains why the move was refused (e.g. a lesson would pass the exam date).
+function moveErrorMessage(err: Error): string {
+  return `Nessuna task spostata. ${err.message}`;
+}
 
 /** Mobile (< md) view of `/materie/[slug]/piano`; the desktop keeps `PlanDesktop`. */
 export function PlanMobile({ slug }: { slug: string }) {
@@ -35,6 +44,7 @@ export function PlanMobile({ slug }: { slug: string }) {
   // Set while a just-submitted generate_plan job has not produced a (new) draft yet.
   const [awaiting, setAwaiting] = useState<{ prevDraftId: string | null } | null>(null);
   const [timedOut, setTimedOut] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
   const [actionsOpen, setActionsOpen] = useState(false);
   const actionsButtonRef = useRef<HTMLButtonElement>(null);
@@ -51,6 +61,7 @@ export function PlanMobile({ slug }: { slug: string }) {
     if (plans.some((p) => p.status === 'draft' && p.id !== awaiting.prevDraftId)) {
       setAwaiting(null);
       setSelectedId(null);
+      setNotice('Bozza pronta: controllala e confermala.');
       // The draft row can be read before its tasks are written: look again shortly.
       setTimeout(() => void q.plans.refetch(), 1500);
     }
@@ -76,6 +87,7 @@ export function PlanMobile({ slug }: { slug: string }) {
     move: moveM,
     removeTask: rmM,
     reabsorb: reabM,
+    moveMany: moveManyM,
   } = mutations;
   const closeSheet = () => {
     statusM.reset();
@@ -83,6 +95,7 @@ export function PlanMobile({ slug }: { slug: string }) {
     moveM.reset();
     rmM.reset();
     reabM.reset();
+    moveManyM.reset();
     setSheet(null);
   };
   const openSheet = (next: NonNullable<Sheet>, trigger?: HTMLElement) => {
@@ -90,6 +103,8 @@ export function PlanMobile({ slug }: { slug: string }) {
     genM.reset();
     bulkM.reset();
     delM.reset();
+    moveManyM.reset();
+    setNotice(null);
     setSheet(next);
   };
 
@@ -152,6 +167,16 @@ export function PlanMobile({ slug }: { slug: string }) {
           </p>
         )}
 
+        {notice && (
+          <p
+            role="status"
+            data-testid="plan-notice"
+            className="rounded-[var(--radius-card)] border border-border bg-bg-surface p-3 text-sm text-fg-secondary"
+          >
+            {notice}
+          </p>
+        )}
+
         {plans.length > 1 && (
           <div role="group" aria-label="Piani della materia" className="flex flex-wrap gap-1.5">
             {plans.map((p) => (
@@ -190,7 +215,30 @@ export function PlanMobile({ slug }: { slug: string }) {
           )
         ) : (
           <>
-            <PlanSummaryCard plan={plan} />
+            <PlanSummaryCard
+              plan={plan}
+              onEditPace={(t) => openSheet({ type: 'plan', planId: plan.id }, t)}
+              editDisabled={awaiting !== null}
+            />
+            {plan.status === 'active' && draftPlan && !awaiting && (
+              <section
+                aria-label="Bozza in attesa"
+                className="flex min-w-0 flex-col gap-2 rounded-[var(--radius-card)] border border-warn bg-bg-surface p-3"
+              >
+                <p className="text-sm">C’è una bozza in attesa di conferma.</p>
+                <button
+                  type="button"
+                  data-testid="plan-draft-pending-open"
+                  onClick={() => {
+                    setSelectedId(draftPlan.id);
+                    setSelectedDay(null);
+                  }}
+                  className={`${secondaryButton} min-h-11 text-sm`}
+                >
+                  Apri la bozza
+                </button>
+              </section>
+            )}
             {plan.status === 'draft' && (
               <DraftCard
                 diff={q.diff.data}
@@ -212,11 +260,36 @@ export function PlanMobile({ slug }: { slug: string }) {
                 count={late.length}
                 drift={drift}
                 feasibility={plan.feasibility}
-                onReabsorb={() => mutations.reabsorb.mutate(late)}
+                onReabsorb={() => {
+                  mutations.moveMany.reset();
+                  mutations.reabsorb.mutate(late);
+                }}
                 onRecalculate={(t) => openSheet({ type: 'plan' }, t)}
+                onMoveDay={() => {
+                  mutations.reabsorb.reset();
+                  const sent = Math.min(late.length, 100);
+                  mutations.moveMany.mutate(
+                    late.map((t) => t.id),
+                    {
+                      onSuccess: () =>
+                        setNotice(
+                          sent < late.length
+                            ? `${sent} task spostate. Ripeti per le altre.`
+                            : sent === 1
+                              ? '1 task spostata.'
+                              : `${sent} task spostate.`,
+                        ),
+                    },
+                  );
+                }}
+                movePending={mutations.moveMany.isPending}
                 pending={mutations.reabsorb.isPending}
                 error={
-                  mutations.reabsorb.isError ? (mutations.reabsorb.error as Error).message : null
+                  mutations.reabsorb.isError
+                    ? (mutations.reabsorb.error as Error).message
+                    : mutations.moveMany.isError
+                      ? moveErrorMessage(mutations.moveMany.error as Error)
+                      : null
                 }
               />
             )}
@@ -268,14 +341,16 @@ export function PlanMobile({ slug }: { slug: string }) {
                 type="button"
                 aria-haspopup="dialog"
                 onClick={(e) => openSheet({ type: 'plan' }, e.currentTarget)}
+                disabled={awaiting !== null}
                 className={`${secondaryButton} min-h-12`}
               >
                 Rigenera bozza
               </button>
-              {plan.status === 'draft' && excludableTopics(plan).length > 0 && (
+              {excludableTopics(plan).length > 0 && (
                 <button
                   type="button"
                   aria-haspopup="dialog"
+                  data-testid="plan-exclude-open"
                   onClick={(e) => openSheet({ type: 'exclude' }, e.currentTarget)}
                   className="flex min-h-11 items-center justify-center text-sm text-fg-secondary underline-offset-2 hover:underline"
                 >
@@ -311,7 +386,10 @@ export function PlanMobile({ slug }: { slug: string }) {
           if (!o) closeSheet();
         }}
         slug={slug}
-        plan={plan}
+        plan={
+          plans.find((p) => p.id === (sheet?.type === 'plan' ? sheet.planId : undefined)) ?? plan
+        }
+        hasDraft={draftPlan !== null}
         exams={q.exams.data ?? []}
         returnFocusRef={triggerRef}
         pending={mutations.generate.isPending}
@@ -324,11 +402,28 @@ export function PlanMobile({ slug }: { slug: string }) {
           if (!o) closeSheet();
         }}
         plan={plan}
+        hasDraft={draftPlan !== null}
         returnFocusRef={triggerRef}
         pending={mutations.bulk.isPending}
         error={mutations.bulk.isError ? (mutations.bulk.error as Error).message : null}
-        onExclude={(topicKey) =>
-          mutations.bulk.mutate({ type: 'exclude_topic', topicKey }, { onSuccess: closeSheet })
+        onExclude={(topicKey, openCount) =>
+          plan &&
+          mutations.bulk.mutate(
+            { type: 'exclude_topic', topicKey, planId: plan.id },
+            {
+              onSuccess: (res: { skipped?: number } | null) => {
+                closeSheet();
+                if (plan.status === 'active') {
+                  const n = res?.skipped ?? openCount;
+                  setNotice(
+                    n === 1
+                      ? '1 lezione segnata come saltata.'
+                      : `${n} lezioni segnate come saltate.`,
+                  );
+                }
+              },
+            },
+          )
         }
       />
       <DeletePlanSheet

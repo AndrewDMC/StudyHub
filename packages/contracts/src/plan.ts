@@ -273,6 +273,18 @@ export const BulkPlanActionRequestSchema = z.discriminatedUnion('type', [
     from: IsoDateSchema.optional(),
   }),
   z.object({ type: z.literal('reduce_load'), percent: z.number().min(1).max(90) }),
-  z.object({ type: z.literal('exclude_topic'), topicKey: z.string().min(1) }),
+  z.object({
+    type: z.literal('exclude_topic'),
+    topicKey: z.string().min(1),
+    /** Target plan: needed to exclude from an active plan when the subject has more than one. */
+    planId: z.string().uuid().optional(),
+  }),
 ]);
 export type BulkPlanActionRequest = z.infer<typeof BulkPlanActionRequestSchema>;
+
+/** Moves several open tasks of one active plan forward by the same number of days (the "in ritardo" card). */
+export const MoveTasksRequestSchema = z.object({
+  taskIds: z.array(z.string().uuid()).min(1).max(100),
+  days: z.number().int().min(1).max(30),
+});
+export type MoveTasksRequest = z.infer<typeof MoveTasksRequestSchema>;

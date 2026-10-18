@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { UpdateTaskRequestSchema } from '@studyhub/contracts';
 import { getDb } from '@/lib/db';
-import { deleteDraftTask, TaskNotFoundError, updateDraftTask } from '@/lib/plan';
+import { deleteDraftTask, PlanRequestError, TaskNotFoundError, updateDraftTask } from '@/lib/plan';
 import { formatError, SubjectNotFoundError } from '@/lib/errors';
 
 export const dynamic = 'force-dynamic';
@@ -38,6 +38,12 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       return NextResponse.json(
         { error: { code: 'task_not_found', message: err.message } },
         { status: 404 },
+      );
+    }
+    if (err instanceof PlanRequestError) {
+      return NextResponse.json(
+        { error: { code: 'invalid_request', message: err.message } },
+        { status: 400 },
       );
     }
     return NextResponse.json(

@@ -115,15 +115,29 @@ export function scaleAvailability(perWeekday: number[], targetAvg: number): numb
   });
 }
 
-/** Topics of a draft that can be excluded (same extraction as the desktop bulk bar). */
-export function excludableTopics(plan: PlanDto | null): { key: string; label: string }[] {
+/**
+ * Topics that can be excluded (same extraction as the desktop bulk bar). `openCount` is the
+ * number of tasks the exclusion touches: todo/doing on an active plan, not-moved on a draft.
+ */
+export function excludableTopics(
+  plan: PlanDto | null,
+): { key: string; label: string; openCount: number }[] {
   if (!plan) return [];
+  const active = plan.status === 'active';
+  const counts = new Map<string, number>();
+  for (const t of plan.tasks) {
+    if (!t.topicKey) continue;
+    const touched = active ? t.status === 'todo' || t.status === 'doing' : t.status !== 'moved';
+    counts.set(t.topicKey, (counts.get(t.topicKey) ?? 0) + (touched ? 1 : 0));
+  }
   const map = new Map<string, string>();
   for (const t of plan.tasks) {
     if (t.kind !== 'read' || !t.topicKey) continue;
     if (!map.has(t.topicKey)) map.set(t.topicKey, t.title.replace(/^Studia /, '').split(' — ')[0]!);
   }
-  return [...map].map(([key, label]) => ({ key, label }));
+  return [...map]
+    .map(([key, label]) => ({ key, label, openCount: counts.get(key) ?? 0 }))
+    .filter((t) => !active || t.openCount > 0);
 }
 
 /** 130 -> "2h 10m", 120 -> "2h", 45 -> "45m", 0 -> "—". */
