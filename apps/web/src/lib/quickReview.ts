@@ -46,6 +46,8 @@ export interface ReviewScope {
   topicId?: string | null;
   /** A plan task (lesson): only the cards attached to it, due or not. Wins over `topicId`. */
   taskId?: string;
+  /** Only the cards of this deck (`mazzo`). */
+  deckId?: string;
 }
 
 export function scopeToSearchParams(scope: ReviewScope, limit: number): URLSearchParams {
@@ -55,6 +57,7 @@ export function scopeToSearchParams(scope: ReviewScope, limit: number): URLSearc
   else if (scope.subjectSlug && scope.topicId !== undefined) {
     qs.set('argomento', scope.topicId ?? 'none');
   }
+  if (!scope.taskId && scope.subjectSlug && scope.deckId) qs.set('mazzo', scope.deckId);
   if (limit) qs.set('n', String(limit));
   return qs;
 }
@@ -64,6 +67,7 @@ export function scopeFromSearchParams(params: {
   materia?: string | null | undefined;
   argomento?: string | null | undefined;
   task?: string | null | undefined;
+  mazzo?: string | null | undefined;
 }): ReviewScope | null {
   if (params.task) {
     return params.materia
@@ -71,10 +75,12 @@ export function scopeFromSearchParams(params: {
       : { taskId: params.task };
   }
   if (!params.materia) return null;
-  if (!params.argomento) return { subjectSlug: params.materia };
+  const deck = params.mazzo ? { deckId: params.mazzo } : {};
+  if (!params.argomento) return { subjectSlug: params.materia, ...deck };
   return {
     subjectSlug: params.materia,
     topicId: params.argomento === 'none' ? null : params.argomento,
+    ...deck,
   };
 }
 
@@ -88,7 +94,12 @@ export function lessonExitHref(scope: ReviewScope): string | null {
 }
 
 /** "Basi di Dati · Normalizzazione", "Basi di Dati · tutti gli argomenti", "Tutte le materie". */
-export function sessionTitle(scope: ReviewScope, overview: ReviewOverviewDto | undefined): string {
+export function sessionTitle(
+  scope: ReviewScope,
+  overview: ReviewOverviewDto | undefined,
+  /** Title of `scope.deckId`'s deck (from GET /decks): the overview does not know deck names. */
+  deckTitle?: string | undefined,
+): string {
   if (scope.taskId) {
     const name = overview?.subjects.find((s) => s.slug === scope.subjectSlug)?.name;
     return name ? `${name} · flashcard della lezione` : 'Flashcard della lezione';
@@ -96,9 +107,13 @@ export function sessionTitle(scope: ReviewScope, overview: ReviewOverviewDto | u
   if (!scope.subjectSlug) return 'Tutte le materie';
   const subject = overview?.subjects.find((s) => s.slug === scope.subjectSlug);
   const name = subject?.name ?? scope.subjectSlug;
+  if (scope.deckId && scope.topicId === undefined) return `${name} · ${deckTitle ?? 'mazzo'}`;
   if (scope.topicId === undefined) return `${name} · tutti gli argomenti`;
   const topic = subject?.topics.find((t) => t.id === scope.topicId);
-  return `${name} · ${topic?.name ?? (scope.topicId === null ? 'Senza argomento' : 'argomento')}`;
+  const topicName = topic?.name ?? (scope.topicId === null ? 'Senza argomento' : 'argomento');
+  return scope.deckId
+    ? `${name} · ${deckTitle ?? 'mazzo'} · ${topicName}`
+    : `${name} · ${topicName}`;
 }
 
 export interface RatedEntry {

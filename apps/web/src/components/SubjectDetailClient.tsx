@@ -13,19 +13,17 @@ import { TopicsPanel } from './TopicsPanel';
 import { ExamsPanel } from './ExamsPanel';
 import { SubjectActions } from './SubjectActions';
 import { AiPanel } from './AiPanel';
-import { StatsPanel } from './StatsPanel';
 import { ExamPrepPanel } from './ExamPrepPanel';
 import { DailyTasksPanel } from './DailyTasksPanel';
 import { SearchPanel } from './SearchPanel';
 import { GapsPanel, RecentActivityPanel, SuggestedActionsPanel } from './OverviewPanel';
-import { FlashcardListPanel } from './FlashcardListPanel';
-import { CalibrationPanel } from './CalibrationPanel';
 import { CoveragePanel } from './CoveragePanel';
 import { SubjectMobile } from './subject-mobile/SubjectMobile';
 import { fetchDocuments } from './subject-mobile/queries';
 import { parseSubjectTab } from '@/lib/subjectTabs';
+import { FLASHCARD_PARAMS } from '@/lib/flashcardsView';
+import { FlashcardsTab } from './flashcards/FlashcardsTab';
 import { useIsMobile } from '@/lib/useIsMobile';
-import { DraftDecksLink } from './flashcard-mobile/DraftDecksLink';
 
 const TABS = [
   { key: 'panoramica', label: 'Panoramica' },
@@ -180,6 +178,8 @@ function SubjectDetailClientInner({ slug }: { slug: string }) {
     const params = new URLSearchParams(searchParams.toString());
     if (tab === 'panoramica') params.delete('tab');
     else params.set('tab', tab);
+    // The Flashcard tab's own params (view, filters, open card) never leak into another tab.
+    if (tab !== 'flashcard') for (const key of FLASHCARD_PARAMS) params.delete(key);
     const qs = params.toString();
     router.replace(`/materie/${slug}${qs ? `?${qs}` : ''}`, { scroll: false });
   };
@@ -333,19 +333,7 @@ function SubjectDetailClientInner({ slug }: { slug: string }) {
               )}
 
               {activeTab === 'flashcard' && (
-                <div className="space-y-4">
-                  <div className="max-w-md">
-                    {/* Generated decks wait here for approval: until then their cards stay out of review. */}
-                    <div className="mb-4 empty:hidden">
-                      <DraftDecksLink slug={slug} />
-                    </div>
-                    <StatsPanel subjectSlug={slug} />
-                    <div className="mt-4">
-                      <CalibrationPanel subjectSlug={slug} />
-                    </div>
-                  </div>
-                  <FlashcardListPanel subjectSlug={slug} topics={topics} />
-                </div>
+                <FlashcardsTab slug={slug} topics={topics} documents={documents} />
               )}
 
               {activeTab === 'lacune' && <CoveragePanel subjectSlug={slug} />}

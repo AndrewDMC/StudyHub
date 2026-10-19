@@ -117,6 +117,7 @@ async function noHorizontalScroll(page: Page) {
 }
 
 const tabUrl = (s: Seed) => `/materie/${s.slug}?tab=flashcard`;
+const cardsUrl = (s: Seed) => `/materie/${s.slug}?tab=flashcard&view=card`;
 
 test.describe('Materia mobile — Flashcard, Revisione e Ripasso', () => {
   let s: Seed;
@@ -129,7 +130,7 @@ test.describe('Materia mobile — Flashcard, Revisione e Ripasso', () => {
     await request.delete(`${baseURL}/api/subjects/${s.slug}`);
   });
 
-  test('Tab Flashcard: vista mobile con ripasso, grafici, lista e nessuno scroll orizzontale', async ({
+  test('Tab Flashcard: Panoramica mobile con hero, viste e nessuno scroll orizzontale', async ({
     page,
   }) => {
     test.setTimeout(90_000);
@@ -137,31 +138,47 @@ test.describe('Materia mobile — Flashcard, Revisione e Ripasso', () => {
 
     const hero = page.getByRole('region', { name: 'Ripasso di oggi' });
     await expect(hero).toBeVisible({ timeout: 30_000 });
-    await expect(hero.getByRole('link', { name: 'Inizia il ripasso' })).toHaveAttribute(
+    await expect(hero.getByRole('link', { name: 'Ripassa ora' })).toHaveAttribute(
       'href',
       `/ripasso?materia=${s.slug}`,
     );
-    for (const label of ['Nuove', 'In apprendimento', 'In ripasso', 'Da rinforzare']) {
-      await expect(hero.getByText(label, { exact: true })).toBeVisible();
-    }
-    await expect(page.getByRole('region', { name: 'Prossimi 30 giorni' })).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Ritenzione: reale vs prevista' })).toBeVisible();
+    // Le tile per stato non stanno più nell'hero: sono nella vista Statistiche.
+    await expect(hero.getByText('In apprendimento', { exact: true })).toHaveCount(0);
 
-    // Righe con nome "front, stato" (le card sono nuove).
-    await expect(page.getByRole('button', { name: 'Entropia uno, Nuova' })).toBeVisible();
-    await expect(page.getByRole('group', { name: 'Filtra per argomento' })).toBeVisible();
-    await expect(
-      page.getByRole('button', { name: 'Strumenti del mazzo e calibrazione' }),
-    ).toHaveAttribute('aria-expanded', 'false');
+    // Viste: Panoramica è la corrente.
+    const nav = page.getByRole('navigation', { name: 'Viste flashcard' });
+    await expect(nav.getByRole('link')).toHaveText(['Panoramica', 'Card', 'Statistiche']);
+    await expect(nav.getByRole('link', { name: 'Panoramica' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
 
-    // È la vista mobile: nessun pannello desktop con i filtri per mazzo/stato.
+    // Per argomento, con la bozza segnalata in "Da sistemare".
+    await expect(page.getByRole('list', { name: 'Mazzi per argomento' })).toBeVisible();
+    await expect(page.getByRole('link', { name: /1 mazzo da approvare/ })).toBeVisible();
+
+    // Le righe card stanno nella vista Card, non qui; e non c'è il pannello desktop.
+    await expect(page.getByRole('button', { name: 'Entropia uno, Nuova' })).toHaveCount(0);
     await expect(page.getByLabel('Filtra per mazzo')).toHaveCount(0);
+    await noHorizontalScroll(page);
+  });
+
+  test('Vista Statistiche: tile per stato, previsione e ritenzione', async ({ page }) => {
+    test.setTimeout(90_000);
+    await page.goto(`${tabUrl(s)}&view=statistiche`);
+    const tiles = page.getByRole('region', { name: 'Card per stato' });
+    await expect(tiles).toBeVisible({ timeout: 30_000 });
+    for (const label of ['Nuove', 'In apprendimento', 'In ripasso', 'Da rinforzare']) {
+      await expect(tiles.getByText(label, { exact: true })).toBeVisible();
+    }
+    await expect(page.getByRole('heading', { name: 'Prossimi 30 giorni' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Quanto ricordi' })).toBeVisible();
     await noHorizontalScroll(page);
   });
 
   test('Ricerca e filtro per argomento riducono la lista', async ({ page }) => {
     test.setTimeout(90_000);
-    await page.goto(tabUrl(s));
+    await page.goto(cardsUrl(s));
     const row = (front: string) => page.getByRole('button', { name: new RegExp(`^${front}, `) });
     await expect(row('Entropia uno')).toBeVisible({ timeout: 30_000 });
     await expect(row('Velocita uno')).toBeVisible();
@@ -201,7 +218,7 @@ test.describe('Materia mobile — Flashcard, Revisione e Ripasso', () => {
 
   test('Mostra altre carica la pagina successiva', async ({ page }) => {
     test.setTimeout(90_000);
-    await page.goto(tabUrl(s));
+    await page.goto(cardsUrl(s));
     const rows = page.locator('button[aria-haspopup="dialog"][aria-label*=", "]');
     await expect(rows.first()).toBeVisible({ timeout: 30_000 });
     const first = await rows.count();
@@ -212,7 +229,7 @@ test.describe('Materia mobile — Flashcard, Revisione e Ripasso', () => {
 
   test('Dettaglio card: apre lo sheet e Sospendi aggiorna la riga', async ({ page }) => {
     test.setTimeout(90_000);
-    await page.goto(tabUrl(s));
+    await page.goto(cardsUrl(s));
     await page.getByRole('button', { name: 'Entropia uno, Nuova' }).click({ timeout: 30_000 });
     const sheet = page.getByRole('dialog', { name: 'Card' });
     await expect(sheet).toBeVisible();
@@ -238,7 +255,7 @@ test.describe('Materia mobile — Flashcard, Revisione e Ripasso', () => {
 
   test('Dettaglio card: Elimina chiede conferma e rimuove la riga', async ({ page }) => {
     test.setTimeout(90_000);
-    await page.goto(tabUrl(s));
+    await page.goto(cardsUrl(s));
     await page.getByRole('button', { name: 'Velocita tre, Nuova' }).click({ timeout: 30_000 });
     const sheet = page.getByRole('dialog', { name: 'Card' });
     await sheet.getByRole('button', { name: 'Elimina' }).click();
@@ -256,10 +273,18 @@ test.describe('Materia mobile — Flashcard, Revisione e Ripasso', () => {
   }) => {
     test.setTimeout(150_000);
     await page.goto(tabUrl(s));
-    const draftLink = page.getByRole('link', { name: /1 mazzo da approvare/ });
-    await expect(draftLink).toBeVisible({ timeout: 30_000 });
-    await expect(draftLink).toContainText(DRAFT_TITLE);
-    await expect(draftLink).toContainText('3 card');
+    // "Da sistemare" porta alla vista per mazzo, dove la bozza ha "Rivedi e approva".
+    const attention = page.getByRole('link', { name: /1 mazzo da approvare/ });
+    await expect(attention).toBeVisible({ timeout: 30_000 });
+    await expect(attention).toContainText('3 card ancora fuori dal ripasso');
+    await attention.click();
+    await expect(page).toHaveURL(/group=mazzo/);
+    await expect(page.getByRole('heading', { name: 'Da approvare · 1' })).toBeVisible({
+      timeout: 20_000,
+    });
+    const draftRow = page.getByRole('listitem').filter({ hasText: DRAFT_TITLE });
+    await expect(draftRow).toContainText('3 card');
+    const draftLink = draftRow.getByRole('link', { name: 'Rivedi e approva' });
     await expect(draftLink).toHaveAttribute('href', `/materie/${s.slug}/artifacts/${s.draftId}`);
     await draftLink.click();
     await expect(page).toHaveURL(new RegExp(`/artifacts/${s.draftId}$`), { timeout: 30_000 });
@@ -325,6 +350,7 @@ test.describe('Materia mobile — Flashcard, Revisione e Ripasso', () => {
     await expect(page.getByRole('link', { name: /mazzo da approvare/ })).toHaveCount(0, {
       timeout: 20_000,
     });
+    await page.goto(cardsUrl(s));
     await expect(page.getByRole('button', { name: /^Bozza alfa, / })).toBeVisible({
       timeout: 20_000,
     });
@@ -351,9 +377,10 @@ test.describe('Materia mobile — Flashcard, Revisione e Ripasso', () => {
       timeout: 30_000,
     });
     // Nulla è stato inviato: la bozza c'è ancora con 3 card.
-    await expect(page.getByRole('link', { name: /1 mazzo da approvare/ })).toContainText('3 card', {
-      timeout: 30_000,
-    });
+    await expect(page.getByRole('link', { name: /1 mazzo da approvare/ })).toContainText(
+      '3 card ancora fuori dal ripasso',
+      { timeout: 30_000 },
+    );
     await expect(page.getByRole('navigation', { name: 'Navigazione principale' })).toBeVisible();
   });
 
@@ -362,7 +389,7 @@ test.describe('Materia mobile — Flashcard, Revisione e Ripasso', () => {
   }) => {
     test.setTimeout(120_000);
     await page.goto(tabUrl(s));
-    await page.getByRole('link', { name: 'Inizia il ripasso' }).click({ timeout: 30_000 });
+    await page.getByRole('link', { name: 'Ripassa ora' }).click({ timeout: 30_000 });
     await expect(page).toHaveURL(new RegExp(`/ripasso\\?materia=${s.slug}`), { timeout: 30_000 });
 
     const session = page.getByRole('dialog');
@@ -532,13 +559,17 @@ test.describe('Materia mobile — Flashcard, Revisione e Ripasso', () => {
     });
   });
 
-  test('Nessuno scroll orizzontale su tab Flashcard, Revisione e Ripasso', async ({ page }) => {
+  test('Nessuno scroll orizzontale sulle tre viste Flashcard, Revisione e Ripasso', async ({
+    page,
+  }) => {
     test.setTimeout(120_000);
-    await page.goto(tabUrl(s));
-    await expect(page.getByRole('region', { name: 'Ripasso di oggi' })).toBeVisible({
-      timeout: 30_000,
-    });
-    await noHorizontalScroll(page);
+    for (const view of ['', '&view=card', '&view=statistiche']) {
+      await page.goto(`${tabUrl(s)}${view}`);
+      await expect(page.getByRole('navigation', { name: 'Viste flashcard' })).toBeVisible({
+        timeout: 30_000,
+      });
+      await noHorizontalScroll(page);
+    }
     await page.goto(`/materie/${s.slug}/artifacts/${s.draftId}`);
     await expect(page.getByRole('button', { name: 'Tieni: Bozza alfa' })).toBeVisible({
       timeout: 30_000,

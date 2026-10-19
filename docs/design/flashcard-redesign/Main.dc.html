@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>Flashcard – panoramica</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0a0b0f}
+a{color:#9ba3b4;text-decoration:none}a:hover{color:#e8eaf0}
+</style>
+</helmet>
+<div style="min-height: 100vh; background: #0a0b0f; color: #e8eaf0; font-family: Inter, system-ui, sans-serif; font-size: 14px; line-height: 1.45;">
+<div style="max-width: 1120px; margin: 0 auto; padding: 24px 24px 64px; box-sizing: border-box; display: flex; flex-direction: column; gap: 20px;">
+
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; justify-content: space-between;">
+<div style="display: flex; flex-direction: column; gap: 4px;">
+<div style="display: flex; align-items: center; gap: 10px;">
+<span aria-hidden="true" style="width: 10px; height: 10px; border-radius: 50%; background: #5b8cff;"></span>
+<h1 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.02em;">Analisi matematica I</h1>
+</div>
+<p style="margin: 0; font-size: 13px; color: #9ba3b4;">14 documenti · 9 argomenti · 247 flashcard</p>
+</div>
+<div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #9ba3b4;">Esame 12 nov <span style="padding: 2px 8px; border-radius: 6px; background: #171a21; color: #e8eaf0; font-family: 'JetBrains Mono', monospace; font-size: 12px;">tra 24 g</span></div>
+</header>
+
+<nav aria-label="Sezioni della materia" style="display: flex; gap: 4px; border-bottom: 1px solid #22262f; overflow-x: auto;">
+<a href="#" style="padding: 10px 12px; font-size: 13px;">Panoramica</a>
+<a href="#" style="padding: 10px 12px; font-size: 13px;">Appunti</a>
+<a href="#" style="padding: 10px 12px; font-size: 13px;">Schemi</a>
+<a href="#" style="padding: 10px 12px; font-size: 13px;">Esami</a>
+<a href="#" aria-current="page" style="padding: 10px 12px; font-size: 13px; color: #e8eaf0; font-weight: 500; border-bottom: 2px solid #5b8cff; margin-bottom: -1px;">Flashcard</a>
+<a href="#" style="padding: 10px 12px; font-size: 13px;">Simulazioni</a>
+<a href="#" style="padding: 10px 12px; font-size: 13px;">Lacune</a>
+<a href="#" style="padding: 10px 12px; font-size: 13px;">Piano</a>
+</nav>
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;">
+<nav aria-label="Viste flashcard" style="display: flex; gap: 2px; padding: 3px; background: #111318; border: 1px solid #22262f; border-radius: 8px;">
+<a href="Main.dc.html" aria-current="page" style="padding: 7px 14px; border-radius: 6px; background: #171a21; color: #e8eaf0; font-size: 13px; font-weight: 500;">Panoramica</a>
+<a href="Carte.dc.html" style="padding: 7px 14px; border-radius: 6px; font-size: 13px;">Card</a>
+<a href="Statistiche.dc.html" style="padding: 7px 14px; border-radius: 6px; font-size: 13px;">Statistiche</a>
+</nav>
+<a href="Nuovo.dc.html" style="display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border: 1px solid #2e3441; border-radius: 6px; color: #e8eaf0; font-size: 13px; font-weight: 500;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M10 4v12M4 10h12"></path></svg>Aggiungi</a>
+</div>
+
+<section aria-labelledby="oggi" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; padding: 24px; background: #111318; border: 1px solid #22262f; border-radius: 10px;">
+<div style="display: flex; flex-direction: column; gap: 16px;">
+<h2 id="oggi" style="margin: 0; font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; color: #9ba3b4;">Ripasso di oggi</h2>
+<div style="display: flex; align-items: baseline; gap: 10px;"><span style="font-size: 48px; font-weight: 600; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums;">34</span><span style="font-size: 16px; color: #9ba3b4;">card da ripassare</span></div>
+<p style="margin: 0; font-size: 14px; color: #9ba3b4;">22 in scadenza · 12 nuove · circa 15 minuti</p>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px;">
+<a href="#" style="display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 22px; background: #5b8cff; color: #0a0b0f; border-radius: 6px; font-size: 14px; font-weight: 600;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="currentColor"><path d="M6 4l10 6-10 6z"></path></svg>Ripassa ora</a>
+<a href="#argomenti" style="font-size: 13px; color: #9ba3b4; padding: 12px 4px;">oppure scegli un argomento ↓</a>
+</div>
+<p style="margin: 0; display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: #9ba3b4;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" style="flex-shrink: 0; margin-top: 1px;"><circle cx="10" cy="10" r="7"></circle><path d="M10 9v5M10 6.5v.1"></path></svg>Le card nuove entrano solo per gli argomenti già trattati nel piano, al massimo 20 al giorno.</p>
+</div>
+<div style="display: flex; flex-direction: column; gap: 12px;">
+<h3 style="margin: 0; font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; color: #9ba3b4;">Prossimi 7 giorni</h3>
+<div role="img" aria-label="Card in scadenza: oggi 34, martedì 18, mercoledì 9, giovedì 22, venerdì 6, sabato 4, domenica 11" style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; align-items: end; height: 140px;">
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px;"><span style="font-size: 12px; font-family: 'JetBrains Mono', monospace; color: #e8eaf0;">34</span><div style="width: 100%; height: 96px; background: #5b8cff; border-radius: 4px;"></div><span style="font-size: 12px; color: #e8eaf0; font-weight: 500;">Oggi</span></div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px;"><span style="font-size: 12px; font-family: 'JetBrains Mono', monospace; color: #9ba3b4;">18</span><div style="width: 100%; height: 51px; background: #2e3441; border-radius: 4px;"></div><span style="font-size: 12px; color: #9ba3b4;">mar</span></div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px;"><span style="font-size: 12px; font-family: 'JetBrains Mono', monospace; color: #9ba3b4;">9</span><div style="width: 100%; height: 25px; background: #2e3441; border-radius: 4px;"></div><span style="font-size: 12px; color: #9ba3b4;">mer</span></div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px;"><span style="font-size: 12px; font-family: 'JetBrains Mono', monospace; color: #9ba3b4;">22</span><div style="width: 100%; height: 62px; background: #2e3441; border-radius: 4px;"></div><span style="font-size: 12px; color: #9ba3b4;">gio</span></div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px;"><span style="font-size: 12px; font-family: 'JetBrains Mono', monospace; color: #9ba3b4;">6</span><div style="width: 100%; height: 17px; background: #2e3441; border-radius: 4px;"></div><span style="font-size: 12px; color: #9ba3b4;">ven</span></div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px;"><span style="font-size: 12px; font-family: 'JetBrains Mono', monospace; color: #9ba3b4;">4</span><div style="width: 100%; height: 11px; background: #2e3441; border-radius: 4px;"></div><span style="font-size: 12px; color: #9ba3b4;">sab</span></div>
+<div style="display: flex; flex-direction: column; align-items: center; gap: 6px;"><span style="font-size: 12px; font-family: 'JetBrains Mono', monospace; color: #9ba3b4;">11</span><div style="width: 100%; height: 31px; background: #2e3441; border-radius: 4px;"></div><span style="font-size: 12px; color: #9ba3b4;">dom</span></div>
+</div>
+<a href="Statistiche.dc.html" style="font-size: 13px; align-self: flex-start; padding: 4px 0;">Tutte le statistiche →</a>
+</div>
+</section>
+
+<section aria-labelledby="attenzione" style="display: flex; flex-direction: column; background: #111318; border: 1px solid #22262f; border-radius: 10px;">
+<h2 id="attenzione" style="margin: 0; padding: 14px 20px 0; font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; color: #9ba3b4;">Da sistemare</h2>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; padding: 14px 20px; border-bottom: 1px solid #22262f;">
+<span aria-hidden="true" style="display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 6px; background: #f5b5441f; color: #f5b544;"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 5h14v11H3zM3 11h4l1 2h4l1-2h4"></path></svg></span>
+<div style="flex: 1 1 320px; display: flex; flex-direction: column; gap: 2px;"><strong style="font-weight: 500;">2 mazzi in bozza da approvare</strong><span style="font-size: 13px; color: #9ba3b4;">Le loro 54 card non entrano nel ripasso finché non li approvi.</span></div>
+<a href="Mazzi.dc.html" style="display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border: 1px solid #2e3441; border-radius: 6px; color: #e8eaf0; font-size: 13px;">Rivedi i mazzi</a>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; padding: 14px 20px;">
+<span aria-hidden="true" style="display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 6px; background: #ff6b6b1f; color: #ff6b6b;"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17V3M5 4h9l-2 3 2 3H5"></path></svg></span>
+<div style="flex: 1 1 320px; display: flex; flex-direction: column; gap: 2px;"><strong style="font-weight: 500;">8 card escluse dal ripasso</strong><span style="font-size: 13px; color: #9ba3b4;">3 segnalate durante il ripasso, 5 sospese da te.</span></div>
+<a href="Carte.dc.html" style="display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border: 1px solid #2e3441; border-radius: 6px; color: #e8eaf0; font-size: 13px;">Controlla</a>
+</div>
+</section>
+
+<section id="argomenti" aria-labelledby="mazzi" style="display: flex; flex-direction: column; gap: 12px;">
+<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;">
+<h2 id="mazzi" style="margin: 0; font-size: 16px; font-weight: 600;">Le tue card <span style="font-weight: 400; color: #9ba3b4; font-size: 14px;">· 247</span></h2>
+<div role="group" aria-label="Raggruppa" style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #9ba3b4;">Raggruppa per
+<span style="display: flex; gap: 2px; padding: 3px; background: #111318; border: 1px solid #22262f; border-radius: 8px;">
+<a href="Main.dc.html" aria-current="true" style="padding: 5px 12px; border-radius: 6px; background: #171a21; color: #e8eaf0;">Argomento</a>
+<a href="Mazzi.dc.html" style="padding: 5px 12px; border-radius: 6px;">Mazzo</a>
+</span></div>
+</div>
+
+<ul style="list-style: none; margin: 0; padding: 0; background: #111318; border: 1px solid #22262f; border-radius: 10px;">
+<li style="display: grid; grid-template-columns: minmax(180px, 2fr) minmax(140px, 1.3fr) minmax(170px, 1.4fr) 112px; gap: 16px; align-items: center; padding: 10px 20px; font-size: 12px; color: #9ba3b4; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid #22262f;"><span>Argomento</span><span>Padronanza</span><span>Oggi</span><span></span></li>
+
+<li style="display: grid; grid-template-columns: minmax(180px, 2fr) minmax(140px, 1.3fr) minmax(170px, 1.4fr) 112px; gap: 16px; align-items: center; padding: 14px 20px; border-bottom: 1px solid #22262f;">
+<a href="Carte.dc.html" style="display: flex; flex-direction: column; color: #e8eaf0;"><span style="font-weight: 500;">Limiti</span><span style="font-size: 13px; color: #9ba3b4;">52 card</span></a>
+<div style="display: flex; align-items: center; gap: 10px;"><div style="flex: 1; height: 6px; background: #22262f; border-radius: 3px;"><div style="width: 81%; height: 6px; background: #3dd68c; border-radius: 3px;"></div></div><span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; width: 36px;">81%</span></div>
+<span style="font-size: 13px;"><span style="color: #7aa2ff; font-weight: 500;">4 da ripassare</span><span style="color: #9ba3b4;"> · 2 nuove</span></span>
+<a href="#" aria-label="Ripassa Limiti" style="display: inline-flex; justify-content: center; align-items: center; height: 36px; border: 1px solid #2e3441; border-radius: 6px; color: #e8eaf0; font-size: 13px;">Ripassa</a>
+</li>
+
+<li style="display: grid; grid-template-columns: minmax(180px, 2fr) minmax(140px, 1.3fr) minmax(170px, 1.4fr) 112px; gap: 16px; align-items: center; padding: 14px 20px; border-bottom: 1px solid #22262f;">
+<a href="Carte.dc.html" style="display: flex; flex-direction: column; color: #e8eaf0;"><span style="font-weight: 500;">Continuità</span><span style="font-size: 13px; color: #9ba3b4;">31 card</span></a>
+<div style="display: flex; align-items: center; gap: 10px;"><div style="flex: 1; height: 6px; background: #22262f; border-radius: 3px;"><div style="width: 74%; height: 6px; background: #3dd68c; border-radius: 3px;"></div></div><span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; width: 36px;">74%</span></div>
+<span style="font-size: 13px;"><span style="color: #7aa2ff; font-weight: 500;">3 da ripassare</span></span>
+<a href="#" aria-label="Ripassa Continuità" style="display: inline-flex; justify-content: center; align-items: center; height: 36px; border: 1px solid #2e3441; border-radius: 6px; color: #e8eaf0; font-size: 13px;">Ripassa</a>
+</li>
+
+<li style="display: grid; grid-template-columns: minmax(180px, 2fr) minmax(140px, 1.3fr) minmax(170px, 1.4fr) 112px; gap: 16px; align-items: center; padding: 14px 20px; border-bottom: 1px solid #22262f;">
+<a href="Carte.dc.html" style="display: flex; flex-direction: column; color: #e8eaf0;"><span style="font-weight: 500;">Derivate</span><span style="font-size: 13px; color: #9ba3b4;">64 card · 1 sotto-argomento</span></a>
+<div style="display: flex; align-items: center; gap: 10px;"><div style="flex: 1; height: 6px; background: #22262f; border-radius: 3px;"><div style="width: 58%; height: 6px; background: #f5b544; border-radius: 3px;"></div></div><span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; width: 36px;">58%</span></div>
+<span style="font-size: 13px;"><span style="color: #7aa2ff; font-weight: 500;">11 da ripassare</span><span style="color: #9ba3b4;"> · 4 nuove</span></span>
+<a href="#" aria-label="Ripassa Derivate" style="display: inline-flex; justify-content: center; align-items: center; height: 36px; border: 1px solid #2e3441; border-radius: 6px; color: #e8eaf0; font-size: 13px;">Ripassa</a>
+</li>
+
+<li style="display: grid; grid-template-columns: minmax(180px, 2fr) minmax(140px, 1.3fr) minmax(170px, 1.4fr) 112px; gap: 16px; align-items: center; padding: 12px 20px 12px 40px; border-bottom: 1px solid #22262f; background: #0d0e13;">
+<a href="Carte.dc.html" style="display: flex; flex-direction: column; color: #e8eaf0;"><span style="font-weight: 500;"><span aria-hidden="true" style="color: #9ba3b4;">↳ </span>Studio di funzione</span><span style="font-size: 13px; color: #9ba3b4;">22 card</span></a>
+<div style="display: flex; align-items: center; gap: 10px;"><div style="flex: 1; height: 6px; background: #22262f; border-radius: 3px;"><div style="width: 41%; height: 6px; background: #f5b544; border-radius: 3px;"></div></div><span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; width: 36px;">41%</span></div>
+<span style="font-size: 13px;"><span style="color: #7aa2ff; font-weight: 500;">5 da ripassare</span><span style="color: #9ba3b4;"> · 4 nuove</span></span>
+<a href="#" aria-label="Ripassa Studio di funzione" style="display: inline-flex; justify-content: center; align-items: center; height: 36px; border: 1px solid #2e3441; border-radius: 6px; color: #e8eaf0; font-size: 13px;">Ripassa</a>
+</li>
+
+<li style="display: grid; grid-template-columns: minmax(180px, 2fr) minmax(140px, 1.3fr) minmax(170px, 1.4fr) 112px; gap: 16px; align-items: center; padding: 14px 20px; border-bottom: 1px solid #22262f;">
+<a href="Carte.dc.html" style="display: flex; flex-direction: column; color: #e8eaf0;"><span style="font-weight: 500;">Integrali</span><span style="font-size: 13px; color: #9ba3b4;">48 card</span></a>
+<div style="display: flex; align-items: center; gap: 10px;"><div style="flex: 1; height: 6px; background: #22262f; border-radius: 3px;"><div style="width: 23%; height: 6px; background: #ff6b6b; border-radius: 3px;"></div></div><span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; width: 36px;">23%</span></div>
+<span style="font-size: 13px;"><span style="color: #7aa2ff; font-weight: 500;">4 da ripassare</span><span style="color: #9ba3b4;"> · 6 nuove</span></span>
+<a href="#" aria-label="Ripassa Integrali" style="display: inline-flex; justify-content: center; align-items: center; height: 36px; border: 1px solid #2e3441; border-radius: 6px; color: #e8eaf0; font-size: 13px;">Ripassa</a>
+</li>
+
+<li style="display: grid; grid-template-columns: minmax(180px, 2fr) minmax(140px, 1.3fr) minmax(170px, 1.4fr) 112px; gap: 16px; align-items: center; padding: 14px 20px; border-bottom: 1px solid #22262f;">
+<a href="Carte.dc.html" style="display: flex; flex-direction: column; color: #e8eaf0;"><span style="font-weight: 500;">Serie numeriche</span><span style="font-size: 13px; color: #9ba3b4;">35 card</span></a>
+<span style="font-size: 13px; color: #9ba3b4;">Mai ripassato</span>
+<span style="font-size: 13px; color: #9ba3b4;">In attesa: lezione del 28 ott</span>
+<span style="display: inline-flex; justify-content: center; align-items: center; height: 36px; font-size: 13px; color: #9ba3b4;">Non ancora</span>
+</li>
+
+<li style="display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: center; padding: 14px 20px;">
+<div style="flex: 1 1 320px; display: flex; flex-direction: column;"><span style="font-weight: 500;">Senza argomento <span style="font-weight: 400; color: #9ba3b4;">· 17 card</span></span><span style="font-size: 13px; color: #9ba3b4;">Assegna un argomento, così entrano nel ripasso al momento giusto.</span></div>
+<a href="Carte.dc.html" style="display: inline-flex; align-items: center; height: 36px; padding: 0 12px; font-size: 13px;">Vedi le card</a>
+<button type="button" style="display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; background: #5b8cff1a; border: 1px solid #5b8cff66; border-radius: 6px; color: #7aa2ff; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M10 3v4M10 13v4M3 10h4M13 10h4M5.5 5.5l2 2M12.5 12.5l2 2M14.5 5.5l-2 2M7.5 12.5l-2 2"></path></svg>Ordina con l'AI</button>
+</li>
+</ul>
+</section>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1080}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

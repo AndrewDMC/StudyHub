@@ -26,6 +26,7 @@ import {
   type SessionLimit,
   type SessionState,
 } from '@/lib/quickReview';
+import { fetchDeckSummaries } from '@/lib/deckEditorClient';
 import { REVIEW_OVERVIEW_KEY, fetchReviewOverview } from '@/lib/reviewOverview';
 import { SUBJECT_COLOR_HEX } from '@/lib/subjectColors';
 import { CardActionsSheet } from './CardActionsSheet';
@@ -112,6 +113,15 @@ export function QuickReviewClient({
   const [limit, setLimit] = useState<SessionLimit>(DEFAULT_SESSION_LIMIT);
   const [screen, setScreen] = useState<Screen>('home');
   const [scope, setScope] = useState<ReviewScope>(deepLink?.scope ?? {});
+  // Deck names are not in the overview: read them from the decks list (cached by the subject page).
+  const decks = useQuery({
+    queryKey: ['decks', scope.subjectSlug],
+    queryFn: () => fetchDeckSummaries(scope.subjectSlug!),
+    enabled: !!scope.deckId && !!scope.subjectSlug,
+  });
+  const deckTitle = scope.deckId
+    ? decks.data?.find((d) => d.id === scope.deckId)?.title
+    : undefined;
   // The deep link's subject only while the current session is still that subject's.
   const linkSlug = deepSlug && scope.subjectSlug === deepSlug ? deepSlug : undefined;
   const [session, setSession] = useState<SessionState>(() => startSession([]));
@@ -278,7 +288,7 @@ export function QuickReviewClient({
     }
   };
 
-  const title = sessionTitle(scope, overview.data);
+  const title = sessionTitle(scope, overview.data, deckTitle);
   const card = currentCard(session);
   const summary = screen === 'summary' ? summarize(session.history, Date.now()) : null;
 

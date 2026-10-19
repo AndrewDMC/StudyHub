@@ -1,71 +1,71 @@
 'use client';
 
-import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
-import { Search } from 'lucide-react';
-import type { FlashcardDto, FlashcardStatsDto, TopicDto } from '@studyhub/contracts';
-import { materialHref } from '@/lib/subjectTabs';
-import type { Filters } from '../FlashcardListPanel';
+import { useRef, useState } from 'react';
+import { Search, X } from 'lucide-react';
+import type { FlashcardDto, TopicDto } from '@studyhub/contracts';
 import {
-  MobileSection,
-  SectionEmpty,
-  SectionError,
-  SkeletonRows,
-} from '../subject-mobile/SectionState';
-import { CARDS_TITLE_ID } from './DeckGroupsSection';
+  pagesToCards,
+  useDebounced,
+  useDeckSummaries,
+  useFlashcardPages,
+  useFlashcardStats,
+  type Filters,
+} from '../flashcards/api';
+import { EmptyState } from '../flashcards/shared/EmptyState';
+import { useFlashcardsParams } from '../flashcards/useFlashcardsParams';
+import { MobileSection, SectionError, SkeletonRows } from '../subject-mobile/SectionState';
 import { FlashcardDetailSheet } from './FlashcardDetailSheet';
 import { FlashcardRow } from './FlashcardRow';
-import { useFlashcardPages } from './queries';
+
+export const CARDS_TITLE_ID = 'flashcard-cards-title';
 
 const chip =
   'min-h-11 shrink-0 rounded-full border px-4 text-sm whitespace-nowrap aria-pressed:border-accent aria-pressed:bg-accent-subtle aria-pressed:text-accent border-border text-fg-secondary';
 
-function useDebounced<T>(value: T, ms: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const t = setTimeout(() => setDebounced(value), ms);
-    return () => clearTimeout(t);
-  }, [value, ms]);
-  return debounced;
-}
-
-/** "Le tue card": count, search, topic chips, the list (50 per page on demand) and the detail sheet. */
+/** Vista "Card": count, search, filters (topic chips, excluded, deck), the list (50 per page) and the detail sheet. */
 export function CardsSection({
   slug,
   topics,
-  stats,
-  topicId,
-  onTopicChange: setTopicId,
+  onAdd,
 }: {
   slug: string;
   topics: TopicDto[];
-  stats: FlashcardStatsDto | undefined;
-  topicId: string;
-  onTopicChange: (topicId: string) => void;
+  onAdd: (mode: 'ai' | 'manual') => void;
 }) {
+  const { params, replace } = useFlashcardsParams(slug);
   const [searchOpen, setSearchOpen] = useState(false);
   const [text, setText] = useState('');
   const [selected, setSelected] = useState<FlashcardDto | null>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
+  const stats = useFlashcardStats(slug);
+  const decks = useDeckSummaries(slug).data ?? [];
 
   const q = useDebounced(text.trim(), 250);
-  const filters: Filters = { topicId, state: '', deckId: '', tag: '', q, flagged: false };
-  const filtered = topicId !== '' || q !== '';
+  const filters: Filters = {
+    topicId: params.argomento ?? '',
+    state: params.stato ?? '',
+    deckId: params.mazzo ?? '',
+    tag: params.tag ?? '',
+    q,
+    flagged: false,
+    excluded: params.escluse,
+    sort: 'due',
+  };
+  const filtered =
+    !!(params.argomento || params.mazzo || params.stato || params.tag || params.escluse) ||
+    q !== '';
 
   const query = useFlashcardPages(slug, filters);
-  const cards = query.data?.pages.flatMap((p) => p.items) ?? [];
-  const topicChips = (stats?.topicMastery ?? []).filter((t) => t.cardCount > 0);
+  const cards = pagesToCards(query.data);
+  const total = query.data?.pages[0]?.total ?? null;
+  const topicChips = (stats.data?.topicMastery ?? []).filter((t) => t.cardCount > 0);
+  const deck = params.mazzo ? decks.find((d) => d.id === params.mazzo) : undefined;
+  const deckStatus = new Map(decks.map((d) => [d.id, d.status]));
 
-  const total = stats
-    ? Object.values(stats.countsByState).reduce((a, b) => a + b, 0) +
-      stats.suspendedCount +
-      stats.flaggedCount
-    : null;
-  const count = filtered
-    ? `${cards.length}${query.hasNextPage ? '+' : ''}`
-    : total !== null
-      ? String(total)
-      : null;
+  const reset = () => {
+    setText('');
+    replace({ argomento: null, mazzo: null, stato: null, tag: null, escluse: false });
+  };
 
   return (
     <MobileSection
@@ -77,7 +77,9 @@ export function CardsSection({
       busy={query.isLoading}
       action={
         <span className="flex items-center gap-1">
-          {count !== null && <span className="font-mono text-xs text-fg-muted">{count}</span>}
+          <span className="font-mono text-xs text-fg-secondary" aria-live="polite">
+            {total === null ? '' : total === 1 ? '1 card' : `${total} card`}
+          </span>
           <button
             type="button"
             aria-label="Cerca tra le flashcard"
@@ -94,7 +96,7 @@ export function CardsSection({
         <input
           type="search"
           aria-label="Cerca nelle card"
-          placeholder="Cerca nel testo…"
+          placeholder="Cerca in domande e risposte"
           value={text}
           onChange={(e) => setText(e.target.value)}
           autoFocus
@@ -102,54 +104,78 @@ export function CardsSection({
         />
       )}
 
-      {topicChips.length > 0 && (
-        <div
-          role="group"
-          aria-label="Filtra per argomento"
-          className="-mx-4 mb-3 flex gap-2 overflow-x-auto px-4"
+      <div
+        role="group"
+        aria-label="Filtra per argomento"
+        className="-mx-4 mb-3 flex gap-2 overflow-x-auto px-4"
+      >
+        <button
+          type="button"
+          aria-pressed={!params.argomento}
+          onClick={() => replace({ argomento: null })}
+          className={chip}
         >
+          Tutte
+        </button>
+        {topicChips.map((t) => (
           <button
+            key={t.topicId}
             type="button"
-            aria-pressed={topicId === ''}
-            onClick={() => setTopicId('')}
+            aria-pressed={params.argomento === t.topicId}
+            onClick={() => replace({ argomento: t.topicId })}
             className={chip}
           >
-            Tutte
+            {t.name}
           </button>
-          {topicChips.map((t) => (
-            <button
-              key={t.topicId}
-              type="button"
-              aria-pressed={topicId === t.topicId}
-              onClick={() => setTopicId(t.topicId)}
-              className={chip}
-            >
-              {t.name}
-            </button>
-          ))}
-        </div>
+        ))}
+      </div>
+      <div className="-mx-4 mb-3 flex gap-2 overflow-x-auto px-4">
+        <button
+          type="button"
+          aria-pressed={params.escluse}
+          onClick={() => replace({ escluse: !params.escluse })}
+          className={chip}
+        >
+          Solo escluse dal ripasso
+        </button>
+        {params.mazzo && (
+          <button
+            type="button"
+            aria-label="Rimuovi filtro mazzo"
+            onClick={() => replace({ mazzo: null })}
+            className={`${chip} inline-flex items-center gap-1.5 border-accent bg-accent-subtle text-accent`}
+          >
+            Mazzo: {deck?.title ?? '…'}
+            <X className="size-4" aria-hidden="true" />
+          </button>
+        )}
+      </div>
+      {filtered && (
+        <button
+          type="button"
+          onClick={reset}
+          className="mb-2 min-h-11 px-1 text-sm text-accent-hover"
+        >
+          Azzera filtri
+        </button>
       )}
 
       {query.isLoading ? (
         <SkeletonRows count={4} />
-      ) : query.isError ? (
+      ) : query.isError && cards.length === 0 ? (
         <SectionError
-          message={(query.error as Error).message}
+          message="Impossibile caricare le card."
           onRetry={() => void query.refetch()}
         />
       ) : cards.length === 0 ? (
         filtered ? (
-          <SectionEmpty>Nessuna flashcard corrisponde ai filtri.</SectionEmpty>
+          <div className="rounded-[var(--radius-card)] border border-dashed border-border bg-bg-surface p-4 text-center text-sm text-fg-secondary">
+            {params.escluse
+              ? 'Nessuna card esclusa dal ripasso.'
+              : 'Nessuna flashcard corrisponde ai filtri.'}
+          </div>
         ) : (
-          <SectionEmpty>
-            <p>Nessuna flashcard ancora. Genera un mazzo da un documento.</p>
-            <Link
-              href={materialHref(slug, 'tutti')}
-              className="mt-2 inline-flex min-h-11 items-center font-medium text-accent"
-            >
-              Vai al materiale
-            </Link>
-          </SectionEmpty>
+          <EmptyState onGenerate={() => onAdd('ai')} onWrite={() => onAdd('manual')} />
         )
       ) : (
         <>
@@ -158,6 +184,7 @@ export function CardsSection({
               <li key={card.id} className={i > 0 ? 'border-t border-border' : undefined}>
                 <FlashcardRow
                   card={card}
+                  deckStatus={deckStatus.get(card.deckId)}
                   topicName={topics.find((t) => t.id === card.topicId)?.name ?? null}
                   onOpen={(trigger) => {
                     triggerRef.current = trigger;
@@ -183,6 +210,7 @@ export function CardsSection({
       <FlashcardDetailSheet
         slug={slug}
         topics={topics}
+        decks={decks}
         card={selected}
         onOpenChange={(open) => {
           if (!open) setSelected(null);

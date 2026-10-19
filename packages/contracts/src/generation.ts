@@ -64,6 +64,8 @@ export type GenerationKind = z.infer<typeof GenerationKindSchema>;
 export const EstimateGenerationCostRequestSchema = z.object({
   scope: GenerationScopeSchema,
   model: z.string(),
+  /** Flashcards only: the number of cards asked for. Omitted or 'auto' = proportional to the input. */
+  count: z.union([z.literal('auto'), z.number().int().positive().max(200)]).optional(),
 });
 export type EstimateGenerationCostRequest = z.infer<typeof EstimateGenerationCostRequestSchema>;
 
@@ -103,6 +105,31 @@ export const ArtifactDtoSchema = z.object({
 });
 export type ArtifactDto = z.infer<typeof ArtifactDtoSchema>;
 
+/** `PATCH /api/subjects/:slug/artifacts/:artifactId` (flashcard decks only): rename and/or archive/restore. */
+export const UpdateArtifactRequestSchema = z
+  .object({
+    title: z.string().trim().min(1).max(120).optional(),
+    status: z.enum(['approved', 'archived']).optional(),
+  })
+  .refine((v) => v.title !== undefined || v.status !== undefined, {
+    message: 'Indica almeno titolo o stato',
+  });
+export type UpdateArtifactRequest = z.infer<typeof UpdateArtifactRequestSchema>;
+
+/** `GET /api/subjects/:slug/decks`: every flashcard deck of the subject, any status. */
+export const DeckSummaryDtoSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  status: ArtifactStatusSchema,
+  cardCount: z.number().int().nonnegative(),
+  topicCount: z.number().int().nonnegative(),
+  dueCount: z.number().int().nonnegative(),
+  newCount: z.number().int().nonnegative(),
+  createdAt: z.string().datetime(),
+  generatedBy: z.enum(['ai', 'import', 'manual']).nullable(),
+});
+export type DeckSummaryDto = z.infer<typeof DeckSummaryDtoSchema>;
+
 export const FlashcardDtoSchema = z.object({
   id: z.string().uuid(),
   deckId: z.string().uuid(),
@@ -113,7 +140,13 @@ export const FlashcardDtoSchema = z.object({
   hint: z.string().nullable(),
   /** null = card created by hand in the deck editor: nothing to cite. */
   sourceRef: z
-    .object({ docId: z.string().uuid(), page: z.number().int(), quote: z.string() })
+    .object({
+      docId: z.string().uuid(),
+      page: z.number().int(),
+      quote: z.string(),
+      /** Original name of the source document; filled by the list endpoint, null if it is gone. */
+      docTitle: z.string().nullable().optional(),
+    })
     .nullable(),
   state: z.enum(['new', 'learning', 'review', 'relearning']),
   suspended: z.boolean(),
@@ -122,6 +155,9 @@ export const FlashcardDtoSchema = z.object({
   /** Next review due date; null when the card is new (never reviewed) or suspended. */
   dueAt: z.string().datetime().nullable().default(null),
   createdAt: z.string().datetime(),
+  /** FSRS counters: reviews done and times the card was forgotten. */
+  reps: z.number().int().nonnegative().default(0),
+  lapses: z.number().int().nonnegative().default(0),
 });
 export type FlashcardDto = z.infer<typeof FlashcardDtoSchema>;
 

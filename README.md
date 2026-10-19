@@ -115,6 +115,7 @@ consuma i limiti del tuo piano. L'app non ha autenticazione propria: tienila su 
 | [Miglioramenti proposti](docs/06-miglioramenti.md)                       | Estensioni ordinate per valore/costo + anti-obiettivi                               |
 | [Fasi di sviluppo](docs/fasi/README.md)                                  | F0→F7, una KB per fase con criteri di accettazione                                  |
 | [Prompt mockup](docs/design/prompt-mockup.md)                            | Prompt pronto per generare i mockup dell'hub                                        |
+| [Design tab Flashcard](docs/design/flashcard-redesign/)                  | Redesign della tab Flashcard della materia: canvas e schermate desktop e mobile     |
 | [**Mockup completo**](https://claude.ai/artifact/BFcYbQ67tF5DuaFbPnNSEu) | Artifact navigabile: style guide + 14 schermate (fonte di verità visiva)            |
 
 ## Percorso consigliato di lettura

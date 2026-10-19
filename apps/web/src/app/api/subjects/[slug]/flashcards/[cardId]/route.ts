@@ -3,10 +3,20 @@ import { UpdateFlashcardRequestSchema } from '@studyhub/contracts';
 import { getDb } from '@/lib/db';
 import { deleteFlashcard, updateFlashcard } from '@/lib/deckEditor';
 import { errorResponse, parseBody } from '@/lib/http';
+import { getFlashcard } from '@/lib/review';
 
 export const dynamic = 'force-dynamic';
 
 type RouteParams = { params: Promise<{ slug: string; cardId: string }> };
+
+export async function GET(_request: Request, { params }: RouteParams) {
+  const { slug, cardId } = await params;
+  try {
+    return NextResponse.json({ flashcard: await getFlashcard(getDb(), slug, cardId) });
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
 
 /**
  * Edits one card: front/back/type/hint, topic, deck, tags, suspend ("sospendo una card: sparisce

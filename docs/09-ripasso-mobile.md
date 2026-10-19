@@ -155,6 +155,9 @@ Differenze rispetto a quanto scritto sopra, decise in implementazione:
   "niente da ripassare oggi" da "nessuna flashcard". Riga "Senza argomento" con `id: null`, solo se ha card.
 - **Coda**: `GET /api/review/queue?materia=&argomento=&n=`, `argomento=none` = card senza argomento, `n` ≤ 500
   (assente = tutte). Risposta `{ queue }` come la coda per materia.
+- **Filtro mazzo e overview per materia** (redesign tab Flashcard, 2026-10-19): `GET /api/review/queue?materia=&mazzo=<deckId>`
+  (combinabile con `argomento`) e `GET /api/review/overview?materia=<slug>` (una materia sola, anche se archiviata).
+  Dettagli in [docs/fasi/F4-flashcard.md](fasi/F4-flashcard.md).
 - **Intervalli in ms**, non stringhe: `intervals: { 1..4: number }`. `formatInterval` in `lib/format.ts` li
   formatta lato client. La risposta del rating include anche `intervals` della card aggiornata, per una
   card ri-accodata dopo "Di nuovo".

@@ -303,3 +303,64 @@ Fuori dalla coda restano anche le card senza argomento e senza link.
 - La coda per lezione (`?task=`) non cambia. Test: `apps/web/test/treatedReview.test.ts`.
 
 Non ancora: "oggi" in UTC, come sopra; le materie senza piano `active` non sono toccate.
+
+## Aggiornamento — redesign della tab Flashcard della materia (2026-10-19, branch `feat/flashcard-redesign`)
+
+Design: [docs/design/flashcard-redesign/](../design/flashcard-redesign/). Piano e spec in `.claude/work/flashcard-redesign/`
+(non versionati).
+
+**Desktop** (`apps/web/src/components/flashcards/`, montato dal ramo `flashcard` di
+[SubjectDetailClient.tsx](../../apps/web/src/components/SubjectDetailClient.tsx)). Tre viste su `?view=`:
+
+- **Panoramica** (default): hero "Ripasso di oggi" con "Ripassa ora" e mini forecast a 7 giorni; "Da sistemare" solo
+  se ci sono mazzi in bozza o card escluse dal ripasso; "Le tue card" raggruppate per argomento o per mazzo
+  (`?group=argomento|mazzo`). Per mazzo: "Da approvare" (apre la revisione esistente), "Attivi" (Ripassa, menu ⋯:
+  rinomina, unisci, esporta, archivia), "Archiviati" con ripristino.
+- **Card**: ricerca, filtri Stato / Argomento / Mazzo / Tag, "Solo escluse dal ripasso", ordinamento per scadenza o
+  più recenti, conteggio totale, selezione multipla con barra in basso. Il dettaglio si apre in un pannello laterale
+  (`?card=<id>`) con domanda, risposta, suggerimento, argomento, mazzo, tag, fonte e storico.
+- **Statistiche**: rischio esame (solo testo), conteggio per stato ed escluse, previsione 30 giorni, ritenzione,
+  padronanza per argomento, calibrazione.
+
+Un solo dialog "Aggiungi flashcard" con quattro modalità: scrivi a mano, genera con l'AI (stessa logica di
+[GenerationPanel.tsx](../../apps/web/src/components/GenerationPanel.tsx), che resta nella colonna AI), importa,
+nuovo mazzo vuoto. Le conferme usano `ConfirmDialog`, non più `window.confirm`. I menu ⋯ usano
+`@radix-ui/react-dropdown-menu` (nuova dipendenza di `apps/web`).
+
+**Mobile** (sotto 768 px, [apps/web/src/components/flashcard-mobile/](../../apps/web/src/components/flashcard-mobile/)):
+stesse viste in tab segmentata, hero e "Da sistemare"; FAB "+" che apre il dialog a schermo intero; azioni su card
+e mazzo in bottom sheet. La vista Card riusa la lista e il sheet di dettaglio esistenti.
+
+**API nuove o estese** (contratti in [packages/contracts/src/review.ts](../../packages/contracts/src/review.ts)):
+
+- `GET /api/subjects/[slug]/decks` → `{ decks: DeckSummaryDto[] }`, tutti gli stati, più recenti prima.
+- `PATCH /api/subjects/[slug]/artifacts/[artifactId]`: `title` e/o `status` (`approved` | `archived`), solo
+  `flashcard_deck`. Un mazzo archiviato esce dal ripasso e dalle statistiche. `approved` su una bozza la approva senza
+  revisione: per "Rivedi e approva" si usa la pagina artifact.
+- `GET /api/subjects/[slug]/flashcards/[cardId]` → `{ flashcard }`, con `sourceRef.docTitle`. 404 se la card è di
+  un'altra materia.
+- `GET /api/subjects/[slug]/flashcards`: filtri `excluded=true|false` (sospese o segnalate, solo mazzi approvati),
+  `sort=due|recent`; la risposta include `total`. Il cursore è opaco, con timestamp al microsecondo: i cursori
+  prodotti prima non sono più validi. Cursore malformato → 400.
+- `GET /api/subjects/[slug]/flashcards/groups`: `new` = nuove ammesse oggi (regola del piano, tetto
+  `DEFAULT_NEW_LIMIT` per materia); `newBlockedCount` = nuove che la regola tiene fuori.
+- `GET /api/subjects/[slug]/stats/flashcards`: `draftDeckCount`, `draftCardCount`, `excludedCount`.
+- `GET /api/review/overview?materia=<slug>`: una sola materia, anche se archiviata; `dueCount` e `newCount` per materia.
+- `GET /api/review/queue?materia=&mazzo=<deckId>` e pagina `/ripasso?materia=&mazzo=<deckId>`: sessione sul mazzo.
+- `POST .../artifacts/estimate` accetta `count` (solo flashcard) per stimare il costo di un numero di card.
+- `FlashcardDto`: `reps`, `lapses`.
+
+**Rimossi**: `StatsPanel`, `CalibrationPanel`, `DeckToolsPanel`, `DeckGroupsPanel`, `FlashcardListPanel`,
+`DraftDecksLink`, `deck-groups/AutoSortCta`, `flashcard-mobile/{DeckGroupsSection,DeckToolsDisclosure,DraftDecksLink}`.
+Restano `useAutoSort` e la logica di ordinamento automatico.
+
+Non ancora:
+
+- Ripasso solo delle card a rischio per l'esame: il banner in Statistiche è solo testo, senza bottone.
+- Data della prossima lezione per argomento: la riga "In attesa del piano" non la mostra (`topicId` nelle task quasi
+  mai valorizzato).
+- `card=<id>` su mobile: il dettaglio card mobile non legge ancora il param.
+- `DEFAULT_NEW_LIMIT` (20) è duplicato lato client: il barrel di `@studyhub/contracts` importa `node:path`, quindi il
+  client non può importarlo. Il valore va tenuto allineato a mano.
+- Gli e2e (`apps/web/e2e/materia-flashcard*.spec.ts`, `apps/web/e2e/flashcard-mazzi*.spec.ts`) sono scritti ma non
+  eseguiti: vanno lanciati con l'app avviata.

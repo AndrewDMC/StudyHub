@@ -158,7 +158,7 @@ test.describe('Materia mobile — Hero Flashcard: stima (slice B)', () => {
     slug = undefined;
   });
 
-  test('"~ N min" con card in scadenza, assente quando non ce ne sono', async ({
+  test('"circa N minuti" con card in scadenza, assente quando non ce ne sono', async ({
     page,
     request,
     baseURL,
@@ -170,11 +170,10 @@ test.describe('Materia mobile — Hero Flashcard: stima (slice B)', () => {
 
     const hero = page.getByRole('region', { name: 'Ripasso di oggi' });
     await expect(hero).toBeVisible({ timeout: 30_000 });
-    const estimate = hero.getByTestId('review-estimate');
-    await expect(estimate.locator('[aria-hidden=true]')).toHaveText(/^~ \d+ min$/, {
+    // La stima è nella riga di riepilogo dell'hero: "1 in scadenza · N nuove · circa M minuti".
+    await expect(hero.getByText(/in scadenza/)).toHaveText(/ · circa \d+ minut/, {
       timeout: 30_000,
     });
-    await expect(estimate.locator('.sr-only')).toHaveText(/^circa \d+ minuti$/);
     await noHorizontalScroll(page);
 
     // Nessuna card in scadenza: tutte nel futuro, la stima sparisce.
@@ -194,7 +193,8 @@ test.describe('Materia mobile — Hero Flashcard: stima (slice B)', () => {
     await expect(hero.getByRole('button', { name: 'Nessuna card da ripassare' })).toBeVisible({
       timeout: 30_000,
     });
-    await expect(hero.getByTestId('review-estimate')).toHaveCount(0);
+    await expect(hero.getByText('Hai finito per oggi.')).toBeVisible();
+    await expect(hero.getByText(/circa \d+ minut/)).toHaveCount(0);
   });
 });
 

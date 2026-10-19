@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CARD_STATE_VIEW,
+  cardHistoryLabel,
   deckCardsLabel,
   draftDecksLabel,
   formatCardDue,
+  formatCardDueLong,
   forecastPeak,
   plainCardText,
   retentionMessage,
@@ -96,5 +99,36 @@ describe('formatCardDue', () => {
   it('counts the following UTC days', () => {
     expect(formatCardDue('2026-06-12T00:00:00.000Z', now)).toBe('tra 2 g');
     expect(formatCardDue('2026-06-16T09:00:00.000Z', now)).toBe('tra 6 g');
+  });
+});
+
+describe('card state view and long labels', () => {
+  const now = Date.parse('2026-06-10T15:00:00Z');
+
+  it('reserves danger for flagged cards: states use info/accent/ok/warn', () => {
+    expect(CARD_STATE_VIEW.new.tone).toBe('info');
+    expect(CARD_STATE_VIEW.learning.tone).toBe('accent');
+    expect(CARD_STATE_VIEW.review.tone).toBe('ok');
+    expect(CARD_STATE_VIEW.relearning.tone).toBe('warn');
+  });
+
+  it('spells the due label out', () => {
+    expect(formatCardDueLong({ state: 'new', dueAt: null }, now)).toBe('in coda');
+    expect(formatCardDueLong({ state: 'review', dueAt: null }, now)).toBe('—');
+    expect(formatCardDueLong({ state: 'review', dueAt: '2026-06-10T09:00:00.000Z' }, now)).toBe(
+      'oggi',
+    );
+    expect(formatCardDueLong({ state: 'review', dueAt: '2026-06-11T09:00:00.000Z' }, now)).toBe(
+      'domani',
+    );
+    expect(formatCardDueLong({ state: 'review', dueAt: '2026-06-16T09:00:00.000Z' }, now)).toBe(
+      'tra 6 giorni',
+    );
+  });
+
+  it('writes the history with plurals', () => {
+    expect(cardHistoryLabel(0, 0)).toBe('Mai ripassata');
+    expect(cardHistoryLabel(1, 1)).toBe('1 ripasso · 1 errore');
+    expect(cardHistoryLabel(12, 3)).toBe('12 ripassi · 3 errori');
   });
 });

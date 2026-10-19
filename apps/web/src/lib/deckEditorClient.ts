@@ -2,7 +2,9 @@ import type {
   ArtifactDto,
   BulkFlashcardsRequest,
   CreateFlashcardRequest,
+  DeckSummaryDto,
   FlashcardDto,
+  UpdateArtifactRequest,
   UpdateFlashcardRequest,
 } from '@studyhub/contracts';
 
@@ -123,4 +125,38 @@ export async function importDeck(
     { method: 'POST', body: form },
     'Importazione fallita',
   );
+}
+
+/** Every flashcard deck of the subject with its counters (any status), newest first. */
+export async function fetchDeckSummaries(slug: string): Promise<DeckSummaryDto[]> {
+  const { decks } = await call<{ decks: DeckSummaryDto[] }>(
+    `/api/subjects/${slug}/decks`,
+    undefined,
+    'Impossibile caricare i mazzi',
+  );
+  return decks;
+}
+
+/** Renames a deck and/or archives (`archived`) / restores (`approved`) it. */
+export async function patchDeck(
+  slug: string,
+  deckId: string,
+  patch: UpdateArtifactRequest,
+): Promise<ArtifactDto> {
+  const { artifact } = await call<{ artifact: ArtifactDto }>(
+    `/api/subjects/${slug}/artifacts/${deckId}`,
+    json('PATCH', patch),
+    'Aggiornamento del mazzo fallito',
+  );
+  return artifact;
+}
+
+/** One card by id (deep link `card=<id>` when it is not in the loaded pages). */
+export async function fetchCard(slug: string, cardId: string): Promise<FlashcardDto> {
+  const { flashcard } = await call<{ flashcard: FlashcardDto }>(
+    `/api/subjects/${slug}/flashcards/${cardId}`,
+    undefined,
+    'Card non trovata',
+  );
+  return flashcard;
 }

@@ -171,6 +171,31 @@ describe('estimateGenerationCost', () => {
     expect(estimate.perKind.summary!.costEur).toBeGreaterThan(0);
   });
 
+  it('scales the flashcards estimate with the requested card count', async () => {
+    const at = (count?: 'auto' | number) =>
+      estimateGenerationCost(db, subjectSlug, {
+        scope: { docIds: [docId] },
+        model: 'claude-sonnet-5-5',
+        ...(count !== undefined ? { count } : {}),
+      });
+    const [c30, c60, c100, auto, omitted] = await Promise.all([
+      at(30),
+      at(60),
+      at(100),
+      at('auto'),
+      at(),
+    ]);
+    const cost = (e: typeof c30) => e.perKind.flashcards!.costEur;
+    expect(cost(c30)).toBeLessThan(cost(c60));
+    expect(cost(c60)).toBeLessThan(cost(c100));
+    expect(c100.perKind.flashcards!.outputTokens).toBeGreaterThan(
+      c30.perKind.flashcards!.outputTokens,
+    );
+    expect(auto.perKind.flashcards).toEqual(omitted.perKind.flashcards);
+    // Other functions ignore the card count.
+    expect(c30.perKind.schema).toEqual(omitted.perKind.schema);
+  });
+
   it('estimates a positive cost for simulation and extract_topics too (docs/fasi/F3-ai-core.md "Stato")', async () => {
     const estimate = await estimateGenerationCost(db, subjectSlug, {
       scope: { docIds: [docId] },
