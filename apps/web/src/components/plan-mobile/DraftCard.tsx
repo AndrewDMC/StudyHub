@@ -10,6 +10,7 @@ export function DraftCard({
   onDiscard,
   commitPending,
   discardPending,
+  empty,
   error,
 }: {
   diff: PlanDiffDto | null | undefined;
@@ -17,6 +18,8 @@ export function DraftCard({
   onDiscard: () => void;
   commitPending: boolean;
   discardPending: boolean;
+  /** No tasks to confirm: committing would replace the active plan with nothing. */
+  empty: boolean;
   error: string | null;
 }) {
   return (
@@ -29,7 +32,7 @@ export function DraftCard({
         <button
           type="button"
           onClick={onCommit}
-          disabled={commitPending || discardPending}
+          disabled={commitPending || discardPending || empty}
           className={`${primaryButton} min-h-12 text-sm`}
         >
           {commitPending ? 'Confermo…' : 'Conferma piano'}
@@ -43,6 +46,11 @@ export function DraftCard({
           {discardPending ? 'Scarto…' : 'Scarta bozza'}
         </button>
       </div>
+      {empty && (
+        <p className="mt-2 text-xs text-fg-secondary">
+          La bozza non ha task: rigenerala con una data d&apos;esame futura.
+        </p>
+      )}
       {error && (
         <p role="alert" className="mt-2 text-xs text-danger">
           {error}

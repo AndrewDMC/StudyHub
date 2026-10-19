@@ -37,6 +37,7 @@ import {
   moveTaskInPlan,
   NoDraftPlanError,
   PlanNotFoundError,
+  PlanRequestError,
   reabsorbTaskInPlan,
   setTaskStatus,
   TaskNotFoundError,
@@ -222,6 +223,18 @@ describe('plan draft/commit lifecycle', () => {
     expect(second.status).toBe('active');
     const plans = await db.select().from(studyPlans).where(eq(studyPlans.subjectId, subjectId));
     expect(plans).toHaveLength(1); // no duplicate, no re-supersede
+  });
+
+  it('commit refuses an empty draft and leaves the active plan in place', async () => {
+    const activeId = await insertDraftPlan();
+    await insertTask(activeId, { status: 'todo' });
+    await db.update(studyPlans).set({ status: 'active' }).where(eq(studyPlans.id, activeId));
+    const draftId = await insertDraftPlan();
+
+    await expect(commitPlan(db, dataRoot, subjectSlug, draftId)).rejects.toThrow(PlanRequestError);
+    const [active] = await db.select().from(studyPlans).where(eq(studyPlans.id, activeId));
+    const [draft] = await db.select().from(studyPlans).where(eq(studyPlans.id, draftId));
+    expect([active?.status, draft?.status]).toEqual(['active', 'draft']);
   });
 
   it('commit refuses a superseded plan', async () => {

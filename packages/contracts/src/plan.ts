@@ -56,8 +56,16 @@ export const GeneratePlanJobInputSchema = z.object({
 });
 export type GeneratePlanJobInput = z.infer<typeof GeneratePlanJobInputSchema>;
 
-/** Wizard request body: same as the job input, minus the server-resolved `subjectId`. */
-export const GeneratePlanRequestSchema = GeneratePlanJobInputSchema.omit({ subjectId: true });
+/**
+ * Wizard request body: same as the job input, minus the server-resolved `subjectId`. An exam date on or
+ * before the start leaves the plan no days at all: refused here instead of producing an empty draft.
+ */
+export const GeneratePlanRequestSchema = GeneratePlanJobInputSchema.omit({
+  subjectId: true,
+}).refine((r) => r.targetDate > r.startDate, {
+  message: 'La data dell’esame deve venire dopo l’inizio dello studio.',
+  path: ['targetDate'],
+});
 export type GeneratePlanRequest = z.infer<typeof GeneratePlanRequestSchema>;
 
 export const TaskKindSchema = z.enum([

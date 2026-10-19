@@ -352,6 +352,14 @@ export async function commitPlan(
   if (plan.status === 'superseded') {
     throw new PlanNotFoundError(planId); // a superseded plan can never be (re)committed
   }
+  // An empty draft would supersede the active plan and wipe the calendar for nothing.
+  const [anyTask] = await db
+    .select({ id: tasks.id })
+    .from(tasks)
+    .where(eq(tasks.planId, planId))
+    .limit(1);
+  if (!anyTask)
+    throw new PlanRequestError('La bozza non ha task: rigenerala prima di confermarla.');
 
   await db.transaction(async (tx: AnyDb) => {
     await tx

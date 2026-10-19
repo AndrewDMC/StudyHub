@@ -243,6 +243,7 @@ export function PlanMobile({ slug }: { slug: string }) {
               <DraftCard
                 diff={q.diff.data}
                 onCommit={() => mutations.commit.mutate(plan.id)}
+                empty={plan.tasks.length === 0}
                 onDiscard={() => mutations.discard.mutate()}
                 commitPending={mutations.commit.isPending}
                 discardPending={mutations.discard.isPending}

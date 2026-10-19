@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { TaskDtoSchema, UpdateTaskFlashcardsRequestSchema } from '../src/plan.js';
+import {
+  GeneratePlanRequestSchema,
+  TaskDtoSchema,
+  UpdateTaskFlashcardsRequestSchema,
+} from '../src/plan.js';
 import { ReviewQueueQuerySchema } from '../src/review.js';
 
 const uuid = '3f1b6a2e-5c1d-4d7e-9a35-0d2f6b8c4e11';
@@ -35,5 +39,31 @@ describe('task flashcards contracts', () => {
   it('ReviewQueueQuery accepts task as uuid', () => {
     expect(ReviewQueueQuerySchema.safeParse({ materia: 'a', task: uuid }).success).toBe(true);
     expect(ReviewQueueQuerySchema.safeParse({ task: 'nope' }).success).toBe(false);
+  });
+});
+
+describe('GeneratePlanRequest', () => {
+  const body = (startDate: string, targetDate: string) => ({
+    startDate,
+    targetDate,
+    availability: { perWeekday: [0, 90, 90, 90, 90, 90, 0], blackoutDates: [] },
+    prefs: {
+      sessionLength: 50,
+      intensity: 'standard',
+      simulationCount: 'auto',
+      simulationMinutes: 90,
+      reviewMinutesPerCard: 0.5,
+    },
+  });
+
+  it('refuses an exam date on or before the start: the plan would have no days', () => {
+    for (const target of ['2026-09-02', '2026-10-19']) {
+      const r = GeneratePlanRequestSchema.safeParse(body('2026-10-19', target));
+      expect(r.success).toBe(false);
+      expect(r.error?.issues[0]?.path).toEqual(['targetDate']);
+    }
+    expect(GeneratePlanRequestSchema.safeParse(body('2026-10-19', '2026-10-20')).success).toBe(
+      true,
+    );
   });
 });

@@ -121,7 +121,9 @@ function WizardForm({
     const t = setTimeout(() => setSettledKey(previewKey), 500);
     return () => clearTimeout(t);
   }, [previewKey]);
-  const previewReady = !!targetDate && targetDate > startDate && blackoutInvalid.length === 0;
+  // An exam on or before the start (e.g. a linked exam already past) leaves the plan no days.
+  const dateInvalid = !!targetDate && targetDate <= startDate;
+  const previewReady = !!targetDate && !dateInvalid && blackoutInvalid.length === 0;
   const previewQuery = useQuery({
     queryKey: ['plan-preview', slug, settledKey],
     queryFn: async () => {
@@ -165,6 +167,11 @@ function WizardForm({
           />
         </label>
       </div>
+      {dateInvalid && (
+        <p role="alert" className="text-xs text-danger">
+          La data dell&apos;esame deve venire dopo l&apos;inizio dello studio: scegline una nuova.
+        </p>
+      )}
 
       {exams.length > 0 && (
         <label className="flex flex-col gap-1 text-xs text-fg-secondary">
@@ -322,7 +329,7 @@ function WizardForm({
 
       <button
         type="submit"
-        disabled={generate.isPending || (scoped && pickedTopics.length === 0)}
+        disabled={generate.isPending || dateInvalid || (scoped && pickedTopics.length === 0)}
         className="rounded-[var(--radius-control)] bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
       >
         {generate.isPending ? 'Generazione…' : 'Genera piano'}
@@ -832,7 +839,8 @@ function PlanDesktop({ slug }: { slug: string }) {
               <button
                 type="button"
                 onClick={() => commit.mutate(plan.id)}
-                disabled={commit.isPending}
+                disabled={commit.isPending || plan.tasks.length === 0}
+                title={plan.tasks.length === 0 ? 'La bozza non ha task: rigenerala.' : undefined}
                 className="rounded-[var(--radius-control)] bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
               >
                 Conferma piano
