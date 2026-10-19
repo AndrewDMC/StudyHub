@@ -21,10 +21,14 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 export const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
+    /** Dialogs with their own header (and "Chiudi" button) drop the built-in corner close. */
+    hideClose?: boolean;
+    overlayClassName?: string;
+  }
+>(({ className, children, hideClose = false, overlayClassName, ...props }, ref) => (
   <DialogPrimitive.Portal>
-    <DialogOverlay />
+    <DialogOverlay className={overlayClassName} />
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
@@ -35,10 +39,12 @@ export const DialogContent = React.forwardRef<
       {...props}
     >
       {children}
-      <DialogPrimitive.Close className="absolute right-4 top-4 text-fg-muted outline-none hover:text-fg-primary max-md:right-1 max-md:top-1 max-md:p-3">
-        <X className="h-4 w-4" />
-        <span className="sr-only">Chiudi</span>
-      </DialogPrimitive.Close>
+      {!hideClose && (
+        <DialogPrimitive.Close className="absolute right-4 top-4 text-fg-muted outline-none hover:text-fg-primary max-md:right-1 max-md:top-1 max-md:p-3">
+          <X className="h-4 w-4" />
+          <span className="sr-only">Chiudi</span>
+        </DialogPrimitive.Close>
+      )}
     </DialogPrimitive.Content>
   </DialogPrimitive.Portal>
 ));

@@ -2,14 +2,16 @@
 
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Check, Flag, FolderInput, Pause, Pencil, Play, Trash2 } from 'lucide-react';
-import type { FlashcardDto, TopicDto } from '@studyhub/contracts';
+import { Check, FolderInput, Pause, Pencil, Play, Trash2 } from 'lucide-react';
+import type { DeckSummaryDto, FlashcardDto, TopicDto } from '@studyhub/contracts';
 import { deleteCard, updateCard } from '@/lib/deckEditorClient';
-import { deckGroupsKey } from '@/lib/deckGroupsClient';
-import { REVIEW_OVERVIEW_KEY } from '@/lib/reviewOverview';
+import { cardHistoryLabel, formatCardDueLong } from '@/lib/flashcardMobile';
+import { cardSourceHref } from '@/lib/quickReview';
+import { invalidateFlashcards } from '../flashcards/api';
+import { exclusionReason } from '../flashcards/shared/cardActions';
+import { StateDot } from '../flashcards/shared/StateDot';
 import { CardText } from '../CardText';
 import { BottomSheet } from '../subject-mobile/BottomSheet';
-import { CardStatePills } from './FlashcardRow';
 
 const action =
   'flex min-h-12 w-full items-center gap-3 rounded-[var(--radius-control)] px-2 text-left text-[15px] text-fg-primary disabled:opacity-50';
@@ -24,12 +26,14 @@ const NO_TOPIC_VALUE = '';
 export function FlashcardDetailSheet({
   slug,
   topics,
+  decks,
   card,
   onOpenChange,
   returnFocusRef,
 }: {
   slug: string;
   topics: TopicDto[];
+  decks: DeckSummaryDto[];
   card: FlashcardDto | null;
   onOpenChange: (open: boolean) => void;
   returnFocusRef: RefObject<HTMLElement | null>;
@@ -49,14 +53,7 @@ export function FlashcardDetailSheet({
   }, [card?.id]);
 
   // Same invalidations as the desktop list, plus the overview that feeds "da ripassare oggi".
-  const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: ['flashcard-list', slug] });
-    void queryClient.invalidateQueries({ queryKey: ['flashcard-tags', slug] });
-    void queryClient.invalidateQueries({ queryKey: ['flashcard-stats', slug] });
-    void queryClient.invalidateQueries({ queryKey: ['stats', slug] });
-    void queryClient.invalidateQueries({ queryKey: deckGroupsKey(slug) });
-    void queryClient.invalidateQueries({ queryKey: REVIEW_OVERVIEW_KEY });
-  };
+  const refresh = () => invalidateFlashcards(queryClient, slug);
 
   const update = useMutation({
     mutationFn: (patch: Parameters<typeof updateCard>[2]) => updateCard(slug, card!.id, patch),
@@ -78,6 +75,8 @@ export function FlashcardDetailSheet({
   const changed = card !== null && (front !== card.front || back !== card.back);
   const topicChanged = card !== null && topicChoice !== (card.topicId ?? NO_TOPIC_VALUE);
   const cardTopicName = topics.find((t) => t.id === card?.topicId)?.name ?? null;
+  const cardDeck = decks.find((d) => d.id === card?.deckId);
+  const reason = card ? exclusionReason(card, cardDeck?.status) : null;
   const canSave = changed && front.trim() !== '' && back.trim() !== '' && !busy;
 
   const handleOpenChange = (open: boolean) => {
@@ -195,11 +194,45 @@ export function FlashcardDetailSheet({
         </div>
       ) : card ? (
         <div className="mt-3 flex min-w-0 flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <CardStatePills card={card} />
-          </div>
+          <dl className="grid grid-cols-1 gap-2 rounded-[var(--radius-control)] bg-bg-inset p-3 text-[13px]">
+            <div className="flex justify-between gap-3">
+              <dt className="text-fg-secondary">Stato</dt>
+              <dd>
+                <StateDot card={card} />
+              </dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-fg-secondary">Prossimo ripasso</dt>
+              <dd>{reason ? 'esclusa' : formatCardDueLong(card)}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-fg-secondary">Storico</dt>
+              <dd>{cardHistoryLabel(card.reps ?? 0, card.lapses ?? 0)}</dd>
+            </div>
+          </dl>
+          {reason && (
+            <div className="flex flex-col gap-2 text-[13px]">
+              <p className={reason === 'flagged' ? 'text-danger' : 'text-fg-secondary'}>
+                {reason === 'flagged'
+                  ? 'Segnalata · esclusa dal ripasso'
+                  : reason === 'suspended'
+                    ? 'Sospesa · esclusa dal ripasso'
+                    : `Il mazzo «${cardDeck?.title ?? ''}» non è approvato · esclusa dal ripasso`}
+              </p>
+              {reason === 'flagged' && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => update.mutate({ flagged: false })}
+                  className="min-h-11 rounded-[var(--radius-control)] border border-border-strong px-4 text-sm font-medium disabled:opacity-50"
+                >
+                  Rimetti nel ripasso
+                </button>
+              )}
+            </div>
+          )}
           <div className="min-w-0 overflow-x-auto">
-            <p className="text-[11px] uppercase tracking-[0.06em] text-fg-muted">Domanda</p>
+            <p className="text-xs uppercase tracking-[0.06em] text-fg-secondary">Domanda</p>
             <CardText
               text={card.front}
               side="front"
@@ -207,7 +240,7 @@ export function FlashcardDetailSheet({
             />
           </div>
           <div className="min-w-0 overflow-x-auto">
-            <p className="text-[11px] uppercase tracking-[0.06em] text-fg-muted">Risposta</p>
+            <p className="text-xs uppercase tracking-[0.06em] text-fg-secondary">Risposta</p>
             <CardText
               text={card.back}
               side="back"
@@ -215,17 +248,35 @@ export function FlashcardDetailSheet({
             />
           </div>
           <div className="min-w-0">
-            <p className="text-[11px] uppercase tracking-[0.06em] text-fg-muted">Argomento</p>
+            <p className="text-xs uppercase tracking-[0.06em] text-fg-secondary">Argomento</p>
             <p
-              className={`mt-1 truncate text-[15px] ${cardTopicName ? 'text-fg-primary' : 'text-fg-muted'}`}
+              className={`mt-1 truncate text-[15px] ${cardTopicName ? 'text-fg-primary' : 'text-fg-secondary'}`}
             >
               {cardTopicName ?? 'Senza argomento'}
             </p>
           </div>
+          <label className="flex min-w-0 flex-col gap-1.5 text-xs uppercase tracking-[0.06em] text-fg-secondary">
+            Mazzo
+            <select
+              value={card.deckId}
+              disabled={busy}
+              onChange={(e) => update.mutate({ deckId: e.target.value })}
+              className="min-h-11 rounded-[var(--radius-control)] border border-border bg-bg-inset px-2 text-base normal-case tracking-normal text-fg-primary"
+            >
+              {decks
+                .filter((d) => d.status === 'approved' || d.id === card.deckId)
+                .map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.title}
+                  </option>
+                ))}
+            </select>
+          </label>
           {card.hint && <p className="text-sm italic text-fg-secondary">{card.hint}</p>}
           {card.sourceRef && (
-            <p className="break-words rounded-[var(--radius-control)] bg-bg-inset px-3 py-2 font-mono text-xs text-fg-secondary">
-              pag. {card.sourceRef.page} — &quot;{card.sourceRef.quote}&quot;
+            <p className="break-words rounded-[var(--radius-control)] bg-bg-inset px-3 py-2 text-[13px] text-fg-secondary">
+              {card.sourceRef.docTitle ? `Da “${card.sourceRef.docTitle}”` : 'Da un documento'}
+              {card.sourceRef.page ? `, pagina ${card.sourceRef.page}` : ''}
             </p>
           )}
           {card.tags.length > 0 && (
@@ -275,7 +326,9 @@ export function FlashcardDetailSheet({
             <div className="flex flex-col border-t border-border pt-1">
               {card.sourceRef && (
                 <a
-                  href={`/api/subjects/${slug}/documents/${card.sourceRef.docId}/file#page=${card.sourceRef.page}`}
+                  href={
+                    cardSourceHref({ subjectSlug: slug, sourceRef: card.sourceRef }) ?? undefined
+                  }
                   target="_blank"
                   rel="noopener"
                   className={action}
@@ -319,17 +372,6 @@ export function FlashcardDetailSheet({
                     ? 'Riattiva'
                     : 'Sospendi'}
               </button>
-              {card.flaggedAt && (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => update.mutate({ flagged: false })}
-                  className={action}
-                >
-                  <Flag className="size-[18px] text-fg-secondary" aria-hidden="true" />
-                  Rimuovi segnalazione
-                </button>
-              )}
               <button
                 type="button"
                 disabled={busy}

@@ -3,14 +3,18 @@ import { test, expect } from '@playwright/test';
 import { artifacts, createDb, flashcards } from '@studyhub/db';
 
 /**
- * Slice 3 (flashcard mobile): su desktop (>= md) la tab Flashcard e la pagina di revisione del
- * mazzo restano quelle di prima.
+ * Slice 3 (flashcard mobile): su desktop (>= md) la tab Flashcard è quella desktop (viste Panoramica /
+ * Card / Statistiche, nessun FAB) e la pagina di revisione del mazzo resta quella di prima.
  */
 test.use({ viewport: { width: 1280, height: 800 } });
 
 const db = createDb(process.env.DATABASE_URL);
 
-test('Desktop: tab Flashcard e pagina artifacts invariate', async ({ page, request, baseURL }) => {
+test('Desktop: tab Flashcard con le viste desktop e pagina artifacts invariata', async ({
+  page,
+  request,
+  baseURL,
+}) => {
   test.setTimeout(90_000);
   const name = `E2E Flashcard Desktop ${Date.now()}`;
   const { subject } = await (
@@ -37,10 +41,23 @@ test('Desktop: tab Flashcard e pagina artifacts invariate', async ({ page, reque
 
   try {
     await page.goto(`/materie/${subject.slug}?tab=flashcard`);
-    // Pannello desktop: filtri per mazzo/stato; nessuna vista mobile.
-    await expect(page.getByLabel('Filtra per mazzo')).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByLabel('Filtra per stato')).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Ripasso di oggi' })).toHaveCount(0);
+    // Vista desktop: Panoramica con hero, bottone "Aggiungi" nella barra, nessun FAB mobile.
+    const nav = page.getByRole('navigation', { name: 'Viste flashcard' });
+    await expect(nav.getByRole('link', { name: 'Panoramica' })).toHaveAttribute(
+      'aria-current',
+      'page',
+      { timeout: 30_000 },
+    );
+    await expect(page.getByRole('region', { name: 'Ripasso di oggi' })).toHaveCount(1);
+    await expect(page.getByRole('button', { name: 'Aggiungi', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Aggiungi flashcard' })).toHaveCount(0);
+
+    // Vista Card: filtri a pulsante (non più select) e riga della card in bozza.
+    await nav.getByRole('link', { name: 'Card' }).click();
+    await expect(page.getByRole('button', { name: /^Mazzo/ })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('button', { name: /^Stato/ })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: 'Filtra per mazzo' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^Domanda desktop/ })).toBeVisible();
 
     await page.goto(`/materie/${subject.slug}/artifacts/${draftId}`);
     await expect(page.getByRole('heading', { level: 1, name: 'Revisione flashcard' })).toBeVisible({

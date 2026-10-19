@@ -18,7 +18,7 @@ export function MobileTabContent({
   topics: TopicDto[];
 }) {
   if (tab === 'flashcard') {
-    return <FlashcardMobile slug={slug} topics={topics} />;
+    return <FlashcardMobile slug={slug} topics={topics} documents={documents} />;
   }
   if (tab === 'simulazioni') {
     return <SimulationsMobile slug={slug} documents={documents} topics={topics} />;

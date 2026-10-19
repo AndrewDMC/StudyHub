@@ -6,7 +6,7 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 import { ArrowLeft } from 'lucide-react';
 import { materialHref } from '@/lib/subjectTabs';
 import { CardText } from '../CardText';
-import { STATE_LABELS, fetchPage, useDebounced, type Filters } from '../FlashcardListPanel';
+import { STATE_LABELS, fetchPage, useDebounced, type Filters } from '../flashcards/api';
 import { primaryButton } from '../simulation-mobile/styles';
 import { SectionError, SkeletonRows } from '../subject-mobile/SectionState';
 import { useTopicList, useUpdateTaskFlashcards } from './queries';

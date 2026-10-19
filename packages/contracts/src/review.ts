@@ -17,6 +17,9 @@ export type SubmitReviewRequest = z.infer<typeof SubmitReviewRequestSchema>;
 export const SuspendFlashcardRequestSchema = z.object({ suspended: z.boolean() });
 export type SuspendFlashcardRequest = z.infer<typeof SuspendFlashcardRequestSchema>;
 
+/** Never-seen cards that enter one subject's review queue per day (shared by server and client). */
+export const DEFAULT_NEW_LIMIT = 20;
+
 export const FsrsCardStateSchema = z.enum(['new', 'learning', 'review', 'relearning']);
 
 export const FlashcardStatsDtoSchema = z.object({
@@ -24,6 +27,11 @@ export const FlashcardStatsDtoSchema = z.object({
   suspendedCount: z.number().int().nonnegative(),
   /** Cards reported as low quality during review: out of the queue and of every count above. */
   flaggedCount: z.number().int().nonnegative(),
+  /** Decks still waiting for approval (not reviewable yet) and the cards they hold. */
+  draftDeckCount: z.number().int().nonnegative().default(0),
+  draftCardCount: z.number().int().nonnegative().default(0),
+  /** Cards of approved decks left out of the review: suspended or flagged (each card counted once). */
+  excludedCount: z.number().int().nonnegative().default(0),
   forecast: z.array(z.object({ date: z.string(), count: z.number().int().nonnegative() })),
   atRiskForNextExam: z
     .object({
@@ -70,6 +78,10 @@ export const ListFlashcardsQuerySchema = z.object({
   state: FsrsCardStateSchema.optional(),
   suspended: z.boolean().optional(),
   flagged: z.boolean().optional(),
+  /** true = only cards out of the review: suspended OR flagged, in approved decks (draft/archived decks are not counted). */
+  excluded: z.boolean().optional(),
+  /** 'recent' (default) = newest first; 'due' = next review first, never-scheduled cards last. */
+  sort: z.enum(['due', 'recent']).optional(),
   deckId: z.string().uuid().optional(),
   tag: z.string().optional(),
   q: z.string().optional(),
@@ -81,6 +93,8 @@ export type ListFlashcardsQuery = z.infer<typeof ListFlashcardsQuerySchema>;
 export const FlashcardPageDtoSchema = z.object({
   items: z.array(FlashcardDtoSchema),
   nextCursor: z.string().nullable(),
+  /** Cards matching the current filters, ignoring the cursor. */
+  total: z.number().int().nonnegative().default(0),
 });
 export type FlashcardPageDto = z.infer<typeof FlashcardPageDtoSchema>;
 
@@ -182,6 +196,8 @@ export const DeckGroupDtoSchema = z.object({
   due: z.number().int(),
   new: z.number().int(),
   suspended: z.number().int(),
+  /** New cards of the topic the plan rule keeps out of the review today ("In attesa del piano"). Always set by the server; optional so older literals still compile. */
+  newBlockedCount: z.number().int().nonnegative().optional(),
 });
 export type DeckGroupDto = z.infer<typeof DeckGroupDtoSchema>;
 
@@ -244,6 +260,9 @@ export const ReviewOverviewSubjectDtoSchema = z.object({
   color: SubjectColorSchema,
   nextExam: z.object({ title: z.string(), date: z.string().datetime() }).nullable(),
   due: z.number().int().nonnegative(),
+  /** Of `due`: cards already started (review/learning) and new cards (capped per subject). */
+  dueCount: z.number().int().nonnegative().default(0),
+  newCount: z.number().int().nonnegative().default(0),
   /** Minuti stimati per ripassare le `due` card ("~ N min"), dai tempi reali dell'utente. */
   estimatedMinutes: z.number().int().nonnegative().default(0),
   cardCount: z.number().int().nonnegative(),
@@ -277,6 +296,8 @@ export type RatingIntervals = z.infer<typeof RatingIntervalsSchema>;
 export const ReviewQueueQuerySchema = z.object({
   materia: z.string().min(1).optional(),
   argomento: z.union([z.string().uuid(), z.literal('none')]).optional(),
+  /** Narrow to one deck (combinable with `argomento`). */
+  mazzo: z.string().uuid().optional(),
   /** A plan task (lesson): its attached reviewable cards, due or not. Wins over `argomento`. */
   task: z.string().uuid().optional(),
   n: z.coerce.number().int().positive().max(500).optional(),

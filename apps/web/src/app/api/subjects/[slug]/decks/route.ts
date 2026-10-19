@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getDb } from '@/lib/db';
-import { createDeck } from '@/lib/deckEditor';
+import { createDeck, listDeckSummaries } from '@/lib/deckEditor';
 import { errorResponse, parseBody } from '@/lib/http';
 
 export const dynamic = 'force-dynamic';
@@ -9,6 +9,15 @@ export const dynamic = 'force-dynamic';
 const CreateDeckRequestSchema = z.object({
   title: z.string().trim().min(1, 'Il titolo non può essere vuoto').max(120),
 });
+
+export async function GET(_request: Request, { params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  try {
+    return NextResponse.json({ decks: await listDeckSummaries(getDb(), slug) });
+  } catch (err) {
+    return errorResponse(err);
+  }
+}
 
 export async function POST(request: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;

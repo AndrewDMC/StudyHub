@@ -43,6 +43,8 @@ function card(id: string, over: Partial<ReviewQueueItemDto> = {}): ReviewQueueIt
     flaggedAt: null,
     dueAt: null,
     createdAt: new Date(NOW).toISOString(),
+    reps: 0,
+    lapses: 0,
     subjectSlug: 'bd',
     subjectName: 'Basi di Dati',
     subjectColor: 'violet',
@@ -204,6 +206,8 @@ describe('scope and limits', () => {
           color: 'violet',
           nextExam: null,
           due: 1,
+          dueCount: 1,
+          newCount: 0,
           estimatedMinutes: 1,
           cardCount: 1,
           topics: [
@@ -219,6 +223,9 @@ describe('scope and limits', () => {
       ],
     };
     expect(sessionTitle({}, overview)).toBe('Tutte le materie');
+    expect(sessionTitle({ subjectSlug: 'bd', deckId: 'd1' }, overview, 'Mazzo A')).toBe(
+      'Basi di Dati · Mazzo A',
+    );
     expect(sessionTitle({ subjectSlug: 'bd' }, overview)).toBe(
       'Basi di Dati · tutti gli argomenti',
     );

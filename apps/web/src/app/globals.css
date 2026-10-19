@@ -442,3 +442,29 @@ body {
 .anim-sheet-overlay[data-state='closed'] {
   animation: sheet-overlay-out 220ms var(--ease-standard) forwards;
 }
+
+/* Side panel (flashcard detail drawer): slides in from the right; only the fade under reduced motion. */
+@keyframes panel-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+@keyframes panel-out {
+  to {
+    transform: translateX(100%);
+  }
+}
+.anim-panel[data-state='open'] {
+  animation: panel-in 200ms var(--ease-standard);
+}
+.anim-panel[data-state='closed'] {
+  animation: panel-out 200ms var(--ease-standard) forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .anim-panel[data-state='open'],
+  .anim-panel[data-state='closed'],
+  .anim-sheet[data-state='open'],
+  .anim-sheet[data-state='closed'] {
+    animation: none;
+  }
+}

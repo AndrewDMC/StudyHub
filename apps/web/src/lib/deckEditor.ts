@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   artifacts,
   autoAttachFlashcards,
@@ -15,13 +15,15 @@ import type {
   ArtifactDto,
   BulkFlashcardsRequest,
   CreateFlashcardRequest,
+  DeckSummaryDto,
   FlashcardDto,
+  UpdateArtifactRequest,
   UpdateFlashcardRequest,
 } from '@studyhub/contracts';
 import { SubjectNotFoundError } from './errors';
 import { ConflictError, NotFoundError } from './examPrep';
 import { toArtifactDto } from './generation';
-import { toDto } from './review';
+import { dueCardConditions, reviewableConditions, toDto, treatedCardCondition } from './review';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyDb = any;
@@ -102,6 +104,81 @@ export async function createDeck(
       approvedAt: new Date(),
     })
     .returning();
+  return toArtifactDto(row);
+}
+
+/**
+ * Every flashcard deck of the subject, any status, with the counts the deck view needs. `dueCount`
+ * and `newCount` follow the queue rule (approved deck, not suspended/flagged, treated lesson) but
+ * `newCount` is not capped per subject, so draft and archived decks show 0 for both.
+ */
+export async function listDeckSummaries(
+  db: AnyDb,
+  subjectSlug: string,
+  now: Date = new Date(),
+): Promise<DeckSummaryDto[]> {
+  const subject = await requireSubject(db, subjectSlug);
+  const rows: {
+    deck: typeof artifacts.$inferSelect;
+    cardCount: number;
+    topicCount: number;
+    dueCount: number;
+    newCount: number;
+  }[] = await db
+    .select({
+      deck: artifacts,
+      cardCount: sql<number>`count(${flashcards.id})::int`,
+      topicCount: sql<number>`count(distinct ${flashcards.topicId})::int`,
+      dueCount: sql<number>`count(*) filter (where ${and(
+        ...reviewableConditions(),
+        dueCardConditions(now),
+        treatedCardCondition(now),
+        sql`${flashcards.state} <> 'new'`,
+      )})::int`,
+      newCount: sql<number>`count(*) filter (where ${and(
+        ...reviewableConditions(),
+        treatedCardCondition(now),
+        sql`${flashcards.state} = 'new'`,
+      )})::int`,
+    })
+    .from(artifacts)
+    .leftJoin(flashcards, eq(flashcards.deckId, artifacts.id))
+    .where(and(eq(artifacts.subjectId, subject.id), eq(artifacts.kind, 'flashcard_deck')))
+    .groupBy(artifacts.id)
+    .orderBy(desc(artifacts.createdAt), desc(artifacts.id));
+  return rows.map((r) => ({
+    id: r.deck.id,
+    title: r.deck.title,
+    status: r.deck.status,
+    cardCount: Number(r.cardCount),
+    topicCount: Number(r.topicCount),
+    dueCount: Number(r.dueCount),
+    newCount: Number(r.newCount),
+    createdAt: r.deck.createdAt.toISOString(),
+    generatedBy: r.deck.model === 'manual' ? 'manual' : r.deck.model === 'import' ? 'import' : 'ai',
+  }));
+}
+
+/**
+ * Renames and/or archives a flashcard deck. `status: 'approved'` restores an archived deck (or
+ * approves a draft, keeping the first approval date); archived decks leave the review queue
+ * because only approved decks are reviewable.
+ */
+export async function updateDeck(
+  db: AnyDb,
+  subjectSlug: string,
+  deckId: string,
+  input: UpdateArtifactRequest,
+): Promise<ArtifactDto> {
+  const subject = await requireSubject(db, subjectSlug);
+  const deck = await requireDeck(db, subject.id, deckId);
+  const patch: Partial<typeof artifacts.$inferInsert> = {};
+  if (input.title !== undefined) patch.title = input.title.trim();
+  if (input.status !== undefined) {
+    patch.status = input.status;
+    if (input.status === 'approved' && !deck.approvedAt) patch.approvedAt = new Date();
+  }
+  const [row] = await db.update(artifacts).set(patch).where(eq(artifacts.id, deck.id)).returning();
   return toArtifactDto(row);
 }
 

@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Loader2 } from 'lucide-react';
 import { sortMessage, sortView } from '@/lib/deckGroups';
 import { SortConflictError, fetchSortStatus, startSort } from '@/lib/deckGroupsClient';
 
@@ -82,71 +81,3 @@ export function useAutoSort(slug: string, onFinished: () => void) {
 }
 
 export type AutoSort = ReturnType<typeof useAutoSort>;
-
-const NO_TOPICS_TEXT =
-  'Questa materia non ha ancora argomenti. Estraili dal materiale per poter ordinare le card.';
-
-/** Status area + button of the "Senza argomento" group. `noTopicsLink` is the view-specific action. */
-export function AutoSortCta({
-  sort,
-  hasTopics,
-  variant,
-  noTopicsLink,
-}: {
-  sort: AutoSort;
-  hasTopics: boolean;
-  variant: 'desktop' | 'mobile';
-  noTopicsLink: ReactNode;
-}) {
-  const statusId = `sort-status-${variant}`;
-  const noTopics = !hasTopics || sort.noTopics;
-  const btn =
-    variant === 'mobile'
-      ? 'inline-flex min-h-11 items-center gap-2 rounded-[var(--radius-control)] border border-border px-4 text-sm font-medium text-fg-primary disabled:opacity-60'
-      : 'inline-flex items-center gap-1.5 rounded-[var(--radius-control)] border border-border px-2.5 py-1 text-xs text-fg-primary hover:bg-bg-inset disabled:opacity-60';
-  const text = variant === 'mobile' ? 'text-sm' : 'text-xs';
-
-  let status: ReactNode;
-  if (noTopics) {
-    status = (
-      <>
-        {NO_TOPICS_TEXT} {noTopicsLink}
-      </>
-    );
-  } else if (sort.running) {
-    status = 'Ordino le card…';
-  } else if (sort.failed) {
-    status = <span className="text-danger">{sort.errorText}</span>;
-  } else if (sort.message) {
-    status = sort.message;
-  } else {
-    status = 'Assegna ogni card all’argomento giusto.';
-  }
-
-  return (
-    <div className="mt-2 flex min-w-0 flex-col items-start gap-2">
-      {!noTopics && (
-        <button
-          type="button"
-          onClick={sort.run}
-          disabled={sort.running}
-          aria-busy={sort.running || undefined}
-          aria-describedby={statusId}
-          className={btn}
-        >
-          {sort.running && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
-          {sort.failed && !sort.running ? 'Riprova' : 'Ordina automaticamente'}
-        </button>
-      )}
-      <div
-        id={statusId}
-        role={sort.failed && !sort.running && !noTopics ? 'alert' : 'status'}
-        aria-live="polite"
-        data-testid="sort-status"
-        className={`min-w-0 text-fg-muted ${text}`}
-      >
-        {status}
-      </div>
-    </div>
-  );
-}

@@ -1,0 +1,90 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-10-19T10:00:00Z" },
+  "title": "Flashcard materia – redesign",
+  "launch": { "view": "canvas" },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1280,
+      "h": 1080,
+      "title": "1 · Panoramica (per argomento)",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Carte.dc.html": {
+      "x": 1360,
+      "y": 0,
+      "w": 1280,
+      "h": 1080,
+      "title": "2 · Tutte le card + selezione",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Dettaglio.dc.html": {
+      "x": 2720,
+      "y": 0,
+      "w": 1280,
+      "h": 1080,
+      "title": "3 · Dettaglio e modifica card",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Mobile.dc.html": {
+      "x": 4080,
+      "y": 0,
+      "w": 390,
+      "h": 1180,
+      "title": "7 · Mobile – panoramica",
+      "is_interactive": true
+    },
+    "Mazzi.dc.html": {
+      "x": 0,
+      "y": 1300,
+      "w": 1280,
+      "h": 1000,
+      "title": "4 · Panoramica (per mazzo)",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Statistiche.dc.html": {
+      "x": 1360,
+      "y": 1300,
+      "w": 1280,
+      "h": 1180,
+      "title": "5 · Statistiche",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "Nuovo.dc.html": {
+      "x": 2720,
+      "y": 1300,
+      "w": 1280,
+      "h": 900,
+      "title": "6 · + Aggiungi (dialog unico)",
+      "expand": "fill",
+      "is_interactive": true
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "Carte.dc.html",
+    "Dettaglio.dc.html",
+    "Mobile.dc.html",
+    "Mazzi.dc.html",
+    "Statistiche.dc.html",
+    "Nuovo.dc.html"
+  ],
+  "notes": {
+    "t1": {
+      "x": 0,
+      "y": -300,
+      "text": "Flashcard in materia · redesign",
+      "kind": "title1",
+      "maxW": 4470
+    }
+  },
+  "designSystems": []
+}

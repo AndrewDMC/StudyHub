@@ -2,9 +2,10 @@ import { test, expect, type Page } from '@playwright/test';
 import { applySort, cardTopic, seedMazzi, type MazziSeed } from './fixtures/flashcard-mazzi-seed';
 
 /**
- * Slice 1 "Mazzi per argomento" a 375×812: sezione Mazzi, filtro, Ripassa, "Senza argomento",
- * "Ordina automaticamente" e "Cambia argomento". Il worker non gira negli e2e: il sort si simula
- * intercettando POST/GET `flashcards/sort` e aggiornando il DB al posto del processor.
+ * Slice 1 "Mazzi per argomento" a 375×812, nella Panoramica ridisegnata: righe per argomento,
+ * filtro (link alla vista Card), Ripassa, "Senza argomento", "Ordina con l'AI" e "Cambia argomento".
+ * Il worker non gira negli e2e: il sort si simula intercettando POST/GET `flashcards/sort` e
+ * aggiornando il DB al posto del processor.
  */
 test.use({ viewport: { width: 375, height: 812 } });
 
@@ -21,10 +22,17 @@ async function noHorizontalScroll(page: Page) {
   expect(overflow).toEqual({ document: 0, main: 0 });
 }
 
+const list = (page: Page) => page.getByRole('list', { name: 'Mazzi per argomento' });
+/** Riga della Panoramica per argomento (`li` della lista "Mazzi per argomento"). */
 const deck = (page: Page, name: string) =>
-  page.getByRole('button', { name: new RegExp(`^Mazzo ${name}:`) });
+  list(page).getByRole('listitem').filter({ hasText: name });
+/** Il bottone cambia nome mentre l'ordinamento è in corso. */
+const sortButton = (page: Page) =>
+  page.getByRole('button', { name: /^(Ordina con l'AI|Ordino…)$/ });
 const row = (page: Page, front: string) =>
   page.getByRole('button', { name: new RegExp(`^${front}, `) });
+const viewLink = (page: Page, name: string) =>
+  page.getByRole('navigation', { name: 'Viste flashcard' }).getByRole('link', { name });
 
 const OK_OUTPUT = {
   assigned: 2,
@@ -47,39 +55,40 @@ test.describe('Flashcard mobile — mazzi per argomento', () => {
       s = await seedMazzi(request, baseURL!);
     });
 
-    test('Mazzi per argomento: Calore, Moto e Senza argomento ultimo, con i conteggi', async ({
+    test('Per argomento: Calore, Moto e Senza argomento ultimo, con i conteggi', async ({
       page,
     }) => {
       test.setTimeout(90_000);
       await page.goto(tabUrl());
-      const list = page.getByRole('list', { name: 'Mazzi per argomento' });
-      await expect(list).toBeVisible({ timeout: 30_000 });
-      const labels = await list
-        .getByRole('button', { name: /^Mazzo / })
-        .evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
-      expect(labels).toEqual([
-        'Mazzo Calore: 3 card · 1 da ripassare · 2 nuove',
-        'Mazzo Moto: 2 card · 0 da ripassare · 2 nuove',
-        'Mazzo Senza argomento: 2 card · 0 da ripassare · 2 nuove',
-      ]);
-      for (const name of ['Calore', 'Moto', 'Senza argomento']) {
-        const box = await deck(page, name).boundingBox();
-        expect(box!.height).toBeGreaterThanOrEqual(44);
+      await expect(list(page)).toBeVisible({ timeout: 30_000 });
+      const items = list(page).getByRole('listitem');
+      await expect(items).toHaveCount(3);
+      await expect(items.nth(0)).toContainText('Calore');
+      await expect(items.nth(0)).toContainText('1 da ripassare');
+      await expect(items.nth(1)).toContainText('Moto');
+      await expect(items.nth(1)).toContainText('2 nuove');
+      await expect(items.nth(2)).toContainText('Senza argomento');
+      await expect(items.nth(2)).toContainText('2 card');
+      // Target ≥ 44px: link dell'argomento e "Ripassa".
+      for (const name of ['Calore', 'Moto']) {
+        const link = await deck(page, name).getByRole('link').first().boundingBox();
+        expect(link!.height).toBeGreaterThanOrEqual(44);
+        const play = await page.getByRole('link', { name: `Ripassa ${name}` }).boundingBox();
+        expect(play!.height).toBeGreaterThanOrEqual(44);
+        expect(play!.width).toBeGreaterThanOrEqual(44);
       }
       await noHorizontalScroll(page);
     });
 
-    test('Tap su un mazzo filtra la lista e i chip; un secondo tap deseleziona', async ({
+    test('Tap su un argomento apre la vista Card filtrata; "Azzera filtri" la ripristina', async ({
       page,
     }) => {
       test.setTimeout(90_000);
       await page.goto(tabUrl());
-      await expect(row(page, 'Entropia uno')).toBeVisible({ timeout: 30_000 });
-      await expect(row(page, 'Velocita uno')).toBeVisible();
-
-      await deck(page, 'Moto').click();
-      await expect(deck(page, 'Moto')).toHaveAttribute('aria-pressed', 'true');
-      await expect(row(page, 'Velocita uno')).toBeVisible();
+      await expect(deck(page, 'Moto')).toBeVisible({ timeout: 30_000 });
+      await deck(page, 'Moto').getByRole('link').first().click();
+      await expect(page).toHaveURL(new RegExp(`view=card.*argomento=${s.topicIds.moto}`));
+      await expect(row(page, 'Velocita uno')).toBeVisible({ timeout: 20_000 });
       await expect(row(page, 'Entropia uno')).toHaveCount(0);
       await expect(row(page, 'Sfusa uno')).toHaveCount(0);
       const chips = page.getByRole('group', { name: 'Filtra per argomento' });
@@ -88,19 +97,19 @@ test.describe('Flashcard mobile — mazzi per argomento', () => {
         'true',
       );
 
-      await deck(page, 'Moto').click();
-      await expect(deck(page, 'Moto')).toHaveAttribute('aria-pressed', 'false');
-      await expect(row(page, 'Entropia uno')).toBeVisible();
+      await page.getByRole('button', { name: 'Azzera filtri' }).click();
+      await expect(row(page, 'Entropia uno')).toBeVisible({ timeout: 20_000 });
       await expect(row(page, 'Sfusa uno')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Azzera filtri' })).toHaveCount(0);
     });
 
-    test('Senza argomento filtra le sole card sfuse', async ({ page }) => {
+    test('"Vedi le card" di Senza argomento mostra le sole card sfuse', async ({ page }) => {
       test.setTimeout(90_000);
       await page.goto(tabUrl());
-      await expect(row(page, 'Entropia uno')).toBeVisible({ timeout: 30_000 });
-      await deck(page, 'Senza argomento').click();
-      await expect(deck(page, 'Senza argomento')).toHaveAttribute('aria-pressed', 'true');
-      await expect(row(page, 'Sfusa uno')).toBeVisible();
+      await expect(deck(page, 'Senza argomento')).toBeVisible({ timeout: 30_000 });
+      await deck(page, 'Senza argomento').getByRole('link', { name: 'Vedi le card' }).click();
+      await expect(page).toHaveURL(/view=card.*argomento=none/);
+      await expect(row(page, 'Sfusa uno')).toBeVisible({ timeout: 20_000 });
       await expect(row(page, 'Sfusa due')).toBeVisible();
       await expect(row(page, 'Entropia uno')).toHaveCount(0);
       await expect(row(page, 'Velocita uno')).toHaveCount(0);
@@ -131,11 +140,11 @@ test.describe('Flashcard mobile — mazzi per argomento', () => {
       });
     });
 
-    test('Cambia argomento nel dettaglio card sposta la card e aggiorna i mazzi', async ({
+    test('Cambia argomento nel dettaglio card sposta la card e aggiorna i conteggi', async ({
       page,
     }) => {
       test.setTimeout(90_000);
-      await page.goto(tabUrl());
+      await page.goto(`${tabUrl()}&view=card`);
       await row(page, 'Sfusa uno').click({ timeout: 30_000 });
       const sheet = page.getByRole('dialog', { name: 'Card' });
       await expect(sheet.getByText('Senza argomento').first()).toBeVisible();
@@ -148,33 +157,24 @@ test.describe('Flashcard mobile — mazzi per argomento', () => {
       await group.getByRole('radio', { name: 'Moto' }).click();
       await sheet.getByRole('button', { name: 'Salva' }).click();
       await expect(sheet).toHaveCount(0, { timeout: 20_000 });
-
-      await expect(deck(page, 'Moto')).toHaveAttribute(
-        'aria-label',
-        'Mazzo Moto: 3 card · 0 da ripassare · 3 nuove',
-        { timeout: 20_000 },
-      );
-      await expect(deck(page, 'Senza argomento')).toHaveAttribute(
-        'aria-label',
-        'Mazzo Senza argomento: 1 card · 0 da ripassare · 1 nuove',
-      );
       expect(await cardTopic(s, 'Sfusa uno')).toBe(s.topicIds.moto);
 
+      // La Panoramica riflette lo spostamento.
+      await viewLink(page, 'Panoramica').click();
+      await expect(deck(page, 'Moto')).toContainText('3 nuove', { timeout: 20_000 });
+      await expect(deck(page, 'Senza argomento')).toContainText('1 card', { timeout: 20_000 });
+
       // Riporta la card senza argomento.
+      await viewLink(page, 'Card').click();
       await row(page, 'Sfusa uno').click();
       await sheet.getByRole('button', { name: 'Cambia argomento' }).click();
       await group.getByRole('radio', { name: 'Senza argomento' }).click();
       await sheet.getByRole('button', { name: 'Salva' }).click();
       await expect(sheet).toHaveCount(0, { timeout: 20_000 });
-      await expect(deck(page, 'Senza argomento')).toHaveAttribute(
-        'aria-label',
-        'Mazzo Senza argomento: 2 card · 0 da ripassare · 2 nuove',
-        { timeout: 20_000 },
-      );
       expect(await cardTopic(s, 'Sfusa uno')).toBeNull();
     });
 
-    test('Ordina automaticamente: in corso (bottone disabilitato) poi gruppi aggiornati', async ({
+    test("Ordina con l'AI: in corso (bottone disabilitato) poi gruppi aggiornati", async ({
       page,
     }) => {
       test.setTimeout(90_000);
@@ -190,7 +190,7 @@ test.describe('Flashcard mobile — mazzi per argomento', () => {
       });
 
       await page.goto(tabUrl());
-      const cta = page.getByRole('button', { name: 'Ordina automaticamente' });
+      const cta = sortButton(page);
       await expect(cta).toBeVisible({ timeout: 30_000 });
       await cta.click();
       await expect(cta).toBeDisabled();
@@ -202,19 +202,12 @@ test.describe('Flashcard mobile — mazzi per argomento', () => {
       await expect(status).toContainText('2 card ordinate nei loro argomenti.', {
         timeout: 20_000,
       });
-      await expect(deck(page, 'Calore')).toHaveAttribute(
-        'aria-label',
-        'Mazzo Calore: 4 card · 1 da ripassare · 3 nuove',
-        { timeout: 20_000 },
-      );
-      await expect(deck(page, 'Moto')).toHaveAttribute(
-        'aria-label',
-        'Mazzo Moto: 3 card · 0 da ripassare · 3 nuove',
-      );
+      await expect(deck(page, 'Calore')).toContainText('3 nuove', { timeout: 20_000 });
+      await expect(deck(page, 'Moto')).toContainText('3 nuove');
       await noHorizontalScroll(page);
     });
 
-    test('Ordina automaticamente: errore del POST mostra alert e Riprova', async ({ page }) => {
+    test("Ordina con l'AI: errore del POST mostra alert e Riprova", async ({ page }) => {
       test.setTimeout(90_000);
       await page.route('**/api/subjects/*/flashcards/sort', (route) =>
         route.request().method() === 'POST'
@@ -222,14 +215,14 @@ test.describe('Flashcard mobile — mazzi per argomento', () => {
           : route.continue(),
       );
       await page.goto(tabUrl());
-      await page.getByRole('button', { name: 'Ordina automaticamente' }).click({ timeout: 30_000 });
+      await sortButton(page).click({ timeout: 30_000 });
       await expect(
         page.getByRole('alert').filter({ hasText: 'Non sono riuscito a ordinare le card.' }),
       ).toBeVisible();
       await expect(page.getByRole('button', { name: 'Riprova' })).toBeEnabled();
     });
 
-    test('Ordina automaticamente: job failed mostra l errore e le card restano sfuse', async ({
+    test("Ordina con l'AI: job failed mostra l'errore e le card restano sfuse", async ({
       page,
     }) => {
       test.setTimeout(90_000);
@@ -242,14 +235,14 @@ test.describe('Flashcard mobile — mazzi per argomento', () => {
         route.fulfill({ json: { status: 'failed', output: null, error: 'x' } }),
       );
       await page.goto(tabUrl());
-      await page.getByRole('button', { name: 'Ordina automaticamente' }).click({ timeout: 30_000 });
+      await sortButton(page).click({ timeout: 30_000 });
       await expect(
         page.getByRole('alert').filter({ hasText: 'Non sono riuscito a ordinare le card.' }),
       ).toBeVisible({ timeout: 20_000 });
-      await expect(deck(page, 'Senza argomento')).toBeVisible();
+      await expect(deck(page, 'Senza argomento')).toContainText('2 card');
     });
 
-    test('Ordina automaticamente: un 409 si aggancia al job già in corso', async ({ page }) => {
+    test("Ordina con l'AI: un 409 si aggancia al job già in corso", async ({ page }) => {
       test.setTimeout(90_000);
       await page.route('**/api/subjects/*/flashcards/sort', (route) =>
         route.request().method() === 'POST'
@@ -263,9 +256,9 @@ test.describe('Flashcard mobile — mazzi per argomento', () => {
         route.fulfill({ json: { status: 'running', output: null } }),
       );
       await page.goto(tabUrl());
-      await page.getByRole('button', { name: 'Ordina automaticamente' }).click({ timeout: 30_000 });
+      await sortButton(page).click({ timeout: 30_000 });
       await expect(page.getByTestId('sort-status')).toHaveText(RUNNING_TEXT, { timeout: 20_000 });
-      await expect(page.getByRole('button', { name: 'Ordina automaticamente' })).toBeDisabled();
+      await expect(sortButton(page)).toBeDisabled();
     });
   });
 
@@ -278,9 +271,10 @@ test.describe('Flashcard mobile — mazzi per argomento', () => {
       test.setTimeout(90_000);
       await page.goto(tabUrl());
       await expect(deck(page, 'Senza argomento')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByRole('button', { name: 'Ordina automaticamente' })).toHaveCount(0);
+      await expect(sortButton(page)).toHaveCount(0);
       const status = page.getByTestId('sort-status');
       await expect(status).toContainText('Questa materia non ha ancora argomenti.');
+      // Su mobile non c'è il pannello Argomenti: il rimando è al materiale (come prima del redesign).
       await expect(status.getByRole('link', { name: 'Vai al materiale' })).toBeVisible();
       await noHorizontalScroll(page);
     });

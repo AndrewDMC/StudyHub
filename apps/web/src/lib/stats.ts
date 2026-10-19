@@ -59,6 +59,22 @@ export async function getFlashcardStats(
   // describes the queue too — counts, forecast, exam risk.
   const cards = all.filter((c) => !c.flaggedAt);
   const flaggedCount = all.length - cards.length;
+  const excludedCount = all.filter((c) => c.suspended || c.flaggedAt).length;
+
+  const [drafts] = await db
+    .select({
+      decks: sql<number>`count(distinct ${artifacts.id})::int`,
+      cards: sql<number>`count(${flashcards.id})::int`,
+    })
+    .from(artifacts)
+    .leftJoin(flashcards, eq(flashcards.deckId, artifacts.id))
+    .where(
+      and(
+        eq(artifacts.subjectId, subject.id),
+        eq(artifacts.kind, 'flashcard_deck'),
+        eq(artifacts.status, 'draft'),
+      ),
+    );
 
   const countsByState: Record<FsrsCardState, number> = {
     new: 0,
@@ -133,6 +149,9 @@ export async function getFlashcardStats(
     countsByState,
     suspendedCount,
     flaggedCount,
+    draftDeckCount: Number(drafts?.decks ?? 0),
+    draftCardCount: Number(drafts?.cards ?? 0),
+    excludedCount,
     forecast,
     atRiskForNextExam,
     topicMastery,

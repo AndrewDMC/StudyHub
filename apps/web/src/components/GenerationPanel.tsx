@@ -47,11 +47,12 @@ export async function fetchEstimate(
   slug: string,
   scope: ScopeInput,
   model: string,
+  count?: number,
 ): Promise<EstimateGenerationCostResponse> {
   const res = await fetch(`/api/subjects/${slug}/artifacts/estimate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ scope, model }),
+    body: JSON.stringify(count === undefined ? { scope, model } : { scope, model, count }),
   });
   const body = await res.json();
   if (!res.ok) throw new Error(body.error?.message ?? 'Stima costo fallita');
@@ -63,10 +64,11 @@ export async function enqueue(
   kind: 'flashcards' | 'schema' | 'summary',
   scope: ScopeInput,
   model: string,
+  count: number | 'auto' = 'auto',
 ) {
   const requestBody =
     kind === 'flashcards'
-      ? { scope, count: 'auto', types: ['basic', 'cloze'], difficulty: 2, lang: 'it', model }
+      ? { scope, count, types: ['basic', 'cloze'], difficulty: 2, lang: 'it', model }
       : kind === 'schema'
         ? { scope, depth: 2, style: 'gerarchico', model }
         : { scope, length: 'standard', model };

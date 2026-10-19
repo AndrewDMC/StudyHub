@@ -45,6 +45,9 @@ const OUTPUT_TOKEN_RATIO: Record<GenerationKind, number> = {
   extract_topics: 0.05,
 };
 
+/** Rough output size of one flashcard (front + back + hint + source quote as JSON). */
+const OUTPUT_TOKENS_PER_CARD = 90;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyDb = any;
 
@@ -94,6 +97,8 @@ function toFlashcardDto(row: Flashcard): FlashcardDto {
     flaggedAt: row.flaggedAt ? row.flaggedAt.toISOString() : null,
     dueAt: row.dueAt && !row.suspended && row.state !== 'new' ? row.dueAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
+    reps: row.reps,
+    lapses: row.lapses,
   };
 }
 
@@ -316,7 +321,10 @@ export async function estimateGenerationCost(
 
   const perKind = Object.fromEntries(
     (Object.keys(OUTPUT_TOKEN_RATIO) as GenerationKind[]).map((kind) => {
-      const outputTokens = Math.round(inputTokens * OUTPUT_TOKEN_RATIO[kind]);
+      const outputTokens =
+        kind === 'flashcards' && typeof input.count === 'number'
+          ? input.count * OUTPUT_TOKENS_PER_CARD
+          : Math.round(inputTokens * OUTPUT_TOKEN_RATIO[kind]);
       return [
         kind,
         { outputTokens, costEur: estimateCostEur(input.model, inputTokens, outputTokens) },

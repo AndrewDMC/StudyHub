@@ -26,7 +26,7 @@ export async function GET(request: Request) {
       { status: 400 },
     );
   }
-  const { materia, argomento, task, n } = parsed.data;
+  const { materia, argomento, mazzo, task, n } = parsed.data;
 
   try {
     const queue = await getQuickReviewQueue(
@@ -34,7 +34,11 @@ export async function GET(request: Request) {
       // `task` (a lesson) wins over `argomento`.
       task
         ? { subjectSlug: materia, taskId: task }
-        : { subjectSlug: materia, topicId: argomento === 'none' ? null : argomento },
+        : {
+            subjectSlug: materia,
+            topicId: argomento === 'none' ? null : argomento,
+            deckId: mazzo,
+          },
       { n },
     );
     return NextResponse.json({ queue });

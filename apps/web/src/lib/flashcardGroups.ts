@@ -5,7 +5,12 @@ import type { DeckGroupDto, SortFlashcardsStatus } from '@studyhub/contracts';
 import type { Queue } from 'bullmq';
 import { SubjectNotFoundError } from './errors';
 import { ConflictError } from './examPrep';
-import { dueCardConditions, reviewableConditions, treatedCardCondition } from './review';
+import {
+  DEFAULT_NEW_LIMIT,
+  dueCardConditions,
+  reviewableConditions,
+  treatedCardCondition,
+} from './review';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyDb = any;
@@ -20,8 +25,8 @@ async function requireSubject(db: AnyDb, slug: string) {
  * "Mazzi" of a subject = its flashcards grouped by topic. One group per topic that has cards (topic
  * order), then the unsorted cards (`topicId: null`) last. `total`/`suspended` count every card of
  * the subject (any deck). `due` and `new` count only reviewable cards (approved deck, not
- * suspended/flagged): `due` = already seen and due today, `new` = never seen and from a treated lesson (see
- * `treatedCardCondition`), so "Ripassa" is
+ * suspended/flagged): `due` = already seen and due today, `new` = never seen, from a treated lesson (see
+ * `treatedCardCondition`) and at most `DEFAULT_NEW_LIMIT` per topic, i.e. what a session on that topic holds; `newBlockedCount` = new cards the plan rule keeps out, so "Ripassa" is
  * never enabled on an empty queue.
  */
 export async function listDeckGroups(
@@ -42,6 +47,7 @@ export async function listDeckGroups(
     due: number;
     isNew: number;
     suspended: number;
+    newBlocked: number;
   }[] = await db
     .select({
       topicId: flashcards.topicId,
@@ -53,6 +59,12 @@ export async function listDeckGroups(
         sql`${flashcards.state} = 'new'`,
       )})::int`,
       suspended: sql<number>`count(*) filter (where ${flashcards.suspended})::int`,
+      // Reviewable new cards the "treated topics" rule keeps out of the queue today.
+      newBlocked: sql<number>`count(*) filter (where ${and(
+        ...reviewableConditions(),
+        sql`${flashcards.state} = 'new'`,
+        sql`not ${treatedCardCondition(now)}`,
+      )})::int`,
     })
     .from(flashcards)
     .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
@@ -75,8 +87,9 @@ export async function listDeckGroups(
     parentTopicId: t?.parentId ?? null,
     total: Number(r.total),
     due: Number(r.due),
-    new: Number(r.isNew),
+    new: Math.min(Number(r.isNew), DEFAULT_NEW_LIMIT),
     suspended: Number(r.suspended),
+    newBlockedCount: Number(r.newBlocked),
   });
 
   const groups: DeckGroupDto[] = [];

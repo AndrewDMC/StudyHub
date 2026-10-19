@@ -18,6 +18,7 @@ import {
 } from 'drizzle-orm';
 import {
   artifacts,
+  documents,
   exams,
   flashcards,
   recomputeTopicMastery,
@@ -44,6 +45,7 @@ import {
   type FsrsRating,
   type SubjectColor,
 } from '@studyhub/core';
+import { DEFAULT_NEW_LIMIT } from '@studyhub/contracts';
 import type {
   FlashcardDto,
   FlashcardPageDto,
@@ -54,6 +56,7 @@ import type {
   SubmitReviewResponse,
 } from '@studyhub/contracts';
 import { SubjectNotFoundError } from './errors';
+import { InvalidRequestError, NotFoundError } from './examPrep';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyDb = any;
@@ -81,6 +84,8 @@ export function toDto(row: Flashcard): FlashcardDto {
     flaggedAt: row.flaggedAt ? row.flaggedAt.toISOString() : null,
     dueAt: row.dueAt && !row.suspended && row.state !== 'new' ? row.dueAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
+    reps: row.reps,
+    lapses: row.lapses,
   };
 }
 
@@ -102,8 +107,8 @@ async function requireSubject(db: AnyDb, subjectSlug: string) {
   return subject;
 }
 
-/** Default number of never-seen cards per queue, per subject (docs/fasi/F4-flashcard.md "mix new/review"). */
-export const DEFAULT_NEW_LIMIT = 20;
+/** Default number of never-seen cards per queue, per subject: see `DEFAULT_NEW_LIMIT` in contracts. */
+export { DEFAULT_NEW_LIMIT };
 
 /** End of the UTC day `now` falls in: the same day boundary as the Dashboard (`/api/dashboard`). */
 export function endOfDay(now: Date): Date {
@@ -187,6 +192,8 @@ export interface ReviewScope {
   topicId?: string | null | undefined;
   /** A plan task (lesson): its attached cards, due or not. Wins over `topicId`. */
   taskId?: string | undefined;
+  /** Only the cards of this deck. */
+  deckId?: string | undefined;
 }
 
 interface QueueRow {
@@ -247,6 +254,7 @@ async function loadDueRows(db: AnyDb, scope: ReviewScope, now: Date): Promise<Qu
   }
   if (scope.topicId === null) conditions.push(isNull(flashcards.topicId));
   else if (scope.topicId) conditions.push(eq(flashcards.topicId, scope.topicId));
+  if (scope.deckId) conditions.push(eq(flashcards.deckId, scope.deckId));
 
   return db
     .select({
@@ -385,8 +393,13 @@ export async function getQuickReviewQueue(
 export async function getReviewOverview(
   db: AnyDb,
   now: Date = new Date(),
+  options: { subjectSlug?: string | undefined } = {},
 ): Promise<ReviewOverviewDto> {
-  const live = isNull(subjects.archivedAt);
+  // One explicit subject is always included, even archived (like its own queue); otherwise only
+  // the active ones.
+  const live = options.subjectSlug
+    ? eq(subjects.slug, options.subjectSlug)
+    : isNull(subjects.archivedAt);
   const [subjectRows, topicRows, dueRows, countRows, examRows, [next], recentReviews] =
     await Promise.all([
       db
@@ -410,7 +423,7 @@ export async function getReviewOverview(
         .innerJoin(subjects, eq(topics.subjectId, subjects.id))
         .where(live)
         .orderBy(topics.orderIndex, topics.name),
-      loadDueRows(db, {}, now),
+      loadDueRows(db, options.subjectSlug ? { subjectSlug: options.subjectSlug } : {}, now),
       db
         .select({
           subjectId: artifacts.subjectId,
@@ -488,13 +501,17 @@ export async function getReviewOverview(
       });
     }
     const exam = firstExam.get(s.id);
-    const subjectDue = pickForSubject(due, DEFAULT_NEW_LIMIT).length;
+    const picked = pickForSubject(due, DEFAULT_NEW_LIMIT);
+    const subjectDue = picked.length;
+    const subjectNew = picked.filter((r) => r.f.state === 'new').length;
     return {
       slug: s.slug,
       name: s.name,
       color: s.color as SubjectColor,
       nextExam: exam ? { title: exam.title, date: exam.date.toISOString() } : null,
       due: subjectDue,
+      dueCount: subjectDue - subjectNew,
+      newCount: subjectNew,
       estimatedMinutes: estimateReviewMinutes(subjectDue, avgMs),
       cardCount: topicsOut.reduce((sum, t) => sum + t.cardCount, 0),
       topics: topicsOut,
@@ -662,6 +679,10 @@ export interface ListFlashcardsOptions {
   state?: FsrsCardState | undefined;
   suspended?: boolean | undefined;
   flagged?: boolean | undefined;
+  /** true = suspended OR flagged, in an approved deck; false = the opposite. */
+  excluded?: boolean | undefined;
+  /** 'recent' (default): newest first. 'due': next review first, cards without one last. */
+  sort?: 'due' | 'recent' | undefined;
   deckId?: string | undefined;
   tag?: string | undefined;
   q?: string | undefined;
@@ -669,19 +690,90 @@ export interface ListFlashcardsOptions {
   limit?: number | undefined;
 }
 
-function encodeCursor(row: Flashcard): string {
-  return Buffer.from(`${row.createdAt.toISOString()}|${row.id}`, 'utf-8').toString('base64url');
+/** The DTO's `dueAt`: null for new and suspended cards, so the sort agrees with what the UI shows. */
+const effectiveDueAt = sql`(case when ${flashcards.suspended} or ${flashcards.state} = 'new' then null else ${flashcards.dueAt} end)`;
+
+/**
+ * Timestamps in a cursor travel as text with microsecond precision (`to_char ... US`): batch-inserted
+ * cards share a `created_at` that JS `Date` (milliseconds) would truncate, and the next page would
+ * then skip or lose them.
+ */
+const PG_TS_FORMAT = `YYYY-MM-DD"T"HH24:MI:SS.US"Z"`;
+const tsText = (expr: SQL) =>
+  sql<string | null>`to_char(${expr} at time zone 'UTC', ${PG_TS_FORMAT}::text)`;
+
+interface CursorKeys {
+  ca: string;
+  da: string | null;
 }
 
-function decodeCursor(cursor: string): { createdAt: Date; id: string } {
-  const [iso, id] = Buffer.from(cursor, 'base64url').toString('utf-8').split('|');
-  return { createdAt: new Date(iso!), id: id! };
+function encodeCursor(row: { id: string } & CursorKeys, sort: 'due' | 'recent'): string {
+  const text =
+    sort === 'recent' ? `${row.ca}|${row.id}` : `due|${row.da ?? ''}|${row.ca}|${row.id}`;
+  return Buffer.from(text, 'utf-8').toString('base64url');
+}
+
+function decodeCursor(cursor: string): { createdAt: string; id: string } {
+  const [createdAt, id] = Buffer.from(cursor, 'base64url').toString('utf-8').split('|');
+  if (!createdAt || !id) throw new InvalidRequestError('Cursore non valido');
+  return { createdAt, id };
+}
+
+function decodeDueCursor(cursor: string): { dueAt: string | null; createdAt: string; id: string } {
+  const parts = Buffer.from(cursor, 'base64url').toString('utf-8').split('|');
+  if (parts[0] !== 'due' || parts.length !== 4 || !parts[2] || !parts[3]) {
+    throw new InvalidRequestError('Cursore non valido');
+  }
+  return { dueAt: parts[1] || null, createdAt: parts[2], id: parts[3] };
+}
+
+/** DTOs with the source document's original name in `sourceRef.docTitle` (null if it is gone). */
+async function withDocTitles(
+  db: AnyDb,
+  subjectId: string,
+  cards: Flashcard[],
+): Promise<FlashcardDto[]> {
+  const docIds = [...new Set(cards.flatMap((c) => (c.sourceRef ? [c.sourceRef.docId] : [])))];
+  const docNames = new Map<string, string>();
+  if (docIds.length > 0) {
+    const docs: { id: string; name: string }[] = await db
+      .select({ id: documents.id, name: documents.originalName })
+      .from(documents)
+      .where(and(inArray(documents.id, docIds), eq(documents.subjectId, subjectId)));
+    for (const d of docs) docNames.set(d.id, d.name);
+  }
+  return cards.map((c) => {
+    const dto = toDto(c);
+    return dto.sourceRef
+      ? {
+          ...dto,
+          sourceRef: { ...dto.sourceRef, docTitle: docNames.get(dto.sourceRef.docId) ?? null },
+        }
+      : dto;
+  });
+}
+
+/** One card of the subject, with the source document name; NotFoundError (404) otherwise. */
+export async function getFlashcard(
+  db: AnyDb,
+  subjectSlug: string,
+  cardId: string,
+): Promise<FlashcardDto> {
+  const subject = await requireSubject(db, subjectSlug);
+  const [row] = await db
+    .select({ f: flashcards })
+    .from(flashcards)
+    .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
+    .where(and(eq(flashcards.id, cardId), eq(artifacts.subjectId, subject.id)));
+  if (!row) throw new NotFoundError(`Flashcard non trovata: ${cardId}`);
+  return (await withDocTitles(db, subject.id, [row.f]))[0]!;
 }
 
 /**
- * Read-only flashcard list for the Flashcard tab (docs/fasi/F2-materie.md — the bulk editor
- * stays F4). Cursor-based on `(createdAt, id)` DESC, newest first: a deck can hold thousands of
- * cards, and offset pagination would only get slower as the user pages deeper in.
+ * Flashcard list for the Flashcard tab. Cursor-based: a deck can hold thousands of cards, and
+ * offset pagination would only get slower as the user pages deeper in. `sort: 'recent'` (default)
+ * is `(createdAt, id)` DESC; `sort: 'due'` is next review first, never-scheduled cards last, then
+ * newest. `total` counts the cards matching the filters, whatever the cursor.
  */
 export async function listFlashcards(
   db: AnyDb,
@@ -690,6 +782,7 @@ export async function listFlashcards(
 ): Promise<FlashcardPageDto> {
   const subject = await requireSubject(db, subjectSlug);
   const limit = Math.min(options.limit ?? 50, 200);
+  const sort = options.sort ?? 'recent';
 
   const conditions = [eq(artifacts.subjectId, subject.id)];
   if (options.topicId === 'none') conditions.push(isNull(flashcards.topicId));
@@ -701,6 +794,14 @@ export async function listFlashcards(
       options.flagged ? isNotNull(flashcards.flaggedAt) : isNull(flashcards.flaggedAt),
     );
   }
+  if (options.excluded !== undefined) {
+    // Same set as `excludedCount` in the stats: only approved decks (drafts are "Da approvare").
+    const excluded = and(
+      eq(artifacts.status, 'approved'),
+      or(eq(flashcards.suspended, true), isNotNull(flashcards.flaggedAt)),
+    )!;
+    conditions.push(options.excluded ? excluded : not(excluded));
+  }
   if (options.deckId) conditions.push(eq(flashcards.deckId, options.deckId));
   if (options.tag) conditions.push(sql`${options.tag} = ANY(${flashcards.tags})`);
   if (options.q) {
@@ -708,30 +809,65 @@ export async function listFlashcards(
     const needle = `%${options.q.replace(/[\\%_]/g, '\\$&')}%`;
     conditions.push(or(ilike(flashcards.front, needle), ilike(flashcards.back, needle))!);
   }
+
+  const [totalRow] = (await db
+    .select({ total: sql<number>`count(*)::int` })
+    .from(flashcards)
+    .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
+    .where(and(...conditions))) as { total: number }[];
+  const total = totalRow?.total ?? 0;
+
+  const createdBefore = (createdAt: string, id: string) =>
+    or(
+      sql`${flashcards.createdAt} < ${createdAt}::timestamptz`,
+      and(sql`${flashcards.createdAt} = ${createdAt}::timestamptz`, lt(flashcards.id, id))!,
+    )!;
   if (options.cursor) {
-    const { createdAt, id } = decodeCursor(options.cursor);
-    conditions.push(
-      or(
-        lt(flashcards.createdAt, createdAt),
-        and(eq(flashcards.createdAt, createdAt), lt(flashcards.id, id))!,
-      )!,
-    );
+    if (sort === 'recent') {
+      const { createdAt, id } = decodeCursor(options.cursor);
+      conditions.push(createdBefore(createdAt, id));
+    } else {
+      const { dueAt, createdAt, id } = decodeDueCursor(options.cursor);
+      const tie = createdBefore(createdAt, id);
+      conditions.push(
+        dueAt
+          ? or(
+              sql`${effectiveDueAt} > ${dueAt}::timestamptz`,
+              sql`${effectiveDueAt} is null`,
+              and(sql`${effectiveDueAt} = ${dueAt}::timestamptz`, tie)!,
+            )!
+          : and(sql`${effectiveDueAt} is null`, tie)!,
+      );
+    }
   }
 
-  const joined: { f: Flashcard }[] = await db
-    .select({ f: flashcards })
+  const orderBy =
+    sort === 'due'
+      ? [sql`${effectiveDueAt} asc nulls last`, desc(flashcards.createdAt), desc(flashcards.id)]
+      : [desc(flashcards.createdAt), desc(flashcards.id)];
+  const joined: ({ f: Flashcard } & CursorKeys)[] = await db
+    .select({
+      f: flashcards,
+      ca: tsText(sql`${flashcards.createdAt}`),
+      da: tsText(effectiveDueAt),
+    })
     .from(flashcards)
     .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
     .where(and(...conditions))
-    .orderBy(desc(flashcards.createdAt), desc(flashcards.id))
+    .orderBy(...orderBy)
     .limit(limit + 1);
   const rows = joined.map((r) => r.f);
 
   const hasMore = rows.length > limit;
   const page = rows.slice(0, limit);
+  const last = joined[page.length - 1];
+
+  const items = await withDocTitles(db, subject.id, page);
   return {
-    items: page.map(toDto),
-    nextCursor: hasMore ? encodeCursor(page[page.length - 1]!) : null,
+    items,
+    nextCursor:
+      hasMore && last ? encodeCursor({ id: last.f.id, ca: last.ca, da: last.da }, sort) : null,
+    total: Number(total),
   };
 }
 
