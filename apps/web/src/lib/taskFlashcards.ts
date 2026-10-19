@@ -1,6 +1,10 @@
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { artifacts, flashcards, subjects, taskFlashcards, tasks } from '@studyhub/db';
-import type { TaskFlashcardsResponse, UpdateTaskFlashcardsRequest } from '@studyhub/contracts';
+import type {
+  TaskFlashcardDto,
+  TaskFlashcardsResponse,
+  UpdateTaskFlashcardsRequest,
+} from '@studyhub/contracts';
 import { SubjectNotFoundError } from './errors';
 import { NotFoundError } from './examPrep';
 import { toDto } from './review';
@@ -17,6 +21,18 @@ async function requireTask(db: AnyDb, subjectSlug: string, taskId: string) {
     .where(and(eq(tasks.id, taskId), eq(tasks.subjectId, subject.id)));
   if (!task) throw new NotFoundError(`Task ${taskId}`);
   return { subject, task: task as typeof tasks.$inferSelect };
+}
+
+/** Why a card can't enter a review queue (null = it can): same rules as `reviewableConditions`. */
+function blockedBy(r: {
+  f: typeof flashcards.$inferSelect;
+  deckStatus: string;
+}): TaskFlashcardDto['blockedBy'] {
+  if (r.deckStatus === 'draft') return 'deck_draft';
+  if (r.deckStatus !== 'approved') return 'deck_archived';
+  if (r.f.suspended) return 'suspended';
+  if (r.f.flaggedAt) return 'flagged';
+  return null;
 }
 
 /** The cards attached to a lesson (plan task), oldest link first, with how each got attached. */
@@ -43,7 +59,8 @@ export async function getTaskFlashcards(
     items: rows.map((r) => ({
       ...toDto(r.f),
       source: r.source,
-      reviewable: r.deckStatus === 'approved' && !r.f.suspended && !r.f.flaggedAt,
+      reviewable: blockedBy(r) === null,
+      blockedBy: blockedBy(r),
     })),
   };
 }

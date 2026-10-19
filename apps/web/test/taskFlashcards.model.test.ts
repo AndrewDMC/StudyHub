@@ -3,7 +3,9 @@ import type { FlashcardDto } from '@studyhub/contracts';
 import {
   attachableCards,
   cardCountLabel,
+  BLOCKED_LABELS,
   cardPreview,
+  draftDeckIds,
   focusIndexAfterRemoval,
   reviewableCount,
   ripassaTaskHref,
@@ -25,6 +27,19 @@ describe('taskFlashcardsModel', () => {
       reviewableCount([{ reviewable: true }, { reviewable: false }, { reviewable: true }]),
     ).toBe(2);
     expect(reviewableCount([])).toBe(0);
+  });
+
+  it('names why a card is out of review and lists each draft deck once', () => {
+    expect(BLOCKED_LABELS.deck_draft).toBe('Mazzo da approvare');
+    expect(
+      draftDeckIds([
+        { deckId: 'd1', blockedBy: 'deck_draft' },
+        { deckId: 'd2', blockedBy: 'suspended' },
+        { deckId: 'd1', blockedBy: 'deck_draft' },
+        { deckId: 'd3', blockedBy: 'deck_draft' },
+        { deckId: 'd4', blockedBy: null },
+      ]),
+    ).toEqual(['d1', 'd3']);
   });
 
   it('previews plain text, truncated', () => {

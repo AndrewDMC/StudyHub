@@ -1,4 +1,4 @@
-import type { FlashcardDto, TopicDto } from '@studyhub/contracts';
+import type { FlashcardDto, TaskFlashcardDto, TopicDto } from '@studyhub/contracts';
 import { plainCardText } from '@/lib/flashcardMobile';
 
 /** Max card ids per PUT (mirrors `UpdateTaskFlashcardsRequest`). */
@@ -12,6 +12,19 @@ export function cardCountLabel(n: number): string {
 /** Cards of a task that the review queue can actually serve. */
 export function reviewableCount(items: ReadonlyArray<{ reviewable: boolean }>): number {
   return items.filter((c) => c.reviewable).length;
+}
+
+/** Badge of a card that can't be reviewed: says why, so the student knows what to fix. */
+export const BLOCKED_LABELS: Record<NonNullable<TaskFlashcardDto['blockedBy']>, string> = {
+  deck_draft: 'Mazzo da approvare',
+  deck_archived: 'Mazzo archiviato',
+  suspended: 'Sospesa',
+  flagged: 'Segnalata',
+};
+
+/** Draft decks among the attached cards (each id once, in card order): what to approve to unlock them. */
+export function draftDeckIds(items: ReadonlyArray<Pick<TaskFlashcardDto, 'deckId' | 'blockedBy'>>) {
+  return [...new Set(items.filter((c) => c.blockedBy === 'deck_draft').map((c) => c.deckId))];
 }
 
 /** Plain-text one-liner of a card front, for accessible names. */

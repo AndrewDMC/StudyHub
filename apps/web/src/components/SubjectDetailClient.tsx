@@ -25,6 +25,7 @@ import { SubjectMobile } from './subject-mobile/SubjectMobile';
 import { fetchDocuments } from './subject-mobile/queries';
 import { parseSubjectTab } from '@/lib/subjectTabs';
 import { useIsMobile } from '@/lib/useIsMobile';
+import { DraftDecksLink } from './flashcard-mobile/DraftDecksLink';
 
 const TABS = [
   { key: 'panoramica', label: 'Panoramica' },
@@ -334,6 +335,10 @@ function SubjectDetailClientInner({ slug }: { slug: string }) {
               {activeTab === 'flashcard' && (
                 <div className="space-y-4">
                   <div className="max-w-md">
+                    {/* Generated decks wait here for approval: until then their cards stay out of review. */}
+                    <div className="mb-4 empty:hidden">
+                      <DraftDecksLink slug={slug} />
+                    </div>
                     <StatsPanel subjectSlug={slug} />
                     <div className="mt-4">
                       <CalibrationPanel subjectSlug={slug} />

@@ -250,7 +250,7 @@ test.describe('Flashcard delle lezioni — card non ripassabili (mobile)', () =>
     await deleteSubject(request, baseURL!, s.slug);
   });
 
-  test('La sheet segna "Non in ripasso" le card sospese o in bozza; la sessione conta le sole ripassabili', async ({
+  test('La sheet dice perché le card sospese o in bozza non sono in ripasso; la sessione conta le sole ripassabili', async ({
     page,
   }) => {
     test.setTimeout(90_000);
@@ -258,21 +258,18 @@ test.describe('Flashcard delle lezioni — card non ripassabili (mobile)', () =>
     await caloreRow(page, ' · 4 card').click({ timeout: 30_000 });
     const section = page.getByRole('dialog').getByTestId('task-flashcards');
     await expect(section.getByTestId('task-flashcard-row')).toHaveCount(4, { timeout: 20_000 });
-    await expect(section.getByText('Non in ripasso')).toHaveCount(2);
-    for (const front of ['Bozza uno', 'Sospesa uno']) {
-      await expect(
-        section
-          .getByTestId('task-flashcard-row')
-          .filter({ hasText: front })
-          .getByText('Non in ripasso'),
-      ).toBeVisible();
-    }
+    const row = (front: string) =>
+      section.getByTestId('task-flashcard-row').filter({ hasText: front });
+    await expect(row('Bozza uno').getByText('Mazzo da approvare', { exact: true })).toBeVisible();
+    await expect(row('Sospesa uno').getByText('Sospesa', { exact: true })).toBeVisible();
+    await expect(row('Entropia uno').getByText('Mazzo da approvare', { exact: true })).toHaveCount(
+      0,
+    );
+    await expect(row('Entropia uno').getByText('Sospesa', { exact: true })).toHaveCount(0);
+    // The draft deck is one tap away from its approval screen.
     await expect(
-      section
-        .getByTestId('task-flashcard-row')
-        .filter({ hasText: 'Entropia uno' })
-        .getByText('Non in ripasso'),
-    ).toHaveCount(0);
+      section.getByTestId('task-flashcards-drafts').getByRole('link', { name: 'Apri il mazzo' }),
+    ).toHaveAttribute('href', new RegExp(`/materie/${s.slug}/artifacts/`));
     // "Ripassa" in the sheet counts and opens only the reviewable cards of the lesson.
     const review = section.getByTestId('task-flashcards-review');
     await expect(review).toHaveText('Ripassa (2)');

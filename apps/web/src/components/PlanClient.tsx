@@ -543,7 +543,7 @@ function TaskRow({
   isDraft: boolean;
   onPin: (id: string, pinned: boolean) => void;
   onDelete: (id: string) => void;
-  onStatus: (id: string, status: 'done' | 'skipped') => void;
+  onStatus: (id: string, status: 'done' | 'skipped' | 'todo') => void;
 }) {
   const [cardsOpen, setCardsOpen] = useState(false);
   const hasCards = task.kind !== 'rest';
@@ -602,26 +602,37 @@ function TaskRow({
               Elimina
             </button>
           </>
+        ) : task.status === 'done' || task.status === 'skipped' ? (
+          <>
+            <span className="self-center text-[11px] text-fg-muted">
+              {task.status === 'done' ? 'Fatta' : 'Saltata'}
+            </span>
+            {/* Back to "da fare" (e.g. marked done by mistake). */}
+            <button
+              type="button"
+              onClick={() => onStatus(task.id, 'todo')}
+              className="rounded-[var(--radius-control)] border border-border px-2 py-1 text-[11px] text-fg-secondary hover:text-fg-primary"
+            >
+              Riapri
+            </button>
+          </>
         ) : (
-          task.status !== 'done' &&
-          task.status !== 'skipped' && (
-            <>
-              <button
-                type="button"
-                onClick={() => onStatus(task.id, 'done')}
-                className="rounded-[var(--radius-control)] border border-ok px-2 py-1 text-[11px] text-ok"
-              >
-                Fatta
-              </button>
-              <button
-                type="button"
-                onClick={() => onStatus(task.id, 'skipped')}
-                className="rounded-[var(--radius-control)] border border-border px-2 py-1 text-[11px] text-fg-muted"
-              >
-                Salta
-              </button>
-            </>
-          )
+          <>
+            <button
+              type="button"
+              onClick={() => onStatus(task.id, 'done')}
+              className="rounded-[var(--radius-control)] border border-ok px-2 py-1 text-[11px] text-ok"
+            >
+              Fatta
+            </button>
+            <button
+              type="button"
+              onClick={() => onStatus(task.id, 'skipped')}
+              className="rounded-[var(--radius-control)] border border-border px-2 py-1 text-[11px] text-fg-muted"
+            >
+              Salta
+            </button>
+          </>
         )}
       </div>
       {hasCards && (
@@ -729,7 +740,7 @@ function PlanDesktop({ slug }: { slug: string }) {
     onSuccess: invalidatePlan,
   });
   const setStatus = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: 'done' | 'skipped' }) =>
+    mutationFn: ({ id, status }: { id: string; status: 'done' | 'skipped' | 'todo' }) =>
       send(`/api/subjects/${slug}/plan/tasks/${id}/status`, 'POST', { status }),
     onSuccess: invalidatePlan,
   });

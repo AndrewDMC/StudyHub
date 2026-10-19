@@ -190,6 +190,13 @@ describe('flashcards attached to lessons (task_flashcards)', () => {
       expect(flags.get(suspended)).toBe(false);
       expect(flags.get(flagged)).toBe(false);
       expect(flags.get(inDraft)).toBe(false);
+      const why = new Map(res.items.map((i) => [i.id, i.blockedBy]));
+      expect([why.get(ok), why.get(suspended), why.get(flagged), why.get(inDraft)]).toEqual([
+        null,
+        'suspended',
+        'flagged',
+        'deck_draft',
+      ]);
     });
 
     it('re-activating a suspended card attaches it to its lesson', async () => {

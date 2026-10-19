@@ -117,6 +117,14 @@ export const TaskFlashcardDtoSchema = FlashcardDtoSchema.extend({
   source: TaskFlashcardSourceSchema,
   /** Can enter a review queue: approved deck, not suspended, not flagged. */
   reviewable: z.boolean(),
+  /**
+   * Why it can't (null when `reviewable`), first match wins: its deck is still a draft to approve,
+   * the deck was archived, the card is suspended, or it is flagged for fixing.
+   */
+  blockedBy: z
+    .enum(['deck_draft', 'deck_archived', 'suspended', 'flagged'])
+    .nullable()
+    .default(null),
 });
 export type TaskFlashcardDto = z.infer<typeof TaskFlashcardDtoSchema>;
 

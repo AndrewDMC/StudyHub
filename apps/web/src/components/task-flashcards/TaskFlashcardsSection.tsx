@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useId, useRef, useState, type RefObject } from 'react';
+import { Fragment, useEffect, useId, useRef, useState, type RefObject } from 'react';
 import type { TaskFlashcardDto } from '@studyhub/contracts';
 import { plainCardText } from '@/lib/flashcardMobile';
 import { CardText } from '../CardText';
@@ -11,7 +11,9 @@ import { AttachCardsPicker } from './AttachCardsPicker';
 import { useTaskFlashcards, useTopicList, useUpdateTaskFlashcards } from './queries';
 import {
   attachedAnnouncement,
+  BLOCKED_LABELS,
   cardCountLabel,
+  draftDeckIds,
   focusIndexAfterRemoval,
   reviewableCount,
   ripassaTaskHref,
@@ -54,6 +56,7 @@ function TaskFlashcardsSection({
 
   const items: TaskFlashcardDto[] = cards.data?.items ?? [];
   const reviewable = reviewableCount(items);
+  const drafts = draftDeckIds(items);
   const topicName = (id: string | null) =>
     id ? (topics.data?.find((t) => t.id === id)?.name ?? null) : null;
 
@@ -154,7 +157,7 @@ function TaskFlashcardsSection({
                     </span>
                     {!card.reviewable && (
                       <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-xs text-fg-secondary">
-                        Non in ripasso
+                        {card.blockedBy ? BLOCKED_LABELS[card.blockedBy] : 'Non in ripasso'}
                       </span>
                     )}
                     {card.source === 'user' && (
@@ -183,6 +186,24 @@ function TaskFlashcardsSection({
               </li>
             ))}
           </ul>
+          {drafts.length > 0 && (
+            <p className="text-xs text-fg-secondary" data-testid="task-flashcards-drafts">
+              {drafts.length === 1
+                ? 'Alcune card sono in un mazzo ancora in bozza: approvalo per ripassarle. '
+                : `Alcune card sono in ${drafts.length} mazzi ancora in bozza: approvali per ripassarle. `}
+              {drafts.map((id, i) => (
+                <Fragment key={id}>
+                  {i > 0 && ' · '}
+                  <Link
+                    href={`/materie/${slug}/artifacts/${id}`}
+                    className="font-medium text-accent underline-offset-2 hover:underline"
+                  >
+                    {drafts.length === 1 ? 'Apri il mazzo' : `Mazzo ${i + 1}`}
+                  </Link>
+                </Fragment>
+              ))}
+            </p>
+          )}
           {reviewable > 0 ? (
             <div className="grid grid-cols-2 gap-2">
               {/* Same lesson-scoped queue as the session's "Flashcard della lezione". */}

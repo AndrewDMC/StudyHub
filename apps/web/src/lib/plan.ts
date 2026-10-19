@@ -851,8 +851,13 @@ export async function setTaskStatus(
 
   // Coverage (docs/02-filesystem-e-dati.md §5) is driven by material actually
   // read, not scheduled — a completed reading session is the only signal for
-  // it, so mastery only needs a nudge here, not on every status change.
-  if (status === 'done' && updated.kind === 'read' && updated.topicId) {
+  // it, so mastery only needs a nudge here, not on every status change: when a reading becomes done,
+  // or stops being done (reopened).
+  if (
+    (status === 'done') !== (row.status === 'done') &&
+    updated.kind === 'read' &&
+    updated.topicId
+  ) {
     await recomputeTopicMastery(db, updated.topicId);
   }
 
