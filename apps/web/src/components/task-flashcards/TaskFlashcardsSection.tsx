@@ -1,10 +1,11 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useId, useRef, useState, type RefObject } from 'react';
 import type { TaskFlashcardDto } from '@studyhub/contracts';
 import { plainCardText } from '@/lib/flashcardMobile';
 import { CardText } from '../CardText';
-import { secondaryButton } from '../simulation-mobile/styles';
+import { primaryButton, secondaryButton } from '../simulation-mobile/styles';
 import { SectionEmpty, SectionError, SkeletonRows } from '../subject-mobile/SectionState';
 import { AttachCardsPicker } from './AttachCardsPicker';
 import { useTaskFlashcards, useTopicList, useUpdateTaskFlashcards } from './queries';
@@ -12,6 +13,8 @@ import {
   attachedAnnouncement,
   cardCountLabel,
   focusIndexAfterRemoval,
+  reviewableCount,
+  ripassaTaskHref,
 } from './taskFlashcardsModel';
 
 export type Variant = 'desktop' | 'mobile';
@@ -50,6 +53,7 @@ function TaskFlashcardsSection({
   const stackRefs = useRef(new Map<string, HTMLButtonElement>());
 
   const items: TaskFlashcardDto[] = cards.data?.items ?? [];
+  const reviewable = reviewableCount(items);
   const topicName = (id: string | null) =>
     id ? (topics.data?.find((t) => t.id === id)?.name ?? null) : null;
 
@@ -179,7 +183,26 @@ function TaskFlashcardsSection({
               </li>
             ))}
           </ul>
-          {attachButton}
+          {reviewable > 0 ? (
+            <div className="grid grid-cols-2 gap-2">
+              {/* Same lesson-scoped queue as the session's "Flashcard della lezione". */}
+              <Link
+                href={ripassaTaskHref(slug, task.id)}
+                aria-label={`Ripassa le ${reviewable} flashcard della task`}
+                data-testid="task-flashcards-review"
+                className={
+                  mobile
+                    ? `${primaryButton} min-h-12 text-sm`
+                    : 'inline-flex min-h-11 items-center justify-center rounded-[var(--radius-control)] bg-accent px-4 text-sm font-semibold text-bg-base hover:bg-accent-hover'
+                }
+              >
+                Ripassa ({reviewable})
+              </Link>
+              {attachButton}
+            </div>
+          ) : (
+            attachButton
+          )}
         </>
       )}
       {error && (

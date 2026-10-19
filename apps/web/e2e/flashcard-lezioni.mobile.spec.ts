@@ -273,6 +273,13 @@ test.describe('Flashcard delle lezioni — card non ripassabili (mobile)', () =>
         .filter({ hasText: 'Entropia uno' })
         .getByText('Non in ripasso'),
     ).toHaveCount(0);
+    // "Ripassa" in the sheet counts and opens only the reviewable cards of the lesson.
+    const review = section.getByTestId('task-flashcards-review');
+    await expect(review).toHaveText('Ripassa (2)');
+    await expect(review).toHaveAttribute(
+      'href',
+      `/ripasso?materia=${s.slug}&task=${s.taskIds.calore}`,
+    );
 
     await page.goto(lezioniSessionUrl(s));
     await page.getByRole('tab', { name: /Punti chiave/ }).click({ timeout: 30_000 });
