@@ -10,6 +10,12 @@ import {
 } from '@studyhub/core';
 import type { FlashcardStatsDto } from '@studyhub/contracts';
 import { SubjectNotFoundError } from './errors';
+import {
+  DEFAULT_NEW_LIMIT,
+  dueCardConditions,
+  reviewableConditions,
+  treatedCardCondition,
+} from './review';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyDb = any;
@@ -35,7 +41,11 @@ async function requireSubject(db: AnyDb, subjectSlug: string) {
 export type FlashcardStats = FlashcardStatsDto;
 
 /** docs/fasi/F4-flashcard.md "Statistiche": counts by state, 30-day forecast, exam risk. */
-export async function getFlashcardStats(db: AnyDb, subjectSlug: string): Promise<FlashcardStats> {
+export async function getFlashcardStats(
+  db: AnyDb,
+  subjectSlug: string,
+  now: Date = new Date(),
+): Promise<FlashcardStats> {
   const subject = await requireSubject(db, subjectSlug);
 
   const joined: { f: Flashcard }[] = await db
@@ -62,7 +72,29 @@ export async function getFlashcardStats(db: AnyDb, subjectSlug: string): Promise
     else countsByState[card.state] += 1;
   }
 
-  const forecast = forecastDueCounts(cards.filter((c) => !c.suspended).map(toSchedule), 30);
+  // Day 0 is exactly what the Ripasso queue holds (same conditions, new cards capped per subject);
+  // the other days only forecast cards already started.
+  const [today] = await db
+    .select({
+      seen: sql<number>`count(*) filter (where ${flashcards.state} <> 'new')::int`,
+      fresh: sql<number>`count(*) filter (where ${flashcards.state} = 'new')::int`,
+    })
+    .from(flashcards)
+    .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
+    .where(
+      and(
+        eq(artifacts.subjectId, subject.id),
+        ...reviewableConditions(),
+        dueCardConditions(now),
+        treatedCardCondition(now),
+      ),
+    );
+  const forecast = forecastDueCounts(
+    cards.filter((c) => !c.suspended && c.state !== 'new').map(toSchedule),
+    30,
+    now,
+  );
+  forecast[0]!.count = Number(today.seen) + Math.min(Number(today.fresh), DEFAULT_NEW_LIMIT);
 
   const [nextExam] = await db
     .select()

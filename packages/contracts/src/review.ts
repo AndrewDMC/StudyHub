@@ -224,7 +224,8 @@ export type CalibrationDto = z.infer<typeof CalibrationDtoSchema>;
 /**
  * Ripasso rapido (docs/09-ripasso-mobile.md §B2). Counts follow the same rule as the queue:
  * not suspended, not flagged, active subject; new cards (at most `newLimit` per subject), review
- * cards due by the end of today, learning cards due by now.
+ * cards due by the end of today, learning cards due by now. In a subject with an active plan a new
+ * card counts only if its lesson is done or scheduled today (started cards are unaffected).
  */
 export const ReviewOverviewTopicDtoSchema = z.object({
   /** null = the "Senza argomento" row: cards not tagged with any topic. */

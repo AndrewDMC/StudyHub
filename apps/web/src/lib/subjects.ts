@@ -1,4 +1,4 @@
-import { and, eq, isNull, lte, or, isNotNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   artifacts,
   computeSubjectCoverage,
@@ -18,6 +18,12 @@ import type {
   UpdateSubjectRequest,
 } from '@studyhub/contracts';
 import { SubjectNotFoundError } from './errors';
+import {
+  DEFAULT_NEW_LIMIT,
+  dueCardConditions,
+  reviewableConditions,
+  treatedCardCondition,
+} from './review';
 
 // Both the real Postgres client and the pglite test client expose the same
 // query-builder surface; see apps/web/test/subjects.test.ts.
@@ -61,26 +67,28 @@ async function averageMasteryBySubject(db: AnyDb): Promise<Map<string, number>> 
   return result;
 }
 
-/** Per-subject count of flashcards due by the end of today (same rule as dashboard.ts::countDueCards). */
-async function dueCardsTodayBySubject(db: AnyDb): Promise<Map<string, number>> {
-  const endOfToday = new Date();
-  endOfToday.setUTCHours(23, 59, 59, 999);
-  const rows: { subjectId: string }[] = await db
-    .select({ subjectId: artifacts.subjectId })
+/**
+ * Per-subject count of flashcards due today: exactly what the Ripasso queue holds (same
+ * conditions, new cards capped at `DEFAULT_NEW_LIMIT` per subject like `pickForSubject`).
+ */
+async function dueCardsTodayBySubject(
+  db: AnyDb,
+  now: Date = new Date(),
+): Promise<Map<string, number>> {
+  const rows: { subjectId: string; seen: number; fresh: number }[] = await db
+    .select({
+      subjectId: artifacts.subjectId,
+      seen: sql<number>`count(*) filter (where ${flashcards.state} <> 'new')::int`,
+      fresh: sql<number>`count(*) filter (where ${flashcards.state} = 'new')::int`,
+    })
     .from(flashcards)
     .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))
-    .where(
-      and(
-        eq(artifacts.status, 'approved'),
-        eq(flashcards.suspended, false),
-        or(
-          eq(flashcards.state, 'new'),
-          and(isNotNull(flashcards.dueAt), lte(flashcards.dueAt, endOfToday)),
-        ),
-      ),
-    );
+    .where(and(...reviewableConditions(), dueCardConditions(now), treatedCardCondition(now)))
+    .groupBy(artifacts.subjectId);
   const counts = new Map<string, number>();
-  for (const r of rows) counts.set(r.subjectId, (counts.get(r.subjectId) ?? 0) + 1);
+  for (const r of rows) {
+    counts.set(r.subjectId, Number(r.seen) + Math.min(Number(r.fresh), DEFAULT_NEW_LIMIT));
+  }
   return counts;
 }
 
@@ -93,7 +101,7 @@ async function dueCardsTodayBySubject(db: AnyDb): Promise<Map<string, number>> {
  */
 export async function listSubjectSummaries(
   db: AnyDb,
-  options: { includeArchived?: boolean } = {},
+  options: { includeArchived?: boolean; now?: Date } = {},
 ): Promise<SubjectSummaryDto[]> {
   const [rows, avgMastery, dueToday] = await Promise.all([
     db
@@ -111,7 +119,7 @@ export async function listSubjectSummaries(
       .groupBy(subjects.id)
       .orderBy(subjects.sortOrder, subjects.name),
     averageMasteryBySubject(db),
-    dueCardsTodayBySubject(db),
+    dueCardsTodayBySubject(db, options.now),
   ]);
 
   const coverageBySubject = new Map<string, number | null>(

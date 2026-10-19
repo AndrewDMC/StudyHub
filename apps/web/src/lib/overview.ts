@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, gte, inArray, isNotNull, lte, or } from 'drizzle-orm';
+import { and, desc, eq, gt, gte, inArray } from 'drizzle-orm';
 import {
   artifacts,
   documents,
@@ -23,6 +23,7 @@ import type {
 } from '@studyhub/contracts';
 import { SubjectNotFoundError } from './errors';
 import { LOW_MASTERY_THRESHOLD } from './mastery';
+import { dueCardConditions, reviewableConditions, treatedCardCondition } from './review';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyDb = any;
@@ -55,12 +56,9 @@ async function suggestedActions(
     .where(
       and(
         eq(artifacts.subjectId, subjectId),
-        eq(artifacts.status, 'approved'),
-        eq(flashcards.suspended, false),
-        or(
-          eq(flashcards.state, 'new'),
-          and(isNotNull(flashcards.dueAt), lte(flashcards.dueAt, now)),
-        ),
+        ...reviewableConditions(),
+        dueCardConditions(now),
+        treatedCardCondition(now),
       ),
     );
   if (dueCards.length > 0) {

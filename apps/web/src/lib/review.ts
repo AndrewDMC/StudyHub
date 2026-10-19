@@ -22,8 +22,10 @@ import {
   flashcards,
   recomputeTopicMastery,
   reviews,
+  studyPlans,
   subjects,
   taskFlashcards,
+  tasks,
   topics,
   type Flashcard,
   type ReviewPrevSchedule,
@@ -36,6 +38,7 @@ import {
   newCardSchedule,
   previewIntervals,
   scheduleReview,
+  toIsoDate,
   type FlashcardSchedule,
   type FsrsCardState,
   type FsrsRating,
@@ -134,6 +137,49 @@ export function dueCardConditions(now: Date): SQL {
   )!;
 }
 
+/**
+ * A task covering the card, attached (`task_flashcards`) or by topic, that is "treated": done in an
+ * active or superseded plan of the subject (a regenerated plan drops the done tasks), or today's
+ * to-do lesson of the active plan. `onlyToday` keeps just the latter.
+ */
+function coveringTask(today: string, onlyToday: boolean): SQL {
+  const treated = onlyToday
+    ? sql`(${studyPlans.status} = 'active' and ${tasks.date} = ${today} and ${tasks.status} in ('todo', 'doing'))`
+    : sql`((${tasks.status} = 'done' and ${studyPlans.status} in ('active', 'superseded'))
+      or (${studyPlans.status} = 'active' and ${tasks.date} = ${today} and ${tasks.status} in ('todo', 'doing')))`;
+  return sql`(exists (
+    select 1 from ${taskFlashcards}
+    inner join ${tasks} on ${tasks.id} = ${taskFlashcards.taskId}
+    inner join ${studyPlans} on ${studyPlans.id} = ${tasks.planId}
+    where ${taskFlashcards.flashcardId} = ${flashcards.id}
+      and ${studyPlans.subjectId} = ${artifacts.subjectId} and ${treated}
+  ) or exists (
+    select 1 from ${tasks}
+    inner join ${studyPlans} on ${studyPlans.id} = ${tasks.planId}
+    where ${tasks.topicId} = ${flashcards.topicId}
+      and ${studyPlans.subjectId} = ${artifacts.subjectId}
+      and ${tasks.kind} not in ('rest', 'simulation') and ${treated}
+  ))`;
+}
+
+/**
+ * "Only treated topics" rule: in a subject with an active plan a new card enters the review only
+ * if its lesson (attached task, or a task on its topic) is done or scheduled today. Cards already
+ * started and subjects without an active plan are unaffected. The caller joins `artifacts`;
+ * `today` is the ISO day of the `now` the queue is built for.
+ */
+export function treatedCardCondition(now: Date): SQL {
+  const today = toIsoDate(now);
+  return sql`(${flashcards.state} <> 'new'
+    or not exists (select 1 from ${studyPlans} where ${studyPlans.subjectId} = ${artifacts.subjectId} and ${studyPlans.status} = 'active')
+    or ${coveringTask(today, false)})`;
+}
+
+/** The card belongs to a lesson of today (to-do), to put it before the other new cards. */
+function todayLessonCondition(now: Date): SQL {
+  return sql`(case when ${flashcards.state} = 'new' then ${coveringTask(toIsoDate(now), true)} else false end)`;
+}
+
 export interface ReviewScope {
   /** Omitted = every active (non-archived) subject. */
   subjectSlug?: string | undefined;
@@ -150,16 +196,23 @@ interface QueueRow {
   subjectName: string;
   subjectColor: string;
   topicName: string | null;
+  /** New cards of today's lessons go first (only set by `loadDueRows`). */
+  todayLesson?: boolean;
 }
 
 /**
  * Picks one subject's queue out of its due cards: (re)learning and review cards by due date, most
  * overdue first, then at most `newLimit` new cards, oldest first.
  */
-function pickForSubject<T extends { f: Flashcard }>(rows: T[], newLimit: number): T[] {
+function pickForSubject<T extends { f: Flashcard; todayLesson?: boolean }>(
+  rows: T[],
+  newLimit: number,
+): T[] {
   const seen = rows.filter((r) => r.f.state !== 'new');
   seen.sort((a, b) => (a.f.dueAt?.getTime() ?? 0) - (b.f.dueAt?.getTime() ?? 0));
   const fresh = rows.filter((r) => r.f.state === 'new');
+  // Stable: today's lessons first, the rest keeps its order.
+  fresh.sort((a, b) => Number(!!b.todayLesson) - Number(!!a.todayLesson));
   return [...seen, ...fresh.slice(0, newLimit)];
 }
 
@@ -184,7 +237,7 @@ function interleave<T>(lists: T[][]): T[] {
 }
 
 async function loadDueRows(db: AnyDb, scope: ReviewScope, now: Date): Promise<QueueRow[]> {
-  const conditions = [...reviewableConditions(), dueCardConditions(now)];
+  const conditions = [...reviewableConditions(), dueCardConditions(now), treatedCardCondition(now)];
   if (scope.subjectSlug) {
     // An explicit subject is reviewable even when archived (the per-subject page still works).
     const subject = await requireSubject(db, scope.subjectSlug);
@@ -203,6 +256,7 @@ async function loadDueRows(db: AnyDb, scope: ReviewScope, now: Date): Promise<Qu
       subjectName: subjects.name,
       subjectColor: subjects.color,
       topicName: topics.name,
+      todayLesson: sql<boolean>`${todayLessonCondition(now)}`,
     })
     .from(flashcards)
     .innerJoin(artifacts, eq(flashcards.deckId, artifacts.id))

@@ -5,7 +5,7 @@ import type { DeckGroupDto, SortFlashcardsStatus } from '@studyhub/contracts';
 import type { Queue } from 'bullmq';
 import { SubjectNotFoundError } from './errors';
 import { ConflictError } from './examPrep';
-import { dueCardConditions, reviewableConditions } from './review';
+import { dueCardConditions, reviewableConditions, treatedCardCondition } from './review';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyDb = any;
@@ -20,7 +20,8 @@ async function requireSubject(db: AnyDb, slug: string) {
  * "Mazzi" of a subject = its flashcards grouped by topic. One group per topic that has cards (topic
  * order), then the unsorted cards (`topicId: null`) last. `total`/`suspended` count every card of
  * the subject (any deck). `due` and `new` count only reviewable cards (approved deck, not
- * suspended/flagged): `due` = already seen and due today, `new` = never seen, so "Ripassa" is
+ * suspended/flagged): `due` = already seen and due today, `new` = never seen and from a treated lesson (see
+ * `treatedCardCondition`), so "Ripassa" is
  * never enabled on an empty queue.
  */
 export async function listDeckGroups(
@@ -32,6 +33,7 @@ export async function listDeckGroups(
   const dueSql = sql<number>`count(*) filter (where ${and(
     ...reviewableConditions(),
     dueCardConditions(now),
+    treatedCardCondition(now),
     sql`${flashcards.state} <> 'new'`,
   )})::int`;
   const rows: {
@@ -47,6 +49,7 @@ export async function listDeckGroups(
       due: dueSql,
       isNew: sql<number>`count(*) filter (where ${and(
         ...reviewableConditions(),
+        treatedCardCondition(now),
         sql`${flashcards.state} = 'new'`,
       )})::int`,
       suspended: sql<number>`count(*) filter (where ${flashcards.suspended})::int`,

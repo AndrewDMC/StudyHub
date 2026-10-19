@@ -284,3 +284,22 @@ stessa coda di F4: `GET /api/review/queue?task=` filtra le card attaccate alla t
 
 Non ancora: nessuna esclusione persistente (una card staccata a mano può essere riattaccata in automatico se
 cambia argomento o si rigenera la bozza); "oggi" in UTC.
+
+## Aggiornamento — ripasso solo di argomenti trattati (2026-10-19)
+
+In una materia con piano `active`, una card **nuova** (`state = 'new'`) entra nel ripasso solo se è
+attaccata a una lezione fatta o di oggi, oppure se il suo argomento ha una lezione fatta o di oggi. Le lezioni
+fatte valgono anche nei piani `superseded`; quelle di oggi solo nel piano attivo; le bozze non valgono.
+Fuori dalla coda restano anche le card senza argomento e senza link.
+
+- Vale per la coda globale e per materia, per argomento, overview (`totalDue` e `dueCardsToday`), badge e
+  contatori dashboard, "Inizia (N)" delle statistiche e suggerimento Ripassa. Il filtro sta in
+  `treatedCardCondition()` (`apps/web/src/lib/review.ts`), applicato in `loadDueRows`; i gruppi
+  (`flashcardGroups.ts`) e `dueCardsTodayBySubject` (`subjects.ts`) usano la stessa regola.
+- Le card già avviate (`learning`/`review`/`relearning`) seguono l'SRS come prima. Le materie senza piano
+  `active` restano com'erano.
+- Nelle nuove, prima quelle delle lezioni di oggi. Il limite di nuove per materia (`DEFAULT_NEW_LIMIT`, 20)
+  vale ora anche per i contatori, come per la coda.
+- La coda per lezione (`?task=`) non cambia. Test: `apps/web/test/treatedReview.test.ts`.
+
+Non ancora: "oggi" in UTC, come sopra; le materie senza piano `active` non sono toccate.

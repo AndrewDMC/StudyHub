@@ -147,7 +147,7 @@ export async function getDashboardSummary(db: AnyDb, today: IsoDate): Promise<Da
   const reviewClock = now.toISOString().startsWith(today) ? now : startOfToday;
   const [subjectSummaries, reviewOverview, avgMastery, exam, upcoming, recentJobs, onboarding] =
     await Promise.all([
-      listSubjectSummaries(db),
+      listSubjectSummaries(db, { now: reviewClock }),
       getReviewOverview(db, reviewClock),
       averageMastery(db),
       nextExam(db, startOfToday),
