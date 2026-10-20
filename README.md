@@ -4,41 +4,6 @@ Piattaforma self-hosted che trasforma materiale di studio grezzo (appunti, schem
 in un **piano quotidiano di azioni verificabili** verso un esame.
 Local-first: le materie sono cartelle reali su disco, l'AI è un worker eseguibile anche da terminale.
 
-> Stato: **F0 completa · F1 completa · F2–F7 a slice** — fondamenta, ingest con **OCR reale**
-> (immagini e PDF scansionati via `AiProvider.ocrText`), **ricerca ibrida** (FTS + vettoriale,
-> fusione RRF, embedding locale gratuito `Xenova/all-MiniLM-L6-v2`), **grafo nodi/archi per gli
-> schemi a mano** (tassonomia chiusa, schermata di verifica con bounding box, export
-> `.canvas`/Mermaid, profilo di grafia che impara dalle correzioni), **pre-classificazione AI del
-> tipo documento** (suggerimento a un click, mai automatico) ed **editor di `content.md`** con
-> stickiness (un re-ingest non sovrascrive mai una modifica manuale — mostra un conflitto
-> risolvibile), materie (argomenti/esami/archiviazione), motore AI con provider **simulato**
-> (`FakeProvider`, gratuito e
-> deterministico; `AnthropicProvider` reale pronto ma non testato dal vivo — serve una
-> `ANTHROPIC_API_KEY`; **`ClaudeCliProvider`** in alternativa, instrada le stesse chiamate sulla
-> CLI `claude` da terminale usando la subscription già loggata, niente API key — vedi README
-> "Provider AI via CLI `claude`"), ripasso con **FSRS-5 reale**, simulazioni d'esame con modalità esame e
-> correzione formativa, **planner** con scheduling deterministico reale, bozza/revisione/commit del
-> piano e **calendario mensile cross-materia** con **feed ICS sottoscrivibile** (export; import
-> ancora da fare), **dashboard** cross-materia con
-> command palette (`⌘K`), **`studyhub backup`/`restore`** reali, e **tagging documento↔argomento**
-> (`document_topics`) che il Planner usa già per pianificare sugli argomenti taggati, non solo sui
-> documenti, e **`topics.mastery` reale con formula completa** — retrievability (review FSRS),
-> accuratezza simulazioni e **copertura del materiale letto** (task "read" completati) — con
-> **heatmap nell'albero Argomenti** (tooltip con formula per esteso). Il Planner ora avvisa anche
-> quando **il piano è indietro** (`detectDrift` collegato: 2+ giorni saltati o 30%+ task scadute →
-> banner con link per rigenerare). **`studyhub plan generate`/`ls`** in CLI, in-process senza Redis.
-> **Merge argomenti duplicati** (flashcard, `document_topics`, simulazioni e task si riattaccano,
-> mastery ricalcolata). Motore AI ora completo sui quattro processor dello scope F3
-> (`generate_flashcards`/`generate_schema`/`generate_summary`/`extract_topics`, oltre a
-> `generate_simulation` di F5), con **`ModelPicker` + stima costo pre-flight** in UI prima di ogni
-> generazione. **Pagina `/admin`** (job, costi per mese, stato sync FS, reset indice). **Export CSV**
-> di un mazzo flashcard (importabile in Anki, mono-direzionale — niente ancora `.apkg` con stato
-> di scheduling). **Tema chiaro/scuro/sistema e tre densità** (menu "Aspetto"), **checklist di
-> primo avvio** in dashboard. Non ancora: immagini Docker pubblicate, profilo `lite` SQLite, audit
-> axe/Lighthouse. Test: `pnpm turbo run test`. Dettagli e limiti dichiarati nella sezione "Stato" di ogni
-> `docs/fasi/F*.md`; roadmap completa in
-> [docs/fasi/README.md](docs/fasi/README.md).
-
 ## Quickstart
 
 Serve solo Docker (con Compose v2). Le immagini **non sono ancora pubblicate**: la prima volta si
