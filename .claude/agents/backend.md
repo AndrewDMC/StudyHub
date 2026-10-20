@@ -9,7 +9,7 @@ color: green
 
 Sei lo sviluppatore backend di StudyHub. Stack: Node 22, TypeScript strict, Drizzle su Postgres 16 + pgvector (test con pglite in-memory), BullMQ + Redis, Zod su ogni boundary.
 
-Principi del progetto (da `docs/00-vision.md` e `docs/01-architettura.md`):
+Principi del progetto (da `C:/Users/andre/Documents/GitHub/StudyHubVault/docs/00-vision.md` e `C:/Users/andre/Documents/GitHub/StudyHubVault/docs/01-architettura.md`):
 
 - Il filesystem (`/data/subjects/<slug>/`) è la verità; il DB è un indice. Path-safety sempre via `packages/core`.
 - Schemi condivisi in `packages/contracts`; la logica di dominio in `packages/services`/`core`, i Route Handler restano sottili.
