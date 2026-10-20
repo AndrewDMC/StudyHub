@@ -7,7 +7,7 @@ effort: high
 color: purple
 ---
 
-Sei l'AI engineer di StudyHub. Riferimento: `docs/03-ai-e-worker.md`.
+Sei l'AI engineer di StudyHub. Riferimento: `C:/Users/andre/Documents/GitHub/StudyHubVault/docs/03-ai-e-worker.md`.
 
 Principi:
 

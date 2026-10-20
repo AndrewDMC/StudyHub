@@ -40,7 +40,7 @@ Redis); copia `.env.example` in `.env` prima di avviarlo.
 
 Le funzioni AI (`generate_flashcards`, `generate_summary`) girano **senza `ANTHROPIC_API_KEY`**
 usando `FakeProvider` (estrazione deterministica, verbatim, costo zero — vedi
-[docs/fasi/F3-ai-core.md](docs/fasi/F3-ai-core.md) "Stato"). Imposta `ANTHROPIC_API_KEY` in `.env`
+[docs/fasi/F3-ai-core.md](../docs/fasi/F3-ai-core.md) "Stato"). Imposta `ANTHROPIC_API_KEY` in `.env`
 per passare al provider reale (`AnthropicProvider`, API a consumo): nessun altro cambio richiesto.
 
 ### Collegare il proprio account Claude (subscription, senza API key)
@@ -68,19 +68,22 @@ consuma i limiti del tuo piano. L'app non ha autenticazione propria: tienila su 
 
 ## Knowledge base
 
+La documentazione non è più nel repository: sta in `StudyHubVault/docs`, la cartella che contiene
+questo repo. I link qui sotto funzionano in locale.
+
 | Documento                                                                | Contenuto                                                                           |
 | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| [Vision & Principi](docs/00-vision.md)                                   | Tesi del prodotto, principi non negoziabili, glossario                              |
-| [Architettura](docs/01-architettura.md)                                  | Stack, monorepo, Docker, sicurezza, contratto Job                                   |
-| [Filesystem & Dati](docs/02-filesystem-e-dati.md)                        | Layout su disco, schema DB, FSRS, formula di mastery                                |
-| [AI & Worker](docs/03-ai-e-worker.md)                                    | Pipeline di ingest, funzioni AI, model routing, CLI, disciplina dei prompt          |
-| [Planner](docs/04-planner.md)                                            | Motore ibrido AI + scheduler, vincoli, adattività, **revisione e commit del piano** |
-| [Design System](docs/05-design-system.md)                                | "Calm Futurism": token, componenti, densità, a11y                                   |
-| [Markdown Layer & Schemi](docs/07-markdown-layer.md)                     | Formato canonico Markdown, trascrizione schemi a mano, grafo nodi/archi, verifica   |
-| [Miglioramenti proposti](docs/06-miglioramenti.md)                       | Estensioni ordinate per valore/costo + anti-obiettivi                               |
-| [Fasi di sviluppo](docs/fasi/README.md)                                  | F0→F7, una KB per fase con criteri di accettazione                                  |
-| [Prompt mockup](docs/design/prompt-mockup.md)                            | Prompt pronto per generare i mockup dell'hub                                        |
-| [Design tab Flashcard](docs/design/flashcard-redesign/)                  | Redesign della tab Flashcard della materia: canvas e schermate desktop e mobile     |
+| [Vision & Principi](../docs/00-vision.md)                                | Tesi del prodotto, principi non negoziabili, glossario                              |
+| [Architettura](../docs/01-architettura.md)                               | Stack, monorepo, Docker, sicurezza, contratto Job                                   |
+| [Filesystem & Dati](../docs/02-filesystem-e-dati.md)                     | Layout su disco, schema DB, FSRS, formula di mastery                                |
+| [AI & Worker](../docs/03-ai-e-worker.md)                                 | Pipeline di ingest, funzioni AI, model routing, CLI, disciplina dei prompt          |
+| [Planner](../docs/04-planner.md)                                         | Motore ibrido AI + scheduler, vincoli, adattività, **revisione e commit del piano** |
+| [Design System](../docs/05-design-system.md)                             | "Calm Futurism": token, componenti, densità, a11y                                   |
+| [Markdown Layer & Schemi](../docs/07-markdown-layer.md)                  | Formato canonico Markdown, trascrizione schemi a mano, grafo nodi/archi, verifica   |
+| [Miglioramenti proposti](../docs/06-miglioramenti.md)                    | Estensioni ordinate per valore/costo + anti-obiettivi                               |
+| [Fasi di sviluppo](../docs/fasi/README.md)                               | F0→F7, una KB per fase con criteri di accettazione                                  |
+| [Prompt mockup](../docs/design/prompt-mockup.md)                         | Prompt pronto per generare i mockup dell'hub                                        |
+| [Design tab Flashcard](../docs/design/flashcard-redesign/)               | Redesign della tab Flashcard della materia: canvas e schermate desktop e mobile     |
 | [**Mockup completo**](https://claude.ai/artifact/BFcYbQ67tF5DuaFbPnNSEu) | Artifact navigabile: style guide + 14 schermate (fonte di verità visiva)            |
 
 ## Percorso consigliato di lettura
