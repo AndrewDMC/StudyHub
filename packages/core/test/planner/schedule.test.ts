@@ -157,16 +157,46 @@ describe('Fase B — scenario tests', () => {
     const i = input({ topics: [topic('b', { prerequisites: ['a'] }), topic('a')] });
     const r = schedulePlan(i);
     assertHardConstraints(i, r.tasks);
-    const lastA = r.tasks
-      .filter((t) => t.kind === 'read' && t.topicKey === 'a')
-      .map((t) => t.date)
-      .sort()
-      .at(-1)!;
-    const firstB = r.tasks
-      .filter((t) => t.kind === 'read' && t.topicKey === 'b')
-      .map((t) => t.date)
-      .sort()[0]!;
-    expect(firstB > lastA).toBe(true);
+    // Tasks come sorted by date, then key: within a day, a's sessions are placed before b's.
+    const reads = r.tasks.filter((t) => t.kind === 'read');
+    const lastA = reads.findLastIndex((t) => t.topicKey === 'a');
+    const firstB = reads.findIndex((t) => t.topicKey === 'b');
+    expect(reads[firstB]!.date >= reads[lastA]!.date).toBe(true);
+  });
+
+  it('3b. esame vicino: a prerequisite chain or many topics fill the days instead of shrinking each topic', () => {
+    // 6 study days, 180 min/day: the days must fill up, not hold one 15–45 min topic each.
+    for (const chain of [false, true]) {
+      const i = input({
+        startDate: '2026-10-28',
+        targetDate: '2026-11-03',
+        availability: { perWeekday: [180, 180, 180, 180, 180, 180, 180], blackoutDates: [] },
+        topics: Array.from({ length: 12 }, (_, n) =>
+          topic(`t${String(n).padStart(2, '0')}`, {
+            prerequisites: chain && n > 0 ? [`t${String(n - 1).padStart(2, '0')}`] : [],
+          }),
+        ),
+      });
+      const r = schedulePlan(i);
+      assertHardConstraints(i, r.tasks);
+      expect(r.feasibility.unscheduledTopicKeys).toEqual([]);
+      for (const d of r.loadPerDay) {
+        expect(d.planned, `${d.date} (chain=${chain})`).toBeGreaterThanOrEqual(d.available * 0.8);
+      }
+    }
+  });
+
+  it('3c. the per-day cap on new topics is lifted when it alone makes a plan infeasible', () => {
+    // 8 short topics, 3 days of new content: the minutes are there, the 2-per-day cap is not.
+    const i = input({
+      targetDate: addDays(START, 5),
+      availability: { perWeekday: [480, 480, 480, 480, 480, 480, 480], blackoutDates: [] },
+      topics: Array.from({ length: 8 }, (_, n) => topic(`t${n}`, { estimatedMinutes: 30 })),
+    });
+    const r = schedulePlan(i);
+    assertHardConstraints(i, r.tasks);
+    expect(r.feasibility.feasible).toBe(true);
+    expect(r.warnings.some((w) => w.includes('compresso'))).toBe(false);
   });
 
   it('4. blackout dates stay empty', () => {

@@ -22,7 +22,7 @@ import type {
  *   3. simulations at ~60/85/95% of the timeline  — can't be split
  *   4. spaced revisits (+1, +3, +7 days)          — due first, then carried over
  *   5. new content, in prerequisite order, hard/easy interleaved,
- *      ≤2 new topics per day, never in the last 2 days
+ *      ≤2 new topics per day (lifted when time is short), never in the last 2 days
  * Hard constraints hold by construction: every placement checks the day's
  * remaining minutes, so no day is ever overbooked by the planner itself.
  */
@@ -172,38 +172,42 @@ interface PendingRevisit {
 
 /** Lowest share of the planned study time a compressed plan will shrink to. */
 const MIN_COMPRESSION = 0.1;
-const COMPRESSION_STEP = 0.85;
-const MAX_COMPRESSION_TRIES = 12;
+const COMPRESSION_SEARCH_STEPS = 10;
 
 /**
- * Always returns a plan. When the time is not enough, the study time of every topic is shrunk
- * (a lighter, shallower pass over all of it) until everything fits; the result is still flagged
- * infeasible, with the strategies, so the student knows it is a compressed plan.
+ * Always returns a plan. When the time is short, first the cap on new topics per day is lifted
+ * (cramming: the days fill up instead of staying half empty); if the minutes still don't add up,
+ * the study time of every topic is shrunk — as little as possible — until everything fits. A
+ * compressed result is flagged infeasible, with the strategies, so the student knows.
  */
 export function schedulePlan(input: PlannerInput): PlanResult {
-  const full = schedulePlanAt(input, 1);
+  const full = schedulePlanAt(input, 1, false);
   if (full.feasibility.feasible || full.feasibility.availableMinutes <= 0) return full;
 
-  const { availableMinutes, requiredMinutes } = full.feasibility;
-  let scale = Math.max(
-    MIN_COMPRESSION,
-    Math.min(0.95, (availableMinutes / Math.max(1, requiredMinutes)) * 0.9),
-  );
-  let best = schedulePlanAt(input, scale);
-  for (
-    let i = 0;
-    i < MAX_COMPRESSION_TRIES &&
-    best.feasibility.unscheduledTopicKeys.length > 0 &&
-    scale > MIN_COMPRESSION;
-    i++
-  ) {
-    scale = Math.max(MIN_COMPRESSION, scale * COMPRESSION_STEP);
-    best = schedulePlanAt(input, scale);
+  const crammed = schedulePlanAt(input, 1, true);
+  if (crammed.feasibility.feasible) return crammed;
+
+  // Largest scale that still schedules every topic (binary search): the cap on new topics is
+  // gone, so minutes are the only limit and a lower scale never schedules fewer topics.
+  const fits = (r: PlanResult) => r.feasibility.unscheduledTopicKeys.length === 0;
+  let lo = MIN_COMPRESSION;
+  let best = schedulePlanAt(input, lo, true);
+  if (!fits(best)) return best;
+  let hi = 1;
+  for (let i = 0; i < COMPRESSION_SEARCH_STEPS; i++) {
+    const mid = (lo + hi) / 2;
+    const r = schedulePlanAt(input, mid, true);
+    if (fits(r)) {
+      lo = mid;
+      best = r;
+    } else {
+      hi = mid;
+    }
   }
   return best;
 }
 
-function schedulePlanAt(input: PlannerInput, scale: number): PlanResult {
+function schedulePlanAt(input: PlannerInput, scale: number, cram: boolean): PlanResult {
   const warnings: string[] = [];
   const days = eachDay(input.startDate, input.targetDate);
   const capacity = buildCapacity(input);
@@ -329,6 +333,7 @@ function schedulePlanAt(input: PlannerInput, scale: number): PlanResult {
     ]),
   );
   const pending: PendingRevisit[] = [];
+  const maxNewPerDay = cram ? Infinity : MAX_NEW_TOPICS_PER_DAY;
 
   for (const day of days) {
     // 4. Spaced revisits whose date has come (oldest first), carried over if they don't fit.
@@ -368,10 +373,11 @@ function schedulePlanAt(input: PlannerInput, scale: number): PlanResult {
       const next = order.find((t) => {
         const s = state.get(t.key)!;
         if (s.left <= 0) return false;
-        if (s.sessions === 0 && startedToday >= MAX_NEW_TOPICS_PER_DAY) return false;
+        if (s.sessions === 0 && startedToday >= maxNewPerDay) return false;
+        // Same day is fine: `order` is prerequisite-first, so the prerequisite's last session comes earlier that day.
         return t.prerequisites.every((p) => {
           const ps = state.get(p);
-          return !ps || (ps.finishedOn !== null && ps.finishedOn < day);
+          return !ps || (ps.finishedOn !== null && ps.finishedOn <= day);
         });
       });
       if (!next) break;
