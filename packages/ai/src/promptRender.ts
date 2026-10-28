@@ -7,6 +7,7 @@ import type {
   SchemaPromptInput,
   SchemaTranscriptionPromptInput,
   SessionBriefingPromptInput,
+  PlanChangePromptInput,
   SessionChatPromptInput,
   SimulationPromptInput,
   SortFlashcardsPromptInput,
@@ -280,5 +281,42 @@ export function renderSortFlashcardsUserPrompt(input: SortFlashcardsPromptInput)
       (c) =>
         `<card id="${attr(c.id)}">\n<front>${escapeClosingTag(c.front, 'front')}</front>\n<back>${escapeClosingTag(c.back, 'back')}</back>\n</card>`,
     ),
+  ].join('\n');
+}
+
+const WEEKDAY_NAMES = [
+  'domenica',
+  'lunedì',
+  'martedì',
+  'mercoledì',
+  'giovedì',
+  'venerdì',
+  'sabato',
+];
+
+/** The current plan inputs and the request, for `plan_change`. The request is student text: escaped. */
+export function renderPlanChangeUserPrompt(input: PlanChangePromptInput): string {
+  return [
+    `Materia: ${input.subjectName}`,
+    `Oggi: ${input.today} (${WEEKDAY_NAMES[new Date(`${input.today}T00:00:00Z`).getUTCDay()]})`,
+    '',
+    '<current_plan>',
+    `Data esame: ${input.targetDate}`,
+    `Minuti per giorno: ${input.perWeekday.map((m, i) => `${WEEKDAY_NAMES[i]} [${i}] = ${m}`).join(', ')}`,
+    `Giorni senza studio: ${input.blackoutDates.length > 0 ? input.blackoutDates.join(', ') : 'nessuno'}`,
+    `Intensità: ${input.intensity}`,
+    `Durata blocco: ${input.sessionLength} min`,
+    `Simulazioni: ${input.simulationCount}`,
+    ...(input.topics.length > 0
+      ? [
+          'Argomenti:',
+          ...input.topics.map(
+            (t) => `- id="${t.id}" ${t.name}${t.included ? '' : ' (escluso dal piano)'}`,
+          ),
+        ]
+      : []),
+    '</current_plan>',
+    '',
+    `<request>\n${escapeClosingTag(input.instruction, 'request')}\n</request>`,
   ].join('\n');
 }

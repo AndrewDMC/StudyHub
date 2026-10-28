@@ -3,7 +3,12 @@
 import { useEffect, useRef } from 'react';
 import { ArrowRight, X } from 'lucide-react';
 import type { SessionCitationDto, SessionFocus, StudySessionDto } from '@studyhub/contracts';
-import { AnswerMarkdown, formatEur, useSessionChat } from '@/components/SessionChat';
+import {
+  AnswerMarkdown,
+  formatEur,
+  questionBefore,
+  useSessionChat,
+} from '@/components/SessionChat';
 import { MODEL_OPTIONS, modelLabel } from '../ModelPicker';
 import { fieldClass } from '../simulation-mobile/styles';
 import { SectionError, SkeletonRows } from '../subject-mobile/SectionState';
@@ -59,8 +64,12 @@ export function ChatMobile({
     onSource({ docId: c.docId, documentName: c.documentName, page: c.page }, trigger);
   const onInlineCitation = openCitation;
 
-  const bubble = (m: (typeof messages)[number]) =>
-    m.role === 'user' ? (
+  const bubble = (m: (typeof messages)[number], i: number) => {
+    const retry =
+      m.role === 'assistant' && !m.deepSearch && i === messages.length - 1 && !sending
+        ? questionBefore(messages, i)
+        : null;
+    return m.role === 'user' ? (
       <div
         key={m.id}
         className="max-w-[86%] self-end whitespace-pre-wrap break-words rounded-[12px] bg-accent px-3 py-2.5 text-[15px] leading-normal text-bg-base"
@@ -103,12 +112,29 @@ export function ChatMobile({
             ))}
           </ul>
         ) : (
-          <p className="text-xs text-warn">
-            Nessuna fonte citata: la risposta non è ancorata al materiale, verificala.
+          !m.deepSearch && (
+            <p className="text-xs text-warn">
+              Nessuna fonte citata: la risposta non è ancorata al materiale, verificala.
+            </p>
+          )
+        )}
+        {m.deepSearch && (
+          <p className="text-xs text-fg-secondary">
+            Ricerca approfondita: le parti fuori dagli appunti vanno verificate.
           </p>
+        )}
+        {retry && (
+          <button
+            type="button"
+            onClick={() => void send(retry)}
+            className="min-h-11 rounded-[var(--radius-control)] border border-border px-3 text-left text-[13px] text-fg-secondary"
+          >
+            Cerca anche fuori dagli appunti
+          </button>
         )}
       </div>
     );
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col">

@@ -230,6 +230,26 @@ describe('study session chat', () => {
     }
   });
 
+  it('ricerca approfondita: the permission is saved on the question and the answer', async () => {
+    const events = await drain(
+      await startChatTurn(
+        db,
+        slug,
+        sessionId,
+        { content: 'chitarra elettrica distorsione', deepSearch: true },
+        new FakeProvider(),
+      ),
+    );
+    const done = events.at(-1)!;
+    expect(done.type).toBe('done');
+    if (done.type === 'done') {
+      expect(done.message.deepSearch).toBe(true);
+      expect(done.message.content).toContain('Fuori dagli appunti');
+    }
+    const rows = await db.select().from(sessionMessages);
+    expect(rows.map((r: { deepSearch: boolean }) => r.deepSearch)).toEqual([true, true]);
+  });
+
   it('reports a provider failure as an event, keeping the question', async () => {
     const failing: AiProvider = Object.assign(new FakeProvider(), {
       // eslint-disable-next-line require-yield

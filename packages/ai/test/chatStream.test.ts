@@ -177,3 +177,42 @@ describe('FakeProvider.chatStream', () => {
     expect(text(deltas)).not.toMatch(/\[\d+\]/);
   });
 });
+
+describe('chatStream — ricerca approfondita', () => {
+  const deep = { ...input, deepSearch: true };
+
+  it('AnthropicProvider enables web search and the deep prompt only when the student allowed it', async () => {
+    const create = vi.fn(async () =>
+      (async function* () {
+        yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Fuori.' } };
+      })(),
+    );
+    const provider = new AnthropicProvider({ client: { messages: { create } } as never });
+    const deltas = await collect(provider.chatStream(deep, 'claude-haiku-4-5-20251001'));
+    expect(deltas.at(-1)).toMatchObject({ type: 'done', promptVersion: 'session_chat_deep/v1' });
+    const [params] = create.mock.calls[0] as unknown as [
+      { system: string; tools?: { type: string; name: string }[] },
+    ];
+    expect(params.tools).toEqual([expect.objectContaining({ name: 'web_search' })]);
+    expect(params.system).toContain('Fuori dagli appunti');
+  });
+
+  it('ClaudeCliProvider allows only the web tools', async () => {
+    const runStream = vi.fn((_args: string[], _stdin: string) =>
+      (async function* () {
+        yield JSON.stringify({ type: 'result', is_error: false, result: 'ok', usage: {} });
+      })(),
+    );
+    const provider = new ClaudeCliProvider({ runStream });
+    await collect(provider.chatStream(deep, 'claude-haiku-4-5-20251001'));
+    const [args] = runStream.mock.calls[0]!;
+    expect(args[args.indexOf('--tools') + 1]).toBe('WebSearch,WebFetch');
+    expect(args[args.indexOf('--allowedTools') + 1]).toBe('WebSearch,WebFetch');
+  });
+
+  it('FakeProvider keeps the outside part apart', async () => {
+    const deltas = await collect(new FakeProvider().chatStream(deep, 'fake'));
+    expect(text(deltas)).toContain('**Fuori dagli appunti**');
+    expect(deltas.at(-1)).toMatchObject({ promptVersion: 'session_chat_deep/v1' });
+  });
+});

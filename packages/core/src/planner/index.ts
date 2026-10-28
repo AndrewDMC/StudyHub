@@ -4,3 +4,4 @@ export * from './schedule.js';
 export * from './adapt.js';
 export * from './bulk.js';
 export * from './lessons.js';
+export * from './change.js';

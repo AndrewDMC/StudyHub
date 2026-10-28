@@ -183,6 +183,13 @@
       "when": 1790700900000,
       "tag": "0025_session_mood",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1790701000000,
+      "tag": "0026_session_message_deep_search",
+      "breakpoints": true
     }
   ]
 }
