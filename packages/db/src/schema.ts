@@ -864,6 +864,8 @@ export const sessionMessages = pgTable(
     content: text('content').notNull(),
     focus: jsonb('focus').$type<SessionMessageFocus>(),
     citations: jsonb('citations').$type<SessionCitation[]>().notNull().default([]),
+    /** The student allowed the tutor to look beyond the session's material (web, general knowledge). */
+    deepSearch: boolean('deep_search').notNull().default(false),
     inputTokens: integer('input_tokens'),
     outputTokens: integer('output_tokens'),
     model: text('model'),

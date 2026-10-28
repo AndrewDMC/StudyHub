@@ -91,6 +91,8 @@ export const SendSessionMessageRequestSchema = z.object({
   focus: SessionFocusSchema.optional(),
   /** Modello della chat; assente = quello veloce. */
   model: z.string().min(1).max(100).optional(),
+  /** Ricerca approfondita, autorizzata dallo studente: il tutor può cercare anche fuori dagli appunti (web). */
+  deepSearch: z.boolean().optional(),
 });
 export type SendSessionMessageRequest = z.infer<typeof SendSessionMessageRequestSchema>;
 
@@ -110,6 +112,8 @@ export const SessionMessageDtoSchema = z.object({
   content: z.string(),
   focus: SessionFocusSchema.nullable(),
   citations: z.array(SessionCitationDtoSchema),
+  /** La domanda (e la sua risposta) ha usato la ricerca approfondita fuori dagli appunti. */
+  deepSearch: z.boolean(),
   model: z.string().nullable(),
   createdAt: z.string().datetime(),
 });

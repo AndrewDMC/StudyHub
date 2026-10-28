@@ -9,6 +9,7 @@ import {
   averageMinutes,
   scaleAvailability,
 } from '@/lib/planMobile';
+import { PlanChangeBox } from '../PlanChangeBox';
 import { fieldClass, primaryButton } from '../simulation-mobile/styles';
 import { BottomSheet } from '../subject-mobile/BottomSheet';
 import { todayIso } from '../subject-mobile/queries';
@@ -108,6 +109,18 @@ export function PlanSheet({
       }
       returnFocusRef={returnFocusRef}
     >
+      {plan && (
+        <div className="mt-3 space-y-2">
+          <PlanChangeBox
+            slug={slug}
+            planId={plan.id}
+            pending={pending}
+            onConfirm={onSubmit}
+            compact
+          />
+          <p className="text-xs text-fg-muted">Oppure imposta tu data, ritmo e minuti:</p>
+        </div>
+      )}
       <form
         className="mt-3 flex flex-col gap-4"
         onSubmit={(e) => {

@@ -481,7 +481,12 @@ function SessionDesktop({ slug, sessionId }: { slug: string; sessionId: string }
               )}
             </aside>
 
-            <main className={`min-w-0 space-y-3 ${tab === 'chat' ? 'hidden lg:block' : ''}`}>
+            {/* On desktop the document scrolls in its own column, apart from the chat: asking the tutor never moves it. */}
+            <main
+              className={`min-w-0 space-y-3 lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)] lg:overflow-y-auto lg:overscroll-contain ${
+                tab === 'chat' ? 'hidden lg:block' : ''
+              }`}
+            >
               <div role="tablist" aria-label="Centro della pagina" className="flex gap-1">
                 {(
                   [

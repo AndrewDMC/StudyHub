@@ -304,3 +304,27 @@ export const MoveTasksRequestSchema = z.object({
   days: z.number().int().min(1).max(30),
 });
 export type MoveTasksRequest = z.infer<typeof MoveTasksRequestSchema>;
+
+/** "Modifica piano": the change, in the student's own words. */
+export const ProposePlanChangeRequestSchema = z.object({
+  instruction: z.string().trim().min(3, 'Scrivi cosa vuoi cambiare').max(1000),
+  /** The plan to change (a subject has one per exam); absent = the current draft, else the active plan. */
+  planId: z.string().uuid().optional(),
+  /** The student's today (their timezone): the new draft starts here and "domani" is resolved from it. */
+  today: IsoDateSchema.optional(),
+});
+export type ProposePlanChangeRequest = z.infer<typeof ProposePlanChangeRequestSchema>;
+
+/**
+ * What the change would do, before anything is generated: the student reads `changes` and, if they agree,
+ * sends `request` to the normal draft generation (`POST .../plan`). Nothing is written by the proposal.
+ */
+export const PlanChangeProposalDtoSchema = z.object({
+  request: GeneratePlanJobInputSchema.omit({ subjectId: true }),
+  /** One line per change the request makes. */
+  changes: z.array(z.string()),
+  /** Parts of the request the planner can't do, and proposed values that were refused. */
+  notApplied: z.array(z.string()),
+  costEur: z.number(),
+});
+export type PlanChangeProposalDto = z.infer<typeof PlanChangeProposalDtoSchema>;

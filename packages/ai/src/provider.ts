@@ -8,6 +8,7 @@ import type {
   FlashcardsOutput,
   GradeOutput,
   OcrTextOutput,
+  PlanChangeOutput,
   SchemaGraphOutput,
   SchemaOutput,
   SessionBriefingOutput,
@@ -221,6 +222,11 @@ export interface SessionChatPromptInput {
   /** The passage the student selected ("Chiedi all'AI"), when there is one. */
   focus?: { documentName: string; page: number | null; text: string } | undefined;
   question: string;
+  /**
+   * The student allowed a search beyond the material (prompt `session_chat_deep`): the model may use web
+   * search and general knowledge, kept apart from what the sources say.
+   */
+  deepSearch?: boolean | undefined;
 }
 
 /**
@@ -232,6 +238,22 @@ export interface SubjectAskPromptInput {
   subjectName: string;
   sources: SessionChatSource[];
   question: string;
+}
+
+/** The plan as it is now, and the student's request to change it (prompt `plan_change`). */
+export interface PlanChangePromptInput {
+  subjectName: string;
+  /** Today, so that "domani" or "venerdì prossimo" can be resolved to a date. */
+  today: string;
+  targetDate: string;
+  perWeekday: number[];
+  blackoutDates: string[];
+  intensity: 'sostenibile' | 'standard' | 'sprint';
+  sessionLength: number;
+  simulationCount: number | 'auto';
+  /** The subject's topics, with whether the plan currently covers them. */
+  topics: { id: string; name: string; included: boolean }[];
+  instruction: string;
 }
 
 /** What `AiProvider.chatStream` / `askStream` yield: text pieces, then exactly one `done` with the usage. */
@@ -298,6 +320,11 @@ export interface AiProvider {
     input: SortFlashcardsPromptInput,
     model: string,
   ): Promise<GeneratedWithMeta<SortFlashcardsAiOutput>>;
+  /** Turns the student's request to change a plan into new planner inputs (`plan_change`). */
+  interpretPlanChange(
+    input: PlanChangePromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<PlanChangeOutput>>;
   /** Streaming, free-text answer for the study-session chat (docs/08-sessione-di-studio.md §5.3). */
   chatStream(input: SessionChatPromptInput, model: string): AsyncIterable<ChatDelta>;
   /** Streaming, free-text answer to a single question on the subject (prompt `subject_ask`). */

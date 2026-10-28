@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   BulkPlanActionRequest,
   ExamDto,
+  GeneratePlanRequest,
   Intensity,
   PlanDiffDto,
   PlanDto,
@@ -14,6 +15,7 @@ import type {
   TopicDto,
 } from '@studyhub/contracts';
 import { useIsMobile } from '@/lib/useIsMobile';
+import { PlanChangeBox } from './PlanChangeBox';
 import { PlanMobile } from './plan-mobile/PlanMobile';
 import { TaskFlashcardsPanel } from './task-flashcards/TaskFlashcardsSection';
 import { cardCountLabel } from './task-flashcards/taskFlashcardsModel';
@@ -745,6 +747,17 @@ function PlanDesktop({ slug }: { slug: string }) {
     onSuccess: invalidatePlan,
   });
 
+  // "Modifica piano" a parole: the confirmed proposal goes through the normal draft generation.
+  const generateFromChange = useMutation({
+    mutationFn: (request: GeneratePlanRequest) =>
+      send(`/api/subjects/${slug}/plan`, 'POST', request),
+    onSuccess: () => {
+      setSelectedId(null);
+      setAwaitingDraft(true);
+      invalidatePlan();
+    },
+  });
+
   const plan = plans.find((p) => p.id === selectedId) ?? plans[0] ?? null;
   const planLabel = (p: PlanDto) => {
     const exam = p.examId ? (examsQuery.data ?? []).find((x) => x.id === p.examId) : null;
@@ -831,6 +844,18 @@ function PlanDesktop({ slug }: { slug: string }) {
 
       {plan && !wizardOpen && (
         <div className="space-y-4">
+          <PlanChangeBox
+            key={plan.id}
+            slug={slug}
+            planId={plan.id}
+            pending={generateFromChange.isPending || awaitingDraft}
+            onConfirm={(request) => generateFromChange.mutate(request)}
+          />
+          {generateFromChange.isError && (
+            <p role="alert" className="text-sm text-danger">
+              {(generateFromChange.error as Error).message}
+            </p>
+          )}
           <div className="flex items-center gap-2 text-xs">
             <span
               className={`rounded-full border px-2 py-0.5 ${plan.status === 'draft' ? 'border-warn text-warn' : 'border-ok text-ok'}`}

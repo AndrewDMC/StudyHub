@@ -14,6 +14,7 @@ import type {
   SchemaTranscriptionPromptInput,
   SessionBriefingPromptInput,
   SessionChatPromptInput,
+  PlanChangePromptInput,
   SubjectAskPromptInput,
   SimulationPromptInput,
   SortFlashcardsPromptInput,
@@ -30,6 +31,7 @@ import type {
   GeneratedFlashcard,
   GradeOutput,
   OcrTextOutput,
+  PlanChangeOutput,
   SchemaGraphOutput,
   SchemaNode,
   SchemaOutput,
@@ -43,7 +45,11 @@ import { basename } from 'node:path';
 import { estimateTokens } from './pricing.js';
 import { keywordCoverage, keywords, splitSentences, truncate } from './text.js';
 import { normalizeTopicName } from './topicMatch.js';
-import { renderSessionChatUserPrompt, renderSubjectAskUserPrompt } from './promptRender.js';
+import {
+  renderPlanChangeUserPrompt,
+  renderSessionChatUserPrompt,
+  renderSubjectAskUserPrompt,
+} from './promptRender.js';
 import { fakeExtractExamProfile, fakeGenerateSimulation, fakeGradeAnswer } from './fakeExam.js';
 import {
   CLASSIFY_DOCUMENT_TYPE_PROMPT_VERSION,
@@ -58,6 +64,8 @@ import {
   SCHEMA_TRANSCRIPTION_PROMPT_VERSION,
   SESSION_BRIEFING_PROMPT_VERSION,
   SESSION_CHAT_PROMPT_VERSION,
+  SESSION_CHAT_DEEP_PROMPT_VERSION,
+  PLAN_CHANGE_PROMPT_VERSION,
   SUBJECT_ASK_PROMPT_VERSION,
   SIMULATION_PROMPT_VERSION,
   SORT_FLASHCARDS_PROMPT_VERSION,
@@ -507,6 +515,70 @@ export class FakeProvider implements AiProvider {
   }
 
   /**
+   * Rule-based stand-in for `plan_change`: understands hours or minutes per day, a weekday off, the pace
+   * and an exam date written as YYYY-MM-DD. Anything else is reported back as not understood.
+   */
+  async interpretPlanChange(
+    input: PlanChangePromptInput,
+    _model: string,
+  ): Promise<GeneratedWithMeta<PlanChangeOutput>> {
+    const text = input.instruction.toLowerCase();
+    const out: PlanChangeOutput = {
+      targetDate: null,
+      perWeekday: null,
+      addBlackoutDates: [],
+      removeBlackoutDates: [],
+      intensity: null,
+      sessionLength: null,
+      simulationCount: null,
+      excludeTopicIds: [],
+      includeTopicIds: [],
+      changes: [],
+      notUnderstood: [],
+    };
+    const days: (number | null)[] = [null, null, null, null, null, null, null];
+    const perDay = /(\d+(?:[.,]\d+)?)\s*(ore|ora|h|minuti|min)\b/.exec(text);
+    if (perDay) {
+      const n = Number(perDay[1]!.replace(',', '.'));
+      const minutes = Math.round(perDay[2]!.startsWith('m') ? n : n * 60);
+      input.perWeekday.forEach((m, i) => {
+        if (m > 0) days[i] = minutes;
+      });
+      out.changes.push(`${minutes} minuti nei giorni di studio`);
+    }
+    const weekdays = ['domenica', 'lunedì', 'martedì', 'mercoledì', 'giovedì', 'venerdì', 'sabato'];
+    weekdays.forEach((name, i) => {
+      if (new RegExp(`${name.slice(0, 5)}[^ ]* +(libero|liberi|no|niente)`).test(text)) {
+        days[i] = 0;
+        out.changes.push(`${name[0]!.toUpperCase()}${name.slice(1)}: nessuno studio`);
+      }
+    });
+    if (days.some((d) => d !== null)) out.perWeekday = days;
+    if (/sprint|condens|spinger|intens/.test(text)) {
+      out.intensity = 'sprint';
+      out.changes.push('Ritmo: sprint');
+    } else if (/leggero|sostenibil|rilassat/.test(text)) {
+      out.intensity = 'sostenibile';
+      out.changes.push('Ritmo: sostenibile');
+    }
+    const date = /\b(\d{4}-\d{2}-\d{2})\b/.exec(text);
+    if (date && /esame|data/.test(text)) {
+      out.targetDate = date[1]!;
+      out.changes.push(`Esame il ${date[1]}`);
+    }
+    if (out.changes.length === 0) out.notUnderstood.push(input.instruction);
+    return {
+      data: out,
+      usage: {
+        inputTokens: estimateTokens(renderPlanChangeUserPrompt(input)),
+        outputTokens: estimateTokens(JSON.stringify(out)),
+      },
+      model: FAKE_MODEL,
+      promptVersion: PLAN_CHANGE_PROMPT_VERSION,
+    };
+  }
+
+  /**
    * Extractive stand-in for the session chat: quotes the best-matching sentences of the provided
    * sources, each cited with its `[n]` — or says the material doesn't cover the question. It can't
    * explain anything, but it exercises the whole pipeline (SSE, citation parsing, validation, costs).
@@ -525,10 +597,14 @@ export class FakeProvider implements AiProvider {
       .sort((a, b) => b.score - a.score || a.ref - b.ref)
       .slice(0, 2);
 
-    const answer =
+    const fromMaterial =
       scored.length === 0
         ? 'Questo non è nel materiale della sessione: prova a riformulare la domanda o ad aggiungere un argomento.'
         : `Dal materiale:\n\n${scored.map((c) => `- ${truncate(c.sentence, 400)} [${c.ref}]`).join('\n')}`;
+    // Offline: no web to search, but the "ricerca approfondita" shape (a separate outside part) is kept.
+    const answer = input.deepSearch
+      ? `${fromMaterial}\n\n**Fuori dagli appunti**\n\nIl provider offline non può cercare sul web: configura un provider reale per la ricerca approfondita.`
+      : fromMaterial;
 
     // Emit in small pieces so the streaming path is exercised for real, not one lump.
     for (let i = 0; i < answer.length; i += 24) {
@@ -541,7 +617,9 @@ export class FakeProvider implements AiProvider {
         outputTokens: estimateTokens(answer),
       },
       model: FAKE_MODEL,
-      promptVersion: SESSION_CHAT_PROMPT_VERSION,
+      promptVersion: input.deepSearch
+        ? SESSION_CHAT_DEEP_PROMPT_VERSION
+        : SESSION_CHAT_PROMPT_VERSION,
     };
   }
 

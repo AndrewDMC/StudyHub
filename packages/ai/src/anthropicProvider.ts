@@ -19,6 +19,7 @@ import type {
   SchemaTranscriptionPromptInput,
   SessionBriefingPromptInput,
   SessionChatPromptInput,
+  PlanChangePromptInput,
   SubjectAskPromptInput,
   SimulationPromptInput,
   SortFlashcardsPromptInput,
@@ -28,6 +29,7 @@ import {
   ClassifyDocumentTypeOutputSchema,
   DistillHandwritingProfileOutputSchema,
   EstimateTopicsOutputSchema,
+  PlanChangeOutputSchema,
   ExamProfileSchema,
   ExtractTopicsOutputSchema,
   FlashcardsOutputSchema,
@@ -42,6 +44,7 @@ import {
   type ClassifyDocumentTypeOutput,
   type DistillHandwritingProfileOutput,
   type EstimateTopicsOutput,
+  type PlanChangeOutput,
   type ExamProfile,
   type ExtractTopicsOutput,
   type FlashcardsOutput,
@@ -64,6 +67,7 @@ import {
   renderSchemaTranscriptionUserPrompt,
   renderSchemaUserPrompt,
   renderSessionChatUserPrompt,
+  renderPlanChangeUserPrompt,
   renderSubjectAskUserPrompt,
   renderSessionBriefingUserPrompt,
   renderSimulationUserPrompt,
@@ -72,6 +76,8 @@ import {
 } from './promptRender.js';
 
 const MAX_VALIDATION_RETRIES = 2; // docs/03-ai-e-worker.md §3: "retry con feedback di validazione (max 2)"
+/** Web searches allowed in one "ricerca approfondita" answer: enough for a few targeted lookups, capped for cost. */
+const DEEP_SEARCH_MAX_USES = 3;
 
 /**
  * The real thing: Anthropic's Messages API, forced tool-use for structured
@@ -345,11 +351,38 @@ export class AnthropicProvider implements AiProvider {
     return { data, usage, model, promptVersion };
   }
 
+  async interpretPlanChange(
+    input: PlanChangePromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<PlanChangeOutput>> {
+    const { text: system, promptVersion } = loadPrompt('plan_change', 1);
+    const { data, usage } = await this.callWithTool(
+      'emit_plan_change',
+      system,
+      renderPlanChangeUserPrompt(input),
+      PlanChangeOutputSchema,
+      model,
+      2048,
+    );
+    return { data, usage, model, promptVersion };
+  }
+
   /**
    * Streams the study-session chat as plain text (no tool-use): raw SSE events from the Messages API,
    * `text_delta` pieces forwarded as they arrive, usage taken from `message_start` / `message_delta`.
    */
   async *chatStream(input: SessionChatPromptInput, model: string): AsyncIterable<ChatDelta> {
+    if (input.deepSearch) {
+      // Server-side web search: the API runs the searches and streams the answer text as usual.
+      const { text: system, promptVersion } = loadPrompt('session_chat_deep', 1);
+      yield* this.streamText(system, promptVersion, renderSessionChatUserPrompt(input), model, {
+        maxTokens: 4096,
+        tools: [
+          { type: 'web_search_20250305', name: 'web_search', max_uses: DEEP_SEARCH_MAX_USES },
+        ],
+      });
+      return;
+    }
     const { text: system, promptVersion } = loadPrompt('session_chat', 1);
     yield* this.streamText(system, promptVersion, renderSessionChatUserPrompt(input), model);
   }
@@ -365,13 +398,15 @@ export class AnthropicProvider implements AiProvider {
     promptVersion: string,
     userPrompt: string,
     model: string,
+    options: { maxTokens?: number; tools?: unknown[] } = {},
   ): AsyncIterable<ChatDelta> {
     const stream = (await this.client.messages.create({
       model,
-      max_tokens: 2048,
+      max_tokens: options.maxTokens ?? 2048,
       system,
       stream: true,
       messages: [{ role: 'user', content: userPrompt }],
+      ...(options.tools ? { tools: options.tools } : {}),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any)) as unknown as AsyncIterable<{
       type: string;

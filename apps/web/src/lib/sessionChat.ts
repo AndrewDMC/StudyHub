@@ -93,6 +93,7 @@ function toMessageDto(row: SessionMessage): SessionMessageDto {
     content: row.content,
     focus: row.focus ? { ...row.focus, page: row.focus.page ?? null } : null,
     citations: row.citations,
+    deepSearch: row.deepSearch,
     model: row.model,
     createdAt: row.createdAt.toISOString(),
   };
@@ -164,6 +165,7 @@ export async function startChatTurn(
       content: request.content,
       focus: request.focus ?? null,
       citations: [],
+      deepSearch: request.deepSearch ?? false,
     })
     .returning();
   const model = request.model ?? resolveModel(CHAT_DEFAULT_MODEL);
@@ -206,6 +208,7 @@ export async function startChatTurn(
               }
             : undefined,
           question: request.content,
+          deepSearch: request.deepSearch ?? false,
         },
         model,
       )) {
@@ -232,6 +235,7 @@ export async function startChatTurn(
           role: 'assistant',
           content: parsed.text,
           citations,
+          deepSearch: request.deepSearch ?? false,
           inputTokens: usage.inputTokens,
           outputTokens: usage.outputTokens,
           model: usedModel,
@@ -244,7 +248,11 @@ export async function startChatTurn(
         type: 'session_chat',
         subjectId: subject.id,
         status: 'succeeded',
-        input: { sessionId: session.id, messageId: assistant.id },
+        input: {
+          sessionId: session.id,
+          messageId: assistant.id,
+          ...(request.deepSearch ? { deepSearch: true } : {}),
+        },
         cost: {
           inputTokens: usage.inputTokens,
           outputTokens: usage.outputTokens,

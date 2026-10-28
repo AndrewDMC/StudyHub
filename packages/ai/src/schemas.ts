@@ -383,3 +383,32 @@ export const GradeOutputSchema = z.object({
   missing: z.array(z.string()),
 });
 export type GradeOutput = z.infer<typeof GradeOutputSchema>;
+
+/**
+ * `plan_change`: a request in the student's own words ("sabato libero", "3 ore al giorno", "esame
+ * spostato al 10") turned into changes to the inputs of `generate_plan`. Only what the request asks
+ * for is set; everything else stays as it is. Validated and applied by `applyPlanChange` (core), never
+ * trusted verbatim: a date or topic id outside what was offered is dropped there.
+ */
+export const PlanChangeOutputSchema = z.object({
+  targetDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable(),
+  /** Minutes per weekday, index 0 = Sunday … 6 = Saturday; null entries keep the current value. */
+  perWeekday: z.array(z.number().int().min(0).max(1440).nullable()).length(7).nullable(),
+  addBlackoutDates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
+  removeBlackoutDates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
+  intensity: z.enum(['sostenibile', 'standard', 'sprint']).nullable(),
+  sessionLength: z.number().int().min(10).max(180).nullable(),
+  simulationCount: z.union([z.literal('auto'), z.number().int().min(0).max(10)]).nullable(),
+  /** Topics to leave out of the plan (ids from the list offered). */
+  excludeTopicIds: z.array(z.string()),
+  /** Topics to bring back in (ids from the list offered). */
+  includeTopicIds: z.array(z.string()),
+  /** One short line per change, in Italian, for the student to confirm. */
+  changes: z.array(z.string()),
+  /** Parts of the request that can't be expressed with these inputs, said plainly. */
+  notUnderstood: z.array(z.string()),
+});
+export type PlanChangeOutput = z.infer<typeof PlanChangeOutputSchema>;

@@ -115,14 +115,22 @@ function MessageBubble({
   message,
   documentNames,
   onOpenCitation,
+  onDeepSearch,
 }: {
   message: SessionMessageDto;
   documentNames: Map<string, string>;
   onOpenCitation: (citation: SessionCitationDto) => void;
+  /** Offered under the latest answer that stayed within the material. */
+  onDeepSearch?: (() => void) | undefined;
 }) {
   if (message.role === 'user') {
     return (
       <div className="ml-6 space-y-1 rounded-[var(--radius-control)] bg-bg-raised p-2.5 text-sm text-fg-primary">
+        {message.deepSearch && (
+          <span className="inline-block rounded-full bg-accent/15 px-2 py-0.5 text-xs text-accent">
+            Ricerca approfondita
+          </span>
+        )}
         {message.focus && (
           <blockquote className="border-l-2 border-accent/60 pl-2 text-xs text-fg-muted">
             <span className="line-clamp-3">{message.focus.text}</span>
@@ -158,9 +166,26 @@ function MessageBubble({
           ))}
         </ul>
       ) : (
-        <p className="text-xs text-warn">
-          Nessuna fonte citata: la risposta non è ancorata al materiale, verificala.
+        !message.deepSearch && (
+          <p className="text-xs text-warn">
+            Nessuna fonte citata: la risposta non è ancorata al materiale, verificala.
+          </p>
+        )
+      )}
+      {message.deepSearch && (
+        <p className="text-xs text-fg-muted">
+          Ricerca approfondita: le parti fuori dagli appunti vengono dal web o da conoscenze
+          generali, verificale. Per l&apos;esame contano gli appunti del corso.
         </p>
+      )}
+      {onDeepSearch && (
+        <button
+          type="button"
+          onClick={onDeepSearch}
+          className="rounded-[var(--radius-control)] border border-border px-2 py-1 text-xs text-fg-secondary hover:border-accent hover:text-fg-primary"
+        >
+          Cerca anche fuori dagli appunti
+        </button>
       )}
     </div>
   );
@@ -182,19 +207,31 @@ export function useSessionChat(
   const [streamed, setStreamed] = useState('');
   const [error, setError] = useState<string | null>(null);
 
+  const [deepSearch, setDeepSearch] = useState(false);
+
   const messages = chat.data?.messages ?? [];
 
-  async function send() {
-    const content = input.trim();
+  /**
+   * Sends what is in the input box — or, with `retry`, asks an earlier question again with the search
+   * beyond the material that the student has just allowed ("Cerca anche fuori dagli appunti").
+   */
+  async function send(retry?: { content: string; focus: SessionFocus | null }) {
+    const content = (retry?.content ?? input).trim();
     if (!content || sending) return;
+    const turnFocus = retry ? retry.focus : focus;
+    const deep = retry ? true : deepSearch;
     setSending(true);
     setError(null);
     setStreamed('');
-    setInput('');
+    if (!retry) {
+      setInput('');
+      setDeepSearch(false); // the permission is for one question: the next one starts from the material again
+    }
     const request: SendSessionMessageRequest = {
       content,
       model,
-      ...(focus ? { focus } : {}),
+      ...(turnFocus ? { focus: turnFocus } : {}),
+      ...(deep ? { deepSearch: true } : {}),
     };
     let user: SessionMessageDto | null = null;
     try {
@@ -219,7 +256,7 @@ export function useSessionChat(
       });
     } catch (err) {
       setError((err as Error).message);
-      setInput(content); // nothing was saved: let the student resend
+      if (!retry) setInput(content); // nothing was saved: let the student resend
     } finally {
       setSending(false);
       // Whatever happened, the server is the truth (an errored turn keeps the question, drops the answer).
@@ -241,7 +278,19 @@ export function useSessionChat(
     streamed,
     error,
     send,
+    deepSearch,
+    setDeepSearch,
   };
+}
+
+/** The question an answer replied to: what "Cerca anche fuori dagli appunti" asks again. */
+export function questionBefore(
+  messages: SessionMessageDto[],
+  answerIndex: number,
+): { content: string; focus: SessionFocus | null } | null {
+  const question = messages[answerIndex - 1];
+  if (!question || question.role !== 'user') return null;
+  return { content: question.content, focus: question.focus };
 }
 
 /**
@@ -279,6 +328,8 @@ export function SessionChat({
     streamed,
     error,
     send,
+    deepSearch,
+    setDeepSearch,
   } = useSessionChat(slug, sessionId, { focus, onClearFocus });
   const transcript = useQuery({
     queryKey: ['sessionTranscript', slug, sessionId],
@@ -286,10 +337,17 @@ export function SessionChat({
     enabled: !active,
   });
 
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Follow the answer only while the student is already at the bottom; scrolling up to read stops it.
+  const atBottomRef = useRef(true);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: 'end' });
+    if (pendingUser) atBottomRef.current = true; // a new question always brings the chat down to it
+  }, [pendingUser]);
+  useEffect(() => {
+    const list = listRef.current;
+    // Only the chat's own box scrolls: scrollIntoView would also move the page, and the document with it.
+    if (list && atBottomRef.current) list.scrollTop = list.scrollHeight;
   }, [messages.length, streamed, pendingUser]);
   useEffect(() => {
     if (focus) inputRef.current?.focus();
@@ -347,7 +405,15 @@ export function SessionChat({
     >
       {header}
 
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3" aria-live="polite">
+      <div
+        ref={listRef}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+        }}
+        className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3"
+        aria-live="polite"
+      >
         {chat.isLoading && <p className="text-sm text-fg-muted">Caricamento…</p>}
         {chat.isError && (
           <p role="alert" className="text-sm text-danger">
@@ -360,14 +426,21 @@ export function SessionChat({
             Per partire da un passaggio, selezionalo nel documento e scegli «Chiedi all&apos;AI».
           </p>
         )}
-        {messages.map((m) => (
-          <MessageBubble
-            key={m.id}
-            message={m}
-            documentNames={documentNames}
-            onOpenCitation={onOpenCitation}
-          />
-        ))}
+        {messages.map((m, i) => {
+          const retry =
+            m.role === 'assistant' && !m.deepSearch && i === messages.length - 1 && !sending
+              ? questionBefore(messages, i)
+              : null;
+          return (
+            <MessageBubble
+              key={m.id}
+              message={m}
+              documentNames={documentNames}
+              onOpenCitation={onOpenCitation}
+              onDeepSearch={retry ? () => void send(retry) : undefined}
+            />
+          );
+        })}
         {pendingUser && (
           <MessageBubble
             message={pendingUser}
@@ -380,7 +453,11 @@ export function SessionChat({
             {streamed ? (
               <AnswerMarkdown content={streamed} citations={[]} onOpenCitation={onOpenCitation} />
             ) : (
-              <p className="text-sm text-fg-muted">Sto cercando nel materiale…</p>
+              <p className="text-sm text-fg-muted">
+                {pendingUser?.deepSearch
+                  ? 'Sto cercando nel materiale e fuori dagli appunti…'
+                  : 'Sto cercando nel materiale…'}
+              </p>
             )}
           </div>
         )}
@@ -389,7 +466,6 @@ export function SessionChat({
             {error}
           </p>
         )}
-        <div ref={bottomRef} />
       </div>
 
       <form
@@ -444,6 +520,20 @@ export function SessionChat({
               defaultId={MODEL_OPTIONS[0].id}
             />
           </div>
+          <button
+            type="button"
+            aria-pressed={deepSearch}
+            onClick={() => setDeepSearch((v) => !v)}
+            disabled={sending}
+            title="Permetti al tutor di cercare anche fuori dagli appunti (web) per la prossima domanda"
+            className={`shrink-0 rounded-[var(--radius-control)] border px-2 py-1 text-xs disabled:opacity-60 ${
+              deepSearch
+                ? 'border-accent bg-accent/15 text-fg-primary'
+                : 'border-border text-fg-secondary hover:text-fg-primary'
+            }`}
+          >
+            Ricerca approfondita
+          </button>
           <Button type="submit" size="sm" disabled={sending || !input.trim()}>
             {sending ? 'Risponde…' : 'Invia'}
           </Button>

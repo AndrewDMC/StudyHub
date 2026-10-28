@@ -19,6 +19,7 @@ import type {
   SchemaTranscriptionPromptInput,
   SessionBriefingPromptInput,
   SessionChatPromptInput,
+  PlanChangePromptInput,
   SubjectAskPromptInput,
   SimulationPromptInput,
   SortFlashcardsPromptInput,
@@ -28,6 +29,7 @@ import {
   ClassifyDocumentTypeOutputSchema,
   DistillHandwritingProfileOutputSchema,
   EstimateTopicsOutputSchema,
+  PlanChangeOutputSchema,
   ExamProfileSchema,
   ExtractTopicsOutputSchema,
   FlashcardsOutputSchema,
@@ -42,6 +44,7 @@ import {
   type ClassifyDocumentTypeOutput,
   type DistillHandwritingProfileOutput,
   type EstimateTopicsOutput,
+  type PlanChangeOutput,
   type ExamProfile,
   type ExtractTopicsOutput,
   type FlashcardsOutput,
@@ -65,6 +68,7 @@ import {
   renderSchemaTranscriptionUserPrompt,
   renderSchemaUserPrompt,
   renderSessionChatUserPrompt,
+  renderPlanChangeUserPrompt,
   renderSubjectAskUserPrompt,
   renderSessionBriefingUserPrompt,
   renderSimulationUserPrompt,
@@ -73,6 +77,8 @@ import {
 } from './promptRender.js';
 
 const MAX_VALIDATION_RETRIES = 2; // same discipline as AnthropicProvider (docs/03-ai-e-worker.md §3)
+/** Tools of the "ricerca approfondita" chat: the web only, never the filesystem or a shell. */
+const DEEP_SEARCH_TOOLS = 'WebSearch,WebFetch';
 
 // Tool access disabled: this provider wants one structured JSON answer per
 // call, not an agentic session that reads/writes files or hits the network.
@@ -427,12 +433,39 @@ export class ClaudeCliProvider implements AiProvider {
     return { data, usage, model, promptVersion };
   }
 
+  async interpretPlanChange(
+    input: PlanChangePromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<PlanChangeOutput>> {
+    const { text: system, promptVersion } = loadPrompt('plan_change', 1);
+    const { data, usage } = await this.callWithSchema(
+      system,
+      renderPlanChangeUserPrompt(input),
+      PlanChangeOutputSchema,
+      model,
+    );
+    return { data, usage, model, promptVersion };
+  }
+
   /**
    * Streams the study-session chat through `claude --print --output-format stream-json`. Text arrives as
    * partial `text_delta` events; if the CLI only emits whole assistant messages, those are used instead.
-   * No tools at all (`--tools ""`): the answer must come from the sources in the prompt.
+   * No tools (`--tools ""`): the answer must come from the sources in the prompt — except in "ricerca
+   * approfondita", where the student allowed web search and fetch.
    */
   async *chatStream(input: SessionChatPromptInput, model: string): AsyncIterable<ChatDelta> {
+    if (input.deepSearch) {
+      // "Ricerca approfondita", allowed by the student: web search and fetch only, nothing on disk.
+      const { text: system, promptVersion } = loadPrompt('session_chat_deep', 1);
+      yield* this.streamText(
+        system,
+        promptVersion,
+        renderSessionChatUserPrompt(input),
+        model,
+        DEEP_SEARCH_TOOLS,
+      );
+      return;
+    }
     const { text: system, promptVersion } = loadPrompt('session_chat', 1);
     yield* this.streamText(system, promptVersion, renderSessionChatUserPrompt(input), model);
   }
@@ -448,6 +481,8 @@ export class ClaudeCliProvider implements AiProvider {
     promptVersion: string,
     userPrompt: string,
     model: string,
+    /** Built-in tools to enable (and pre-approve, `--print` can't ask); none by default. */
+    tools = '',
   ): AsyncIterable<ChatDelta> {
     const args = [
       '--print',
@@ -461,7 +496,8 @@ export class ClaudeCliProvider implements AiProvider {
       system,
       '--strict-mcp-config',
       '--tools',
-      '',
+      tools,
+      ...(tools ? ['--allowedTools', tools] : []),
     ];
 
     const usage: AiUsage = { inputTokens: 0, outputTokens: 0 };
