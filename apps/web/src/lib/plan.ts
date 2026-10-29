@@ -33,6 +33,7 @@ import {
   resolveSubjectSubpath,
   schedulePlan,
   weekday,
+  type Feasibility,
   type PlannerInput,
 } from '@studyhub/core';
 import type {
@@ -129,6 +130,15 @@ function toTaskDto(row: Task, flashcardCount = 0): TaskDto {
 }
 
 /** Task rows to DTOs with the attached-flashcard count (one query for the whole batch). */
+/** Plans made before lessons have no sprint/excluded lists. */
+function toFeasibilityDto(f: Feasibility): PlanDto['feasibility'] {
+  return {
+    ...f,
+    sprintLessonKeys: f.sprintLessonKeys ?? [],
+    excludedTopicKeys: f.excludedTopicKeys ?? [],
+  };
+}
+
 async function toTaskDtos(db: AnyDb, rows: Task[]): Promise<TaskDto[]> {
   const counts = await countTaskFlashcards(
     db,
@@ -155,7 +165,7 @@ async function toPlanDto(db: AnyDb, plan: StudyPlan, taskRows: Task[]): Promise<
     targetDate: plan.targetDate,
     availability: plan.availability,
     prefs: plan.prefs,
-    feasibility: plan.feasibility,
+    feasibility: toFeasibilityDto(plan.feasibility),
     warnings: plan.warnings,
     loadPerDay: computeLoadPerDay(capacity, taskRows),
     tasks: await toTaskDtos(db, taskRows),
@@ -308,7 +318,7 @@ export async function getPlanPreview(
     estimate: 'heuristic',
     topicCount: units.length,
     taskCount: result.tasks.length,
-    feasibility: result.feasibility,
+    feasibility: toFeasibilityDto(result.feasibility),
     warnings: result.warnings,
     loadPerWeek: [...weeks.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
@@ -420,25 +430,30 @@ export async function updateDraftTask(
   const subject = await requireSubject(db, subjectSlug);
   const row = await requireTask(db, subject.id, taskId);
   if (row.status !== 'proposed') {
-    // An open task of an active plan can still be pinned ("Fissa"), nothing else.
+    // An open task of an active plan can still be pinned ("Fissa") or switch method, nothing else.
     const [plan] = await db.select().from(studyPlans).where(eq(studyPlans.id, row.planId));
     const open = row.status === 'todo' || row.status === 'doing';
     if (!open || plan?.status !== 'active')
       throw new Error('Solo le task in bozza sono modificabili prima del commit.');
     if (
-      request.pinned === undefined ||
+      (request.pinned === undefined && request.method === undefined) ||
       request.title !== undefined ||
       request.description !== undefined ||
       request.minutes !== undefined
     )
-      throw new PlanRequestError('Su un piano attivo si può solo fissare o sbloccare una task.');
+      throw new PlanRequestError(
+        'Su un piano attivo si può solo fissare una task o cambiare il metodo di una lezione.',
+      );
   }
+  if (request.method !== undefined && row.kind !== 'lesson')
+    throw new PlanRequestError('Il metodo si cambia solo sulle lezioni.');
 
   const patch: Partial<Task> = { updatedAt: new Date() };
   if (request.title !== undefined) patch.title = request.title;
   if (request.description !== undefined) patch.description = request.description;
   if (request.minutes !== undefined) patch.minutes = request.minutes;
   if (request.pinned !== undefined) patch.pinned = request.pinned;
+  if (request.method !== undefined) patch.payload = { ...row.payload, method: request.method };
 
   const [updated] = await db.update(tasks).set(patch).where(eq(tasks.id, taskId)).returning();
   return (await toTaskDtos(db, [updated]))[0]!;

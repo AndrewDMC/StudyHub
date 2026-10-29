@@ -50,6 +50,8 @@ const WEEKDAY_LABELS = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
 
 const KIND_LABELS: Record<TaskDto['kind'], string> = {
   read: 'Lettura',
+  lesson: 'Lezione',
+  verify: 'Verifica',
   flashcards: 'Flashcard',
   schema: 'Schema',
   simulation: 'Simulazione',

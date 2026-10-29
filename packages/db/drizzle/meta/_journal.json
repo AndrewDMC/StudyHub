@@ -190,6 +190,13 @@
       "when": 1790701000000,
       "tag": "0026_session_message_deep_search",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1790701100000,
+      "tag": "0027_lessons",
+      "breakpoints": true
     }
   ]
 }

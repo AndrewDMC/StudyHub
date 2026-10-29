@@ -683,6 +683,10 @@ export interface PlannerFeasibilityData {
   availableMinutes: number;
   shortfallMinutes: number;
   unscheduledTopicKeys: string[];
+  /** Lessons switched to sprint so the plan fits (docs/10-planner-lezioni.md §4.2). */
+  sprintLessonKeys?: string[];
+  /** Topics left out of the plan. */
+  excludedTopicKeys?: string[];
   strategies: PlannerStrategyData[];
 }
 
@@ -711,8 +715,18 @@ export const studyPlans = pgTable('study_plans', {
   committedAt: timestamp('committed_at', { withTimezone: true }),
 });
 
+// `lesson`/`verify`: lesson-plan units (docs/10-planner-lezioni.md); `read` stays for older plans.
 export type TaskKind =
-  'read' | 'flashcards' | 'schema' | 'simulation' | 'drill' | 'rest' | 'review';
+  | 'read'
+  | 'lesson'
+  | 'verify'
+  | 'flashcards'
+  | 'schema'
+  | 'simulation'
+  | 'drill'
+  | 'rest'
+  | 'review';
+export type LessonMethod = 'standard' | 'sprint';
 export type TaskStatus = 'proposed' | 'todo' | 'doing' | 'done' | 'skipped' | 'moved';
 export type TaskOrigin = 'planner' | 'manual';
 
@@ -723,9 +737,20 @@ export interface TaskMaterialRefData {
 }
 
 export interface TaskPayloadData {
-  action: 'read' | 'generate_flashcards' | 'review_session' | 'simulation' | 'manual';
+  action:
+    | 'read'
+    | 'lesson'
+    | 'verify'
+    | 'generate_flashcards'
+    | 'review_session'
+    | 'simulation'
+    | 'manual';
   material?: TaskMaterialRefData[];
   topicId?: string | null;
+  /** Lessons only. */
+  method?: LessonMethod;
+  /** Lessons only: part `n` of `of` when a topic is split by content. */
+  part?: { n: number; of: number };
 }
 
 export const tasks = pgTable(
@@ -800,6 +825,13 @@ export const taskFlashcards = pgTable(
  * session started from a topic.
  */
 export type StudySessionStatus = 'active' | 'ended';
+export type StudySessionKind = 'lesson' | 'verify';
+/**
+ * Where a lesson is (docs/10-planner-lezioni.md §3.2–3.3). Standard: explore → understand →
+ * rework → apply → recall. Sprint: exercises → theory → retry → recall.
+ */
+export type LessonPhase =
+  'explore' | 'understand' | 'rework' | 'apply' | 'recall' | 'exercises' | 'theory' | 'retry';
 
 export const studySessions = pgTable(
   'study_sessions',
@@ -827,6 +859,14 @@ export const studySessions = pgTable(
     drillId: uuid('drill_id').references(() => artifacts.id, { onDelete: 'set null' }),
     // How the student felt the session went ('hard' | 'ok' | 'good'), picked in the closing; null = not said.
     mood: text('mood').$type<'hard' | 'ok' | 'good'>(),
+    kind: text('kind').$type<StudySessionKind>().notNull().default('lesson'),
+    method: text('method').$type<LessonMethod>().notNull().default('standard'),
+    // Null = a session from before lessons (free layout, no phases).
+    phase: text('phase').$type<LessonPhase>(),
+    // The lesson block being studied (`lesson_blocks.order_index`).
+    blockIndex: integer('block_index').notNull().default(0),
+    // How many blocks the guided lesson has: set when the first block is generated.
+    blockCount: integer('block_count'),
     startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
     endedAt: timestamp('ended_at', { withTimezone: true }),
   },
@@ -890,7 +930,8 @@ export interface SessionItemFeedback {
   gradedAt: string;
 }
 
-export type SessionItemKind = 'key_point' | 'exercise';
+// `guide_question`: what the lesson answers (Esplora); `explanation`: the student's Feynman text (Rielabora).
+export type SessionItemKind = 'key_point' | 'exercise' | 'guide_question' | 'explanation';
 /** Key points: `open` | `done` (checked). Exercises: `open` | `correct` | `wrong` (self-assessed). */
 export type SessionItemState = 'open' | 'done' | 'correct' | 'wrong';
 
@@ -918,9 +959,53 @@ export const sessionItems = pgTable(
     answer: text('answer'),
     // Null until the student asks for the AI correction; self-assessment never writes it.
     feedback: jsonb('feedback').$type<SessionItemFeedback>(),
+    // Sprint exercises: the lesson blocks holding the theory needed to solve them.
+    linkedBlockIds: jsonb('linked_block_ids').$type<string[]>().notNull().default([]),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index('session_items_session_idx').on(table.sessionId, table.kind, table.orderIndex)],
+);
+
+/** One step of a worked example, revealed one at a time. */
+export interface LessonExampleStep {
+  text: string;
+  /** Optional formula of the step (LaTeX). */
+  formula?: string;
+}
+
+/** `locked` until the previous block's check is answered; `done` once its own is. */
+export type LessonBlockState = 'locked' | 'open' | 'done';
+
+/**
+ * A block of the guided lesson (docs/10-planner-lezioni.md §3.2, phase "Studia"): the tutor
+ * explains starting from the intuition, gives the formula, a worked example, the typical exam
+ * mistake and a check question. Generated one block ahead and never regenerated unless asked.
+ */
+export const lessonBlocks = pgTable(
+  'lesson_blocks',
+  {
+    id: uuid('id').primaryKey(),
+    sessionId: uuid('session_id')
+      .notNull()
+      .references(() => studySessions.id, { onDelete: 'cascade' }),
+    orderIndex: integer('order_index').notNull(),
+    title: text('title').notNull(),
+    // Markdown.
+    body: text('body').notNull(),
+    // LaTeX.
+    formula: text('formula'),
+    exampleSteps: jsonb('example_steps').$type<LessonExampleStep[]>().notNull().default([]),
+    trap: text('trap'),
+    checkQuestion: text('check_question'),
+    checkAnswer: text('check_answer'),
+    citations: jsonb('citations').$type<SessionItemCitation[]>().notNull().default([]),
+    state: text('state').$type<LessonBlockState>().notNull().default('locked'),
+    studentAnswer: text('student_answer'),
+    model: text('model'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex('lesson_blocks_session_order_idx').on(table.sessionId, table.orderIndex)],
 );
 
 /**
@@ -1003,3 +1088,5 @@ export type SessionMessage = typeof sessionMessages.$inferSelect;
 export type NewSessionMessage = typeof sessionMessages.$inferInsert;
 export type SessionItem = typeof sessionItems.$inferSelect;
 export type NewSessionItem = typeof sessionItems.$inferInsert;
+export type LessonBlock = typeof lessonBlocks.$inferSelect;
+export type NewLessonBlock = typeof lessonBlocks.$inferInsert;

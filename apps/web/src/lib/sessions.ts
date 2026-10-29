@@ -317,5 +317,9 @@ async function toDto(db: AnyDb, row: StudySession, task: TaskRow | null): Promis
     flashcardDeckId: row.flashcardDeckId,
     drillId: row.drillId,
     mood: row.mood ?? null,
+    kind: row.kind,
+    method: row.method,
+    phase: row.phase,
+    blockIndex: row.blockIndex,
   };
 }

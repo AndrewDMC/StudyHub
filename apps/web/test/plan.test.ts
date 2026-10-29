@@ -430,6 +430,25 @@ describe('plan draft/commit lifecycle', () => {
     await expect(updateDraftTask(db, subjectSlug, taskId, { minutes: 10 })).rejects.toThrow();
   });
 
+  it('updateDraftTask switches the method of a lesson, also on an active plan, and only on lessons', async () => {
+    const draftId = await insertDraftPlan();
+    const lessonId = await insertTask(draftId, {
+      kind: 'lesson',
+      payload: { action: 'lesson', method: 'standard', part: { n: 1, of: 2 } },
+    });
+    const readId = await insertTask(draftId);
+
+    const sprint = await updateDraftTask(db, subjectSlug, lessonId, { method: 'sprint' });
+    expect(sprint.payload).toMatchObject({ method: 'sprint', part: { n: 1, of: 2 } });
+    await expect(updateDraftTask(db, subjectSlug, readId, { method: 'sprint' })).rejects.toThrow(
+      'solo sulle lezioni',
+    );
+
+    await commitPlan(db, dataRoot, subjectSlug, draftId);
+    const back = await updateDraftTask(db, subjectSlug, lessonId, { method: 'standard' });
+    expect(back.payload.method).toBe('standard');
+  });
+
   it('deleteDraftTask removes a proposed task', async () => {
     const draftId = await insertDraftPlan();
     const taskId = await insertTask(draftId);

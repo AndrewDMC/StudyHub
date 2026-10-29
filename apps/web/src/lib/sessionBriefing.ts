@@ -87,6 +87,7 @@ function toItemDto(row: SessionItem, documentNames: Map<string, string>): Sessio
     state: row.state,
     answer: row.answer,
     feedback: row.feedback,
+    linkedBlockIds: row.linkedBlockIds,
   };
 }
 

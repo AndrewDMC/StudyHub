@@ -2,6 +2,8 @@ import type { Intensity, PlanDto, TaskDto } from '@studyhub/contracts';
 
 export const KIND_LABELS: Record<TaskDto['kind'], string> = {
   read: 'Lettura',
+  lesson: 'Lezione',
+  verify: 'Verifica',
   flashcards: 'Flashcard',
   schema: 'Schema',
   simulation: 'Simulazione',
@@ -24,6 +26,7 @@ export type KindColor = 'accent' | 'subject' | 'warn' | 'danger' | 'info' | 'mut
 export function kindColor(kind: TaskDto['kind']): KindColor {
   switch (kind) {
     case 'read':
+    case 'lesson':
     case 'schema':
       return 'accent';
     case 'flashcards':
@@ -33,6 +36,7 @@ export function kindColor(kind: TaskDto['kind']): KindColor {
     case 'simulation':
       return 'danger';
     case 'review':
+    case 'verify':
       return 'info';
     case 'rest':
       return 'muted';

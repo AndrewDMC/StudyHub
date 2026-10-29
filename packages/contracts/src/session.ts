@@ -11,11 +11,38 @@ export const StartSessionRequestSchema = z
   });
 export type StartSessionRequest = z.infer<typeof StartSessionRequestSchema>;
 
+// ---- Lezione (docs/10-planner-lezioni.md §3) ----
+
+/** `lesson` = una lezione del piano (o libera); `verify` = verifica a materiale chiuso (+3 / +7 g). */
+export const StudySessionKindSchema = z.enum(['lesson', 'verify']);
+export type StudySessionKind = z.infer<typeof StudySessionKindSchema>;
+
+export const SessionMethodSchema = z.enum(['standard', 'sprint']);
+export type SessionMethod = z.infer<typeof SessionMethodSchema>;
+
+/** Fasi standard e sprint (esercizi prima). */
+export const STANDARD_PHASES = ['explore', 'understand', 'rework', 'apply', 'recall'] as const;
+export const SPRINT_PHASES = ['exercises', 'theory', 'retry', 'recall'] as const;
+export const LessonPhaseSchema = z.enum([
+  'explore',
+  'understand',
+  'rework',
+  'apply',
+  'recall',
+  'exercises',
+  'theory',
+  'retry',
+]);
+export type LessonPhase = z.infer<typeof LessonPhaseSchema>;
+
 /** `activeMs` only grows on the server (a stale tab can't shrink it). */
 export const UpdateSessionRequestSchema = z.object({
   topicIds: z.array(z.string().uuid()).optional(),
   activeMs: z.number().int().min(0).optional(),
   pomodoros: z.number().int().min(0).optional(),
+  /** La fase in cui si è: la lezione riprende da qui. */
+  phase: LessonPhaseSchema.optional(),
+  blockIndex: z.number().int().min(0).optional(),
 });
 export type UpdateSessionRequest = z.infer<typeof UpdateSessionRequestSchema>;
 
@@ -73,6 +100,11 @@ export const StudySessionDtoSchema = z.object({
   /** Drill creato dagli esercizi sbagliati alla chiusura (fase 4), se c'è. */
   drillId: z.string().uuid().nullable(),
   mood: SessionMoodSchema.nullable().default(null),
+  kind: StudySessionKindSchema.default('lesson'),
+  method: SessionMethodSchema.default('standard'),
+  /** Null = sessione di prima delle lezioni, senza fasi. */
+  phase: LessonPhaseSchema.nullable().default(null),
+  blockIndex: z.number().int().min(0).default(0),
 });
 export type StudySessionDto = z.infer<typeof StudySessionDtoSchema>;
 
@@ -206,9 +238,18 @@ export const GradeSessionItemRequestSchema = z.object({
 });
 export type GradeSessionItemRequest = z.infer<typeof GradeSessionItemRequestSchema>;
 
+/** `guide_question`: a cosa risponde la lezione (Esplora); `explanation`: la spiegazione dello studente (Rielabora). */
+export const SessionItemKindSchema = z.enum([
+  'key_point',
+  'exercise',
+  'guide_question',
+  'explanation',
+]);
+export type SessionItemKind = z.infer<typeof SessionItemKindSchema>;
+
 export const SessionItemDtoSchema = z.object({
   id: z.string().uuid(),
-  kind: z.enum(['key_point', 'exercise']),
+  kind: SessionItemKindSchema,
   orderIndex: z.number().int(),
   /** Il punto chiave, oppure il testo dell'esercizio. */
   title: z.string(),
@@ -220,6 +261,8 @@ export const SessionItemDtoSchema = z.object({
   state: SessionItemStateSchema,
   answer: z.string().nullable(),
   feedback: SessionItemFeedbackDtoSchema.nullable(),
+  /** Esercizi sprint: i blocchi di teoria che servono a risolverli. */
+  linkedBlockIds: z.array(z.string().uuid()).default([]),
 });
 export type SessionItemDto = z.infer<typeof SessionItemDtoSchema>;
 
@@ -258,3 +301,125 @@ export const SessionDrillResultSchema = z.object({
   created: z.boolean(),
 });
 export type SessionDrillResult = z.infer<typeof SessionDrillResultSchema>;
+
+// ---- Lezione guidata a blocchi (docs/10-planner-lezioni.md §3.2, fase Studia) ----
+
+export const LessonExampleStepSchema = z.object({
+  text: z.string(),
+  /** Formula del passaggio (LaTeX), se c'è. */
+  formula: z.string().optional(),
+});
+export type LessonExampleStep = z.infer<typeof LessonExampleStepSchema>;
+
+/** `locked` finché non si risponde al controllo del blocco prima; `done` dopo il proprio. */
+export const LessonBlockStateSchema = z.enum(['locked', 'open', 'done']);
+export type LessonBlockState = z.infer<typeof LessonBlockStateSchema>;
+
+export const LessonHintSchema = z.enum(['simpler', 'another_example', 'why']);
+export type LessonHint = z.infer<typeof LessonHintSchema>;
+
+export const LessonBlockDtoSchema = z.object({
+  id: z.string().uuid(),
+  orderIndex: z.number().int().min(0),
+  title: z.string(),
+  /** Spiegazione discorsiva, in markdown. */
+  body: z.string(),
+  /** Formula o enunciato (LaTeX). */
+  formula: z.string().nullable(),
+  exampleSteps: z.array(LessonExampleStepSchema),
+  /** L'errore tipico all'esame. */
+  trap: z.string().nullable(),
+  /** "Prima di andare avanti". */
+  checkQuestion: z.string().nullable(),
+  /** La risposta attesa: null finché il blocco non è `done`. */
+  checkAnswer: z.string().nullable(),
+  citations: z.array(SessionItemCitationDtoSchema),
+  state: LessonBlockStateSchema,
+  studentAnswer: z.string().nullable(),
+});
+export type LessonBlockDto = z.infer<typeof LessonBlockDtoSchema>;
+
+export const LessonDtoSchema = z.object({
+  blocks: z.array(LessonBlockDtoSchema),
+  /** Blocchi previsti in tutto: null finché non è pronto il primo. */
+  blockCount: z.number().int().min(1).nullable(),
+  /** L'ultimo job di generazione di un blocco, per "in preparazione" o l'errore con "riprova". */
+  job: z
+    .object({
+      id: z.string().uuid(),
+      blockIndex: z.number().int().min(0),
+      status: z.enum(['queued', 'running', 'succeeded', 'failed', 'cancelled']),
+      error: z.string().nullable(),
+    })
+    .nullable(),
+  /** Costo cumulativo della lezione generata finora. */
+  costEur: z.number(),
+});
+export type LessonDto = z.infer<typeof LessonDtoSchema>;
+
+/** Risposta con una frase alla domanda di controllo: l'esito sblocca il blocco dopo. */
+export const CheckLessonBlockRequestSchema = z.object({
+  answer: z.string().trim().min(1, 'Scrivi una risposta').max(4000),
+});
+export type CheckLessonBlockRequest = z.infer<typeof CheckLessonBlockRequestSchema>;
+
+export const CheckLessonBlockResponseSchema = z.object({
+  block: LessonBlockDtoSchema,
+  /** `ok` = ci sei; `partial` = manca qualcosa; `wrong` = da rivedere. */
+  verdict: z.enum(['ok', 'partial', 'wrong']),
+  feedback: z.string(),
+  nextBlock: LessonBlockDtoSchema.nullable(),
+});
+export type CheckLessonBlockResponse = z.infer<typeof CheckLessonBlockResponseSchema>;
+
+/** "Rispiegamelo in un altro modo". */
+export const RegenerateLessonBlockRequestSchema = z.object({
+  hint: LessonHintSchema.optional(),
+  model: z.string().min(1).max(100).optional(),
+});
+export type RegenerateLessonBlockRequest = z.infer<typeof RegenerateLessonBlockRequestSchema>;
+
+export const GenerateLessonBlockJobInputSchema = z.object({
+  subjectId: z.string().uuid(),
+  sessionId: z.string().uuid(),
+  blockIndex: z.number().int().min(0),
+  /** true = rigenera un blocco già esistente ("in un altro modo"). */
+  regenerate: z.boolean().default(false),
+  hint: LessonHintSchema.optional(),
+  model: z.string().optional(),
+  force: z.boolean().default(false),
+});
+export type GenerateLessonBlockJobInput = z.infer<typeof GenerateLessonBlockJobInputSchema>;
+
+// ---- Rielabora: spiegazione alla Feynman (docs/10 §3.2) ----
+
+export const SubmitExplanationRequestSchema = z.object({
+  text: z.string().trim().min(20, 'Spiega con qualche frase in più').max(8000),
+  model: z.string().min(1).max(100).optional(),
+});
+export type SubmitExplanationRequest = z.infer<typeof SubmitExplanationRequestSchema>;
+
+const ExplanationPointSchema = z.object({
+  text: z.string(),
+  citation: SessionItemCitationDtoSchema.nullable(),
+});
+
+/** Confronto fra la spiegazione e il materiale: giusto · manca · attento. */
+export const ExplanationFeedbackDtoSchema = z.object({
+  correct: z.array(ExplanationPointSchema),
+  missing: z.array(ExplanationPointSchema),
+  wrong: z.array(ExplanationPointSchema),
+  model: z.string(),
+  gradedAt: z.string().datetime(),
+});
+export type ExplanationFeedbackDto = z.infer<typeof ExplanationFeedbackDtoSchema>;
+
+export const ExplainFeedbackJobInputSchema = z.object({
+  subjectId: z.string().uuid(),
+  sessionId: z.string().uuid(),
+  /** La riga `session_items` di tipo `explanation`. */
+  itemId: z.string().uuid(),
+  model: z.string().optional(),
+  force: z.boolean().default(false),
+});
+export type ExplainFeedbackJobInput = z.infer<typeof ExplainFeedbackJobInputSchema>;

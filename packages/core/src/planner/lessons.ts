@@ -16,14 +16,14 @@ const EXCLUDED_KINDS = new Set(['rest', 'simulation']);
 function kindRank(kind: string): number {
   if (kind === 'review') return 0;
   if (kind === 'flashcards') return 1;
-  if (kind === 'read') return 2;
+  if (kind === 'lesson' || kind === 'read') return 2;
   return 3;
 }
 
 /**
  * Picks the "lesson" (plan task) a flashcard of `topicId` belongs to: the
  * nearest open task on or after `today` for that topic, ignoring rest and
- * simulation tasks. Ties on date: review > flashcards > read > others, then
+ * simulation tasks. Ties on date: review > flashcards > lesson/read > others, then
  * taskKey/id for determinism. Returns the task id, or null if none fits.
  */
 export function pickLessonForTopic(

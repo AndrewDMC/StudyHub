@@ -209,6 +209,8 @@ export async function importIcsCalendar(db: AnyDb, raw: string): Promise<ImportI
 
 const TASK_KIND_LABELS: Record<CalendarTaskDto['kind'], string> = {
   read: 'Lettura',
+  lesson: 'Lezione',
+  verify: 'Verifica',
   flashcards: 'Flashcard',
   schema: 'Schema',
   simulation: 'Simulazione',

@@ -46,6 +46,8 @@ export function currentTasks(tasks: TaskDto[]): TaskDto[] {
 
 export const TASK_KIND_LABELS: Record<TaskDto['kind'], string> = {
   read: 'lettura',
+  lesson: 'lezione',
+  verify: 'verifica',
   flashcards: 'flashcard',
   schema: 'schema',
   simulation: 'simulazione',
