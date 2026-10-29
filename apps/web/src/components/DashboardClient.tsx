@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { DashboardSummaryDto, OnboardingDto } from '@studyhub/contracts';
 import { StartTaskButton } from '@/components/StartTaskButton';
@@ -119,7 +120,11 @@ function TodaySection({
   summary: DashboardSummaryDto;
   onStatus: (subjectSlug: string, taskId: string, status: 'done' | 'skipped') => void;
 }) {
-  const [first, ...rest] = summary.todayTasks;
+  // The highlighted task defaults to the first one; tapping another row of the day picks it instead.
+  // A picked task that leaves the list (done, skipped) falls back to the first again.
+  const [pickedId, setPickedId] = useState<string | null>(null);
+  const first = summary.todayTasks.find((t) => t.id === pickedId) ?? summary.todayTasks[0];
+  const rest = summary.todayTasks.filter((t) => t !== first);
 
   return (
     <section className="rounded-[var(--radius-card)] border border-border bg-bg-surface p-4">
@@ -168,20 +173,27 @@ function TodaySection({
       )}
 
       {rest.length > 0 && (
+        <p className="mb-1.5 text-xs text-fg-muted">Tocca una lezione per partire da quella.</p>
+      )}
+      {rest.length > 0 && (
         <ul className="space-y-1.5">
           {rest.map((task) => (
-            <li
-              key={task.id}
-              className="flex items-center justify-between gap-2 rounded-[var(--radius-control)] border border-border px-3 py-2 text-sm"
-            >
-              <span className="flex min-w-0 items-center gap-1.5">
-                <span
-                  className="h-1.5 w-1.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: SUBJECT_COLOR_HEX[task.subjectColor] }}
-                />
-                <span className="truncate text-fg-primary">{task.title}</span>
-              </span>
-              <span className="shrink-0 font-mono text-xs text-fg-muted">{task.minutes} min</span>
+            <li key={task.id}>
+              <button
+                type="button"
+                onClick={() => setPickedId(task.id)}
+                aria-label={`Parti da questa: ${task.title}, ${task.subjectName}, ${task.minutes} min`}
+                className="flex w-full items-center justify-between gap-2 rounded-[var(--radius-control)] border border-border px-3 py-2 text-left text-sm hover:bg-bg-raised max-md:min-h-11"
+              >
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span
+                    className="h-1.5 w-1.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: SUBJECT_COLOR_HEX[task.subjectColor] }}
+                  />
+                  <span className="truncate text-fg-primary">{task.title}</span>
+                </span>
+                <span className="shrink-0 font-mono text-xs text-fg-muted">{task.minutes} min</span>
+              </button>
             </li>
           ))}
         </ul>
