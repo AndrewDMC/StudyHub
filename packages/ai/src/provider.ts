@@ -12,6 +12,7 @@ import type {
   SchemaGraphOutput,
   SchemaOutput,
   SessionBriefingOutput,
+  ExplainFeedbackOutput,
   SessionLessonOutput,
   SimulationItem,
   SimulationOutput,
@@ -236,6 +237,24 @@ export interface SessionLessonPromptInput {
   previousBody?: string | undefined;
 }
 
+/** A block of the lesson the student studied, given to `explain_feedback` as context. */
+export interface ExplainFeedbackLessonBlock {
+  title: string;
+  body: string;
+}
+
+/** `explain_feedback`: grades the student's own explanation of a lesson against the material. */
+export interface ExplainFeedbackPromptInput {
+  subjectName: string;
+  topicNames: string[];
+  /** The student's explanation, in their own words. */
+  studentText: string;
+  /** Material chunks (id, document, page): the only valid targets for `chunkId`. */
+  chunks: LessonChunk[];
+  /** Titles and bodies of the lesson blocks, as context on what was studied. */
+  lessonBlocks: ExplainFeedbackLessonBlock[];
+}
+
 /** One numbered source block of the study-session chat; the model cites it as `[n]`. */
 export interface SessionChatSource {
   /** 1-based number the model must cite. */
@@ -354,6 +373,11 @@ export interface AiProvider {
     input: SessionLessonPromptInput,
     model: string,
   ): Promise<GeneratedWithMeta<SessionLessonOutput>>;
+  /** Feedback on the student's explanation (`explain_feedback`); quotes are checked verbatim by the caller. */
+  gradeExplanation(
+    input: ExplainFeedbackPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<ExplainFeedbackOutput>>;
   /** Files existing flashcards under the subject's existing topics (`sort_flashcards`). */
   sortFlashcards(
     input: SortFlashcardsPromptInput,

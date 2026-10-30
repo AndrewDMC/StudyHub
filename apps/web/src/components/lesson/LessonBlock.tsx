@@ -51,6 +51,7 @@ export function LessonBlock({
   onInterrupt,
   onCheck,
   onNext,
+  onFinish,
   onRegenerate,
 }: {
   block: LessonBlockDto;
@@ -68,6 +69,8 @@ export function LessonBlock({
   onInterrupt: (kind: LessonInterruption) => void;
   onCheck: (answer: string) => void;
   onNext: () => void;
+  /** The lesson sits in a phase flow: after the last block, the way to the next phase. */
+  onFinish?: () => void;
   onRegenerate: () => void;
 }) {
   const done = block.state === 'done';
@@ -134,6 +137,7 @@ export function LessonBlock({
         </p>
         <h2
           id="blk-title"
+          data-phase-heading
           ref={titleRef}
           tabIndex={-1}
           className="text-xl font-semibold text-fg-primary outline-none md:text-2xl"
@@ -294,6 +298,11 @@ export function LessonBlock({
         {answered && !isLast && (
           <Button type="button" size="lg" onClick={onNext} className="max-md:w-full">
             Blocco successivo →
+          </Button>
+        )}
+        {answered && isLast && onFinish && (
+          <Button type="button" size="lg" onClick={onFinish} className="max-md:w-full">
+            Passa a Rielabora →
           </Button>
         )}
         {!readOnly && !answered && (

@@ -18,6 +18,7 @@ import type {
   SchemaPromptInput,
   SchemaTranscriptionPromptInput,
   SessionBriefingPromptInput,
+  ExplainFeedbackPromptInput,
   SessionLessonPromptInput,
   SessionChatPromptInput,
   PlanChangePromptInput,
@@ -39,6 +40,7 @@ import {
   SchemaGraphOutputSchema,
   SchemaOutputSchema,
   SessionBriefingOutputSchema,
+  ExplainFeedbackOutputSchema,
   SessionLessonOutputSchema,
   SimulationOutputSchema,
   SortFlashcardsAiOutputSchema,
@@ -55,6 +57,7 @@ import {
   type SchemaGraphOutput,
   type SchemaOutput,
   type SessionBriefingOutput,
+  type ExplainFeedbackOutput,
   type SessionLessonOutput,
   type SimulationOutput,
   type SortFlashcardsAiOutput,
@@ -73,6 +76,7 @@ import {
   renderPlanChangeUserPrompt,
   renderSubjectAskUserPrompt,
   renderSessionBriefingUserPrompt,
+  renderExplainFeedbackUserPrompt,
   renderSessionLessonUserPrompt,
   renderSimulationUserPrompt,
   renderSortFlashcardsUserPrompt,
@@ -174,6 +178,22 @@ export class AnthropicProvider implements AiProvider {
       system,
       renderSessionLessonUserPrompt(input),
       SessionLessonOutputSchema,
+      model,
+      4096,
+    );
+    return { data, usage, model, promptVersion };
+  }
+
+  async gradeExplanation(
+    input: ExplainFeedbackPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<ExplainFeedbackOutput>> {
+    const { text: system, promptVersion } = loadPrompt('explain_feedback', 1);
+    const { data, usage } = await this.callWithTool(
+      'emit_explain_feedback',
+      system,
+      renderExplainFeedbackUserPrompt(input),
+      ExplainFeedbackOutputSchema,
       model,
       4096,
     );

@@ -152,9 +152,10 @@ describe('guided lesson', () => {
       });
     });
 
-    it('defaults the method to standard', async () => {
+    it('a standard lesson opens on the explore phase', async () => {
       const taskId = await addTask({ payload: { action: 'lesson' } });
-      expect((await startSession(db, slug, { taskId })).method).toBe('standard');
+      const session = await startSession(db, slug, { taskId });
+      expect(session).toMatchObject({ method: 'standard', phase: 'explore' });
     });
 
     it('a verify task opens a verification without a phase', async () => {
@@ -173,6 +174,28 @@ describe('guided lesson', () => {
       const readTask = await addTask({ kind: 'read', payload: { action: 'read' } });
       const fromRead = await startSession(db, slug, { taskId: readTask });
       expect(fromRead.phase).toBeNull();
+    });
+
+    it('PATCH moves a standard lesson among the standard phases and refuses sprint ones', async () => {
+      const id = await lessonSession();
+      for (const phase of ['understand', 'rework', 'apply', 'recall', 'explore'] as const) {
+        expect((await updateSession(db, slug, id, { phase })).phase).toBe(phase);
+      }
+      await expect(updateSession(db, slug, id, { phase: 'exercises' })).rejects.toBeInstanceOf(
+        InvalidRequestError,
+      );
+      await expect(updateSession(db, slug, id, { phase: 'theory' })).rejects.toBeInstanceOf(
+        InvalidRequestError,
+      );
+    });
+
+    it('PATCH refuses a standard-only phase on a sprint lesson', async () => {
+      const taskId = await addTask({ payload: { action: 'lesson', method: 'sprint' } });
+      const session = await startSession(db, slug, { taskId });
+      expect((await updateSession(db, slug, session.id, { phase: 'theory' })).phase).toBe('theory');
+      await expect(updateSession(db, slug, session.id, { phase: 'rework' })).rejects.toBeInstanceOf(
+        InvalidRequestError,
+      );
     });
 
     it('PATCH accepts phase and blockIndex', async () => {

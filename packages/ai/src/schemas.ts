@@ -169,6 +169,23 @@ export const SessionLessonOutputSchema = z.object({
 });
 export type SessionLessonOutput = z.infer<typeof SessionLessonOutputSchema>;
 
+/** One feedback point on a student's explanation: what to say, plus the chunk quote that backs it. */
+export const ExplainFeedbackPointSchema = z.object({
+  text: z.string().min(1),
+  chunkId: z.string().min(1),
+  /** Verbatim from the cited chunk; the caller drops the citation when it is not. */
+  quote: z.string().min(1),
+});
+export type ExplainFeedbackPoint = z.infer<typeof ExplainFeedbackPointSchema>;
+
+/** `explain_feedback`: what the student got right, what is missing, what is wrong. */
+export const ExplainFeedbackOutputSchema = z.object({
+  correct: z.array(ExplainFeedbackPointSchema).max(6),
+  missing: z.array(ExplainFeedbackPointSchema).max(6),
+  wrong: z.array(ExplainFeedbackPointSchema).max(6),
+});
+export type ExplainFeedbackOutput = z.infer<typeof ExplainFeedbackOutputSchema>;
+
 /** docs/03-ai-e-worker.md §2 "esami" + §3.4: `kind` is a closed taxonomy. */
 export const SimulationItemKindSchema = z.enum(['open', 'mcq', 'numeric', 'proof']);
 export type SimulationItemKind = z.infer<typeof SimulationItemKindSchema>;

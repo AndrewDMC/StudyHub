@@ -930,7 +930,22 @@ export interface SessionItemFeedback {
   gradedAt: string;
 }
 
-// `guide_question`: what the lesson answers (Esplora); `explanation`: the student's Feynman text (Rielabora).
+/** A point of an explanation's feedback; the citation is null when its quote could not be verified. */
+export interface ExplanationFeedbackPoint {
+  text: string;
+  citation: { docId: string; documentName: string; page: number; quote: string } | null;
+}
+
+/** The comparison of a student's explanation with the material (giusto, manca, attento). */
+export interface ExplanationItemFeedback {
+  correct: ExplanationFeedbackPoint[];
+  missing: ExplanationFeedbackPoint[];
+  wrong: ExplanationFeedbackPoint[];
+  model: string;
+  gradedAt: string;
+}
+
+// `guide_question`: what the lesson answers (Esplora); `explanation`: the student's own explanation (Rielabora).
 export type SessionItemKind = 'key_point' | 'exercise' | 'guide_question' | 'explanation';
 /** Key points: `open` | `done` (checked). Exercises: `open` | `correct` | `wrong` (self-assessed). */
 export type SessionItemState = 'open' | 'done' | 'correct' | 'wrong';
@@ -958,7 +973,7 @@ export const sessionItems = pgTable(
     state: text('state').$type<SessionItemState>().notNull().default('open'),
     answer: text('answer'),
     // Null until the student asks for the AI correction; self-assessment never writes it.
-    feedback: jsonb('feedback').$type<SessionItemFeedback>(),
+    feedback: jsonb('feedback').$type<SessionItemFeedback | ExplanationItemFeedback>(),
     // Sprint exercises: the lesson blocks holding the theory needed to solve them.
     linkedBlockIds: jsonb('linked_block_ids').$type<string[]>().notNull().default([]),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

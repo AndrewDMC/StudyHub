@@ -10,6 +10,7 @@ import {
   type StudySession,
 } from '@studyhub/db';
 import { resolveSessionScope } from '@studyhub/core';
+import { SPRINT_PHASES, STANDARD_PHASES } from '@studyhub/contracts';
 import type {
   SessionMood,
   StartSessionRequest,
@@ -82,15 +83,16 @@ async function resolveScope(
 }
 
 /**
- * How a session starts from its task: a `lesson` task opens the guided lesson (phase `understand`
- * for now), a `verify` task a verification; free sessions and the other tasks keep the layout
+ * How a session starts from its task: a standard `lesson` task opens the guided lesson on "Esplora"
+ * (sprint lessons still open on `understand` until their own phases exist), a `verify` task a verification; free sessions and the other tasks keep the layout
  * without phases.
  */
 function sessionShape(
   task: TaskRow | null,
 ): Pick<typeof studySessions.$inferInsert, 'kind' | 'method' | 'phase'> {
   if (task?.kind === 'lesson') {
-    return { kind: 'lesson', method: task.payload.method ?? 'standard', phase: 'understand' };
+    const method = task.payload.method ?? 'standard';
+    return { kind: 'lesson', method, phase: method === 'sprint' ? 'understand' : 'explore' };
   }
   if (task?.kind === 'verify') return { kind: 'verify', method: 'standard', phase: null };
   return { kind: 'lesson', method: 'standard', phase: null };
@@ -181,6 +183,16 @@ export async function updateSession(
   if (request.phase !== undefined) {
     if (row.phase === null) {
       throw new InvalidRequestError('Questa sessione non ha fasi: non nasce da una lezione.');
+    }
+    // A standard lesson moves among the standard phases, a sprint among the sprint ones.
+    const allowed: readonly string[] =
+      row.method === 'sprint' ? [...SPRINT_PHASES, 'understand'] : STANDARD_PHASES;
+    if (!allowed.includes(request.phase)) {
+      throw new InvalidRequestError(
+        row.method === 'sprint'
+          ? 'Questa fase non appartiene a una lezione sprint.'
+          : 'Questa fase non appartiene a una lezione standard.',
+      );
     }
     patch.phase = request.phase;
   }

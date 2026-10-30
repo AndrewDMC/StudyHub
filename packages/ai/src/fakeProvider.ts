@@ -13,6 +13,7 @@ import type {
   SchemaPromptInput,
   SchemaTranscriptionPromptInput,
   SessionBriefingPromptInput,
+  ExplainFeedbackPromptInput,
   SessionLessonPromptInput,
   SessionChatPromptInput,
   PlanChangePromptInput,
@@ -37,6 +38,8 @@ import type {
   SchemaNode,
   SchemaOutput,
   SessionBriefingOutput,
+  ExplainFeedbackOutput,
+  ExplainFeedbackPoint,
   SessionLessonOutput,
   SimulationOutput,
   SortFlashcardsAiOutput,
@@ -67,6 +70,7 @@ import {
   SCHEMA_TRANSCRIPTION_PROMPT_VERSION,
   SESSION_BRIEFING_PROMPT_VERSION,
   SESSION_CHAT_PROMPT_VERSION,
+  EXPLAIN_FEEDBACK_PROMPT_VERSION,
   SESSION_LESSON_PROMPT_VERSION,
   SESSION_CHAT_DEEP_PROMPT_VERSION,
   PLAN_CHANGE_PROMPT_VERSION,
@@ -385,6 +389,74 @@ export class FakeProvider implements AiProvider {
       },
       model: FAKE_MODEL,
       promptVersion: SESSION_LESSON_PROMPT_VERSION,
+    };
+  }
+
+  /**
+   * Extractive stand-in for the explanation feedback: a chunk sentence the student's text covers goes to
+   * `correct`, one it does not goes to `missing`, and `wrong` flags a student sentence unrelated to the
+   * material (or, failing that, asks to recheck a chunk sentence). Quotes are verbatim chunk sentences
+   * by construction. Deterministic.
+   */
+  async gradeExplanation(
+    input: ExplainFeedbackPromptInput,
+    _model: string,
+  ): Promise<GeneratedWithMeta<ExplainFeedbackOutput>> {
+    if (input.chunks.length === 0) {
+      throw new Error('gradeExplanation needs at least one chunk');
+    }
+    const pool = input.chunks.flatMap((chunk) =>
+      splitSentences(chunk.text).map((sentence) => ({ chunk, sentence })),
+    );
+    if (pool.length === 0) {
+      pool.push({ chunk: input.chunks[0]!, sentence: input.chunks[0]!.text.trim() });
+    }
+    const point = (entry: (typeof pool)[number], text: string): ExplainFeedbackPoint => ({
+      text,
+      chunkId: entry.chunk.id,
+      quote: entry.sentence,
+    });
+    const covered = pool.filter((e) => keywordCoverage(e.sentence, input.studentText) >= 0.3);
+    const uncovered = pool.filter((e) => !covered.includes(e));
+
+    const correct = (covered.length > 0 ? covered : [pool[0]!])
+      .slice(0, 2)
+      .map((e) =>
+        point(
+          e,
+          covered.length > 0
+            ? `Hai spiegato bene questo punto: "${truncate(e.sentence, 80)}".`
+            : `Hai provato a spiegare l'argomento: ripartiamo da "${truncate(e.sentence, 80)}".`,
+        ),
+      );
+    const missing = (uncovered.length > 0 ? uncovered : [pool[pool.length - 1]!])
+      .slice(0, 2)
+      .map((e) => point(e, `Ti manca questo punto: "${truncate(e.sentence, 80)}".`));
+
+    const offTopic = splitSentences(input.studentText).find(
+      (s) => keywords(s).length > 0 && pool.every((e) => keywordCoverage(e.sentence, s) < 0.15),
+    );
+    const wrongEntry = uncovered[0] ?? pool[0]!;
+    const wrong = [
+      point(
+        wrongEntry,
+        offTopic
+          ? `Attento: "${truncate(offTopic, 60)}" non trova riscontro nel materiale. Rileggi: "${truncate(wrongEntry.sentence, 80)}".`
+          : `Attento a non confondere questo passaggio: "${truncate(wrongEntry.sentence, 80)}". Ricontrolla come lo hai espresso.`,
+      ),
+    ];
+
+    const data: ExplainFeedbackOutput = { correct, missing, wrong };
+    return {
+      data,
+      usage: {
+        inputTokens:
+          input.chunks.reduce((sum, c) => sum + estimateTokens(c.text), 0) +
+          estimateTokens(input.studentText),
+        outputTokens: estimateTokens(JSON.stringify(data)),
+      },
+      model: FAKE_MODEL,
+      promptVersion: EXPLAIN_FEEDBACK_PROMPT_VERSION,
     };
   }
 

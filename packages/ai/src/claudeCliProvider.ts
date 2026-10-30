@@ -18,6 +18,7 @@ import type {
   SchemaPromptInput,
   SchemaTranscriptionPromptInput,
   SessionBriefingPromptInput,
+  ExplainFeedbackPromptInput,
   SessionLessonPromptInput,
   SessionChatPromptInput,
   PlanChangePromptInput,
@@ -39,6 +40,7 @@ import {
   SchemaGraphOutputSchema,
   SchemaOutputSchema,
   SessionBriefingOutputSchema,
+  ExplainFeedbackOutputSchema,
   SessionLessonOutputSchema,
   SimulationOutputSchema,
   SortFlashcardsAiOutputSchema,
@@ -55,6 +57,7 @@ import {
   type SchemaGraphOutput,
   type SchemaOutput,
   type SessionBriefingOutput,
+  type ExplainFeedbackOutput,
   type SessionLessonOutput,
   type SimulationOutput,
   type SortFlashcardsAiOutput,
@@ -74,6 +77,7 @@ import {
   renderPlanChangeUserPrompt,
   renderSubjectAskUserPrompt,
   renderSessionBriefingUserPrompt,
+  renderExplainFeedbackUserPrompt,
   renderSessionLessonUserPrompt,
   renderSimulationUserPrompt,
   renderSortFlashcardsUserPrompt,
@@ -258,6 +262,20 @@ export class ClaudeCliProvider implements AiProvider {
       system,
       renderSessionLessonUserPrompt(input),
       SessionLessonOutputSchema,
+      model,
+    );
+    return { data, usage, model, promptVersion };
+  }
+
+  async gradeExplanation(
+    input: ExplainFeedbackPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<ExplainFeedbackOutput>> {
+    const { text: system, promptVersion } = loadPrompt('explain_feedback', 1);
+    const { data, usage } = await this.callWithSchema(
+      system,
+      renderExplainFeedbackUserPrompt(input),
+      ExplainFeedbackOutputSchema,
       model,
     );
     return { data, usage, model, promptVersion };

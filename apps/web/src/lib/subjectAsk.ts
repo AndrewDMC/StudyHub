@@ -45,6 +45,7 @@ const AI_JOB_TYPES = [
   'extract_topics',
   'prepare_session',
   'generate_lesson_block',
+  'explain_feedback',
   'sort_flashcards',
   'session_chat',
   'subject_ask',

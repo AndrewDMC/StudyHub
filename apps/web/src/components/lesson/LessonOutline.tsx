@@ -66,9 +66,9 @@ export function LessonOutline({
                   className={cn(
                     'flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold',
                     state === 'done'
-                      ? 'bg-ok text-white'
+                      ? 'bg-ok text-bg-base'
                       : current
-                        ? 'bg-accent text-white'
+                        ? 'bg-accent text-bg-base'
                         : selectable
                           ? 'bg-border-strong text-fg-primary'
                           : 'bg-border text-fg-secondary',

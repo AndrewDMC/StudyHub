@@ -20,8 +20,9 @@ import { formatClock, PomodoroPanel, usePomodoro } from '@/components/PomodoroTi
 import { SessionBriefing } from '@/components/SessionBriefing';
 import { SessionClosing } from '@/components/SessionClosing';
 import { SessionChat } from '@/components/SessionChat';
-import { LessonStudy } from '@/components/lesson/LessonStudy';
+import { LessonFlow } from '@/components/lesson/LessonFlow';
 import { SessionMobile } from '@/components/session-mobile/SessionMobile';
+import { usesLessonFlow } from '@/lib/lessonClient';
 import { useIsMobile } from '@/lib/useIsMobile';
 import { fetchSession, fetchTopics, patchSession, postEnd, readJson } from '@/lib/sessionApi';
 
@@ -560,7 +561,7 @@ function SessionDesktop({ slug, sessionId }: { slug: string; sessionId: string }
 }
 
 /**
- * A guided lesson in its "Studia" phase has its own responsive page; below `md` the session is a
+ * A guided lesson with its phases (Esplora … Ricorda) has its own responsive page; below `md` the session is a
  * dedicated full-screen mobile flow, from `md` up the desktop page.
  */
 export function SessionClient({ slug, sessionId }: { slug: string; sessionId: string }) {
@@ -571,9 +572,9 @@ export function SessionClient({ slug, sessionId }: { slug: string; sessionId: st
     queryFn: () => fetchSession(slug, sessionId),
   });
   const loaded = sessionQuery.data;
-  if (loaded && loaded.kind === 'lesson' && loaded.phase === 'understand') {
+  if (loaded && usesLessonFlow(loaded)) {
     return (
-      <LessonStudy
+      <LessonFlow
         slug={slug}
         sessionId={sessionId}
         renderDocument={({ doc, canAsk, onAsk, target }) => (

@@ -391,7 +391,7 @@ export const GenerateLessonBlockJobInputSchema = z.object({
 });
 export type GenerateLessonBlockJobInput = z.infer<typeof GenerateLessonBlockJobInputSchema>;
 
-// ---- Rielabora: spiegazione alla Feynman (docs/10 §3.2) ----
+// ---- Rielabora: spiegazione con parole proprie (docs/10 §3.2) ----
 
 export const SubmitExplanationRequestSchema = z.object({
   text: z.string().trim().min(20, 'Spiega con qualche frase in più').max(8000),
@@ -413,6 +413,28 @@ export const ExplanationFeedbackDtoSchema = z.object({
   gradedAt: z.string().datetime(),
 });
 export type ExplanationFeedbackDto = z.infer<typeof ExplanationFeedbackDtoSchema>;
+
+/** Una spiegazione inviata, con il confronto quando il job ha finito (`null` finché è in attesa o fallito). */
+export const ExplanationDtoSchema = z.object({
+  id: z.string().uuid(),
+  text: z.string(),
+  createdAt: z.string().datetime(),
+  feedback: ExplanationFeedbackDtoSchema.nullable(),
+});
+export type ExplanationDto = z.infer<typeof ExplanationDtoSchema>;
+
+/** L'ultima spiegazione e lo stato del job di confronto più recente. */
+export const ExplanationStateDtoSchema = z.object({
+  latest: ExplanationDtoSchema.nullable(),
+  job: z
+    .object({
+      id: z.string().uuid(),
+      status: z.enum(['queued', 'running', 'succeeded', 'failed', 'cancelled']),
+      error: z.string().nullable(),
+    })
+    .nullable(),
+});
+export type ExplanationStateDto = z.infer<typeof ExplanationStateDtoSchema>;
 
 export const ExplainFeedbackJobInputSchema = z.object({
   subjectId: z.string().uuid(),

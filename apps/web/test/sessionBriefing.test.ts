@@ -10,6 +10,7 @@ import {
   documentTopics,
   documents,
   jobs,
+  lessonBlocks,
   sessionItems,
   studySessions,
   topics,
@@ -130,6 +131,30 @@ describe('session briefing (key points + exercises)', () => {
       ).rejects.toThrow(/già stati generati/);
       await expect(
         startBriefing(db, queue, slug, sessionId, { mode: 'exercises', force: false }),
+      ).resolves.toHaveProperty('jobId');
+    });
+
+    it('guide questions and explanations do not block "all"', async () => {
+      await db.insert(sessionItems).values([
+        {
+          id: randomUUID(),
+          sessionId,
+          kind: 'guide_question',
+          orderIndex: 0,
+          title: 'Perché?',
+          body: '',
+        },
+        {
+          id: randomUUID(),
+          sessionId,
+          kind: 'explanation',
+          orderIndex: 0,
+          title: 'Spiegazione',
+          body: 'Testo',
+        },
+      ]);
+      await expect(
+        startBriefing(db, queue, slug, sessionId, { mode: 'all', force: false }),
       ).resolves.toHaveProperty('jobId');
     });
 
@@ -344,6 +369,75 @@ describe('session briefing (key points + exercises)', () => {
       await endSession(db, slug, sessionId);
       await expect(gradeSessionItem(db, grader(1), slug, sessionId, empty, {})).rejects.toThrow(
         /già terminata/,
+      );
+    });
+
+    async function guideQuestion(withBlock: boolean) {
+      const id = randomUUID();
+      await db.insert(sessionItems).values({
+        id,
+        sessionId,
+        kind: 'guide_question',
+        orderIndex: 0,
+        title: 'Quando si può scambiare l’ordine di integrazione?',
+        body: '',
+      });
+      if (withBlock) {
+        await db.insert(lessonBlocks).values({
+          id: randomUUID(),
+          sessionId,
+          orderIndex: 0,
+          title: 'Fubini',
+          body: 'Su un dominio normale si integra per iterazione.',
+          checkAnswer: 'Se la funzione è integrabile',
+          citations: [{ docId, page: 1, quote: 'Il teorema di Fubini' }],
+          state: 'done',
+        });
+      }
+      return id;
+    }
+
+    it('takes the answer of a guide question and grades it against the lesson blocks', async () => {
+      const seen: unknown[] = [];
+      const spy = Object.assign(Object.create(grader(0.9)), {
+        async gradeAnswer(input: unknown) {
+          seen.push(input);
+          return grader(0.9).gradeAnswer(input as never, 'm');
+        },
+      }) as AiProvider;
+      const q = await guideQuestion(true);
+      const saved = await updateSessionItem(db, slug, sessionId, q, { answer: 'Con Fubini' });
+      expect(saved.answer).toBe('Con Fubini');
+      const graded = await gradeSessionItem(db, spy, slug, sessionId, q, {});
+      expect(graded.state).toBe('correct');
+      expect(graded.feedback?.score).toBe(0.9);
+      const item = (seen[0] as { item: { solution: string; sourceRef: { docId: string } } }).item;
+      expect(item.solution).toContain('dominio normale');
+      expect(item.solution).toContain('integrabile');
+      expect(item.sourceRef.docId).toBe(docId);
+    });
+
+    it('cannot grade a guide question while the lesson has no blocks', async () => {
+      const q = await guideQuestion(false);
+      await updateSessionItem(db, slug, sessionId, q, { answer: 'Boh' });
+      await expect(gradeSessionItem(db, grader(1), slug, sessionId, q, {})).rejects.toThrow(
+        ConflictError,
+      );
+    });
+
+    it('keeps the explanations out of the briefing and refuses to edit them', async () => {
+      const id = randomUUID();
+      await db.insert(sessionItems).values({
+        id,
+        sessionId,
+        kind: 'explanation',
+        orderIndex: 0,
+        title: 'Spiegazione',
+        body: 'Il mio testo',
+      });
+      expect((await getBriefing(db, slug, sessionId)).items.some((i) => i.id === id)).toBe(false);
+      await expect(updateSessionItem(db, slug, sessionId, id, { state: 'done' })).rejects.toThrow(
+        ConflictError,
       );
     });
 

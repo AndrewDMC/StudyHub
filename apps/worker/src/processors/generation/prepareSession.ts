@@ -66,6 +66,7 @@ export async function processPrepareSession(
     );
   }
 
+  // Guide questions and the student's explanations live in the same table but are not part of the briefing.
   const existing: { kind: 'key_point' | 'exercise'; orderIndex: number; title: string }[] = await db
     .select({
       kind: sessionItems.kind,
@@ -73,7 +74,12 @@ export async function processPrepareSession(
       title: sessionItems.title,
     })
     .from(sessionItems)
-    .where(eq(sessionItems.sessionId, session.id));
+    .where(
+      and(
+        eq(sessionItems.sessionId, session.id),
+        inArray(sessionItems.kind, ['key_point', 'exercise']),
+      ),
+    );
   if (input.mode === 'all' && existing.length > 0) {
     throw new Error('Punti chiave ed esercizi sono già stati generati: chiedi "altri esercizi".');
   }

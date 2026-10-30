@@ -1,13 +1,15 @@
 import { randomUUID } from 'node:crypto';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
 import {
   chunks,
   documents,
   jobs,
+  lessonBlocks,
   sessionItems,
   studySessions,
   subjects,
   tasks,
+  type LessonBlock,
   type SessionItem,
   type StudySession,
 } from '@studyhub/db';
@@ -86,7 +88,7 @@ function toItemDto(row: SessionItem, documentNames: Map<string, string>): Sessio
     topicId: row.topicId,
     state: row.state,
     answer: row.answer,
-    feedback: row.feedback,
+    feedback: row.feedback && 'score' in row.feedback ? row.feedback : null,
     linkedBlockIds: row.linkedBlockIds,
   };
 }
@@ -101,7 +103,8 @@ export async function getBriefing(
   const rows: SessionItem[] = await db
     .select()
     .from(sessionItems)
-    .where(eq(sessionItems.sessionId, session.id))
+    // The student's own explanations (phase "Rielabora") have their own route and feedback shape.
+    .where(and(eq(sessionItems.sessionId, session.id), ne(sessionItems.kind, 'explanation')))
     .orderBy(asc(sessionItems.kind), asc(sessionItems.orderIndex));
 
   const docIds = [...new Set(rows.flatMap((r) => r.citations.map((c) => c.docId)))];
@@ -155,7 +158,13 @@ export async function startBriefing(
     const existing = await db
       .select({ id: sessionItems.id })
       .from(sessionItems)
-      .where(eq(sessionItems.sessionId, session.id))
+      // Guide questions and explanations are not part of the briefing.
+      .where(
+        and(
+          eq(sessionItems.sessionId, session.id),
+          inArray(sessionItems.kind, ['key_point', 'exercise']),
+        ),
+      )
       .limit(1);
     if (existing.length > 0) {
       throw new ConflictError('Punti chiave ed esercizi sono già stati generati.');
@@ -222,6 +231,20 @@ export async function estimateBriefing(
 const KEY_POINT_STATES = new Set(['open', 'done']);
 const EXERCISE_STATES = new Set(['open', 'correct', 'wrong']);
 
+/** Most characters of lesson text handed to the grader as the reference for a guide question. */
+export const GUIDE_REFERENCE_MAX_CHARS = 6000;
+
+/** The lesson written so far (block bodies and the answers to their check questions), trimmed to a sane size. */
+export function lessonReference(
+  blocks: { title: string; body: string; checkAnswer: string | null }[],
+): string {
+  const text = blocks
+    .map((b) => [b.title, b.body, b.checkAnswer ?? ''].filter((p) => p.trim() !== '').join('\n'))
+    .filter((t) => t.trim() !== '')
+    .join('\n\n');
+  return text.length > GUIDE_REFERENCE_MAX_CHARS ? text.slice(0, GUIDE_REFERENCE_MAX_CHARS) : text;
+}
+
 /** The model the AI correction uses when the student does not pick one: the grading tier of docs/03 §4. */
 export const GRADE_DEFAULT_MODEL = 'claude-sonnet-5-5';
 
@@ -245,10 +268,31 @@ export async function gradeSessionItem(
     .from(sessionItems)
     .where(and(eq(sessionItems.id, itemId), eq(sessionItems.sessionId, session.id)));
   if (!item) throw new NotFoundError('Elemento');
-  if (item.kind !== 'exercise') throw new ConflictError('Si correggono solo gli esercizi.');
+  if (item.kind !== 'exercise' && item.kind !== 'guide_question') {
+    throw new ConflictError('Si correggono solo gli esercizi e le domande guida.');
+  }
   const answer = (item.answer ?? '').trim();
   if (!answer) throw new ConflictError('Scrivi prima la tua risposta.');
-  const citation = item.citations[0];
+
+  let expected = item.body;
+  let citation = item.citations[0];
+  if (item.kind === 'guide_question') {
+    // A guide question has no expected answer of its own: the lesson's blocks are the reference.
+    const blocks: LessonBlock[] = await db
+      .select()
+      .from(lessonBlocks)
+      .where(eq(lessonBlocks.sessionId, session.id))
+      .orderBy(asc(lessonBlocks.orderIndex));
+    if (expected.trim() === '') expected = lessonReference(blocks);
+    if (expected === '') {
+      throw new ConflictError('La lezione non ha ancora contenuti con cui correggere la risposta.');
+    }
+    citation ??= blocks.flatMap((b) => b.citations)[0] ?? {
+      docId: session.documentIds[0] ?? '',
+      page: 1,
+      quote: '',
+    };
+  }
   if (!citation) throw new ConflictError('L’esercizio non ha una fonte citata.');
 
   const model = request.model ?? resolveModel(GRADE_DEFAULT_MODEL);
@@ -258,9 +302,9 @@ export async function gradeSessionItem(
         prompt: item.title,
         kind: 'open',
         points: 1,
-        expectedPoints: [item.body],
+        expectedPoints: [expected],
         rubric: [{ criterion: 'Risposta corretta e completa', points: 1 }],
-        solution: item.body,
+        solution: expected,
         sourceRef: citation,
         topicName: null,
       },
@@ -330,8 +374,11 @@ export async function updateSessionItem(
       );
     }
   }
-  if (request.answer !== undefined && item.kind !== 'exercise') {
-    throw new ConflictError('Solo gli esercizi hanno una risposta.');
+  if (item.kind === 'explanation') {
+    throw new ConflictError('La spiegazione si invia dalla fase Rielabora.');
+  }
+  if (request.answer !== undefined && item.kind !== 'exercise' && item.kind !== 'guide_question') {
+    throw new ConflictError('Solo gli esercizi e le domande guida hanno una risposta.');
   }
 
   const [updated] = await db

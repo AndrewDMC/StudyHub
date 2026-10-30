@@ -26,6 +26,7 @@ export const ESTIMATE_TOPICS_PROMPT_VERSION = loadPrompt('estimate_topics', 3).p
 export const EXTRACT_TOPICS_PROMPT_VERSION = loadPrompt('extract_topics', 2).promptVersion;
 export const SESSION_BRIEFING_PROMPT_VERSION = loadPrompt('session_briefing', 1).promptVersion;
 export const SESSION_LESSON_PROMPT_VERSION = loadPrompt('session_lesson', 1).promptVersion;
+export const EXPLAIN_FEEDBACK_PROMPT_VERSION = loadPrompt('explain_feedback', 1).promptVersion;
 export const SESSION_CHAT_PROMPT_VERSION = loadPrompt('session_chat', 1).promptVersion;
 export const SESSION_CHAT_DEEP_PROMPT_VERSION = loadPrompt('session_chat_deep', 1).promptVersion;
 export const PLAN_CHANGE_PROMPT_VERSION = loadPrompt('plan_change', 1).promptVersion;

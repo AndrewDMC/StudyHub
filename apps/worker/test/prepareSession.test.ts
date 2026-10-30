@@ -91,6 +91,31 @@ describe('processPrepareSession', () => {
     force: false,
   });
 
+  it('guide questions and explanations do not count as an existing briefing', async () => {
+    await db.insert(sessionItems).values([
+      {
+        id: randomUUID(),
+        sessionId,
+        kind: 'guide_question',
+        orderIndex: 0,
+        title: 'Perché?',
+        body: '',
+      },
+      {
+        id: randomUUID(),
+        sessionId,
+        kind: 'explanation',
+        orderIndex: 0,
+        title: 'Spiegazione',
+        body: 'Testo',
+      },
+    ]);
+    const result = await processPrepareSession(db, input(), new FakeProvider());
+    expect(result.keyPointCount).toBeGreaterThan(0);
+    const exercises = await db.select().from(sessionItems).where(eq(sessionItems.kind, 'exercise'));
+    expect(exercises.length).toBeGreaterThan(0);
+  });
+
   it('writes cited key points and exercises, with the topic of the document', async () => {
     const result = await processPrepareSession(db, input(), new FakeProvider());
     expect(result.keyPointCount).toBeGreaterThan(0);
