@@ -53,6 +53,20 @@ export interface TaskPayload {
 }
 
 /**
+ * One atomic lesson of a topic, split by content (never by minutes). The scheduler adds
+ * "parte n di m" to the title when a topic has several.
+ */
+export interface PlannerLesson {
+  /** E.g. "Integrali impropri". */
+  title: string;
+  material: MaterialRef[];
+  /** Full lesson with the five phases. */
+  standardMinutes: number;
+  /** Exercises → theory → retry → recall. */
+  sprintMinutes: number;
+}
+
+/**
  * A unit the scheduler plans for: a real topic, or — when the subject has
  * no topics — a document standing in for one. Produced by Fase A (AI
  * estimates) or by the heuristic estimate for the pre-generation preview.
@@ -68,6 +82,11 @@ export interface PlannerTopic {
   prerequisites: string[]; // other PlannerTopic keys
   mastery: number | null; // 0..1
   material: MaterialRef[];
+  /**
+   * Lessons the topic is split into. Absent: a single lesson with standardMinutes = estimatedMinutes,
+   * sprintMinutes = round(0.7 × estimatedMinutes) and the topic's material.
+   */
+  lessons?: PlannerLesson[];
 }
 
 export interface Availability {

@@ -420,8 +420,17 @@ function BulkBar({ slug, plan, onDone }: { slug: string; plan: PlanDto; onDone: 
     ...new Map(
       plan.tasks
         .filter((t) => t.topicKey)
-        .filter((t) => t.kind === 'read') // "Studia <argomento> — pp. …" carries the topic's name
-        .map((t) => [t.topicKey!, t.title.replace(/^Studia /, '').split(' — ')[0]!] as const),
+        // read: "Studia <argomento> — pp. …"; lesson: "<argomento>" or "<argomento> · parte n di m"
+        .filter((t) => t.kind === 'read' || t.kind === 'lesson')
+        .map(
+          (t) =>
+            [
+              t.topicKey!,
+              t.kind === 'lesson'
+                ? t.title.split(' · parte ')[0]!
+                : t.title.replace(/^Studia /, '').split(' — ')[0]!,
+            ] as const,
+        ),
     ),
   ];
   const run = useMutation({

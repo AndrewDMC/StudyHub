@@ -26,6 +26,7 @@ const JOB_TYPE_LABELS: Partial<Record<JobType, string>> = {
   generate_simulation: 'Generazione simulazione',
   generate_plan: 'Generazione piano',
   extract_topics: 'Suggerimento argomenti',
+  generate_lesson_block: 'Preparazione blocco di lezione',
   extract_exam_profile: 'Estrazione profilo esame',
   extract_text: 'Estrazione testo',
   transcribe_schema: 'Trascrizione schema',

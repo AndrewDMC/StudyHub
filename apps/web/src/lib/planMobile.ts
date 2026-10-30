@@ -135,10 +135,22 @@ export function excludableTopics(
     counts.set(t.topicKey, (counts.get(t.topicKey) ?? 0) + (touched ? 1 : 0));
   }
   const map = new Map<string, string>();
+  // The topic's own name: "Studia <name> — pp. …" (reading), "Verifica · <name>" (checks); a lesson's
+  // title is the AI's lesson name, so it is only the fallback for a topic with neither.
+  const fallback = new Map<string, string>();
   for (const t of plan.tasks) {
-    if (t.kind !== 'read' || !t.topicKey) continue;
-    if (!map.has(t.topicKey)) map.set(t.topicKey, t.title.replace(/^Studia /, '').split(' — ')[0]!);
+    if (!t.topicKey) continue;
+    if (t.kind === 'read') {
+      if (!map.has(t.topicKey))
+        map.set(t.topicKey, t.title.replace(/^Studia /, '').split(' — ')[0]!);
+    } else if (t.kind === 'verify') {
+      if (!map.has(t.topicKey)) map.set(t.topicKey, t.title.replace(/^Verifica · /, ''));
+    } else if (t.kind === 'lesson') {
+      if (!fallback.has(t.topicKey))
+        fallback.set(t.topicKey, t.title.replace(/ · parte \d+ di \d+$/, ''));
+    }
   }
+  for (const [key, label] of fallback) if (!map.has(key)) map.set(key, label);
   return [...map]
     .map(([key, label]) => ({ key, label, openCount: counts.get(key) ?? 0 }))
     .filter((t) => !active || t.openCount > 0);

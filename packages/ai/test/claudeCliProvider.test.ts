@@ -178,7 +178,7 @@ describe('ClaudeCliProvider — F5 capabilities against a mocked CLI runner', ()
     );
 
     expect(result.data.topics).toHaveLength(1);
-    expect(result.promptVersion).toBe('estimate_topics/v2');
+    expect(result.promptVersion).toBe('estimate_topics/v3');
     const stdin: string = run.mock.calls[0][1];
     expect(stdin.match(/<\/document>/g)).toHaveLength(1);
   });

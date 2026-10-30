@@ -127,6 +127,48 @@ export const SessionBriefingOutputSchema = z.object({
 });
 export type SessionBriefingOutput = z.infer<typeof SessionBriefingOutputSchema>;
 
+/**
+ * `session_lesson` v1 (docs/10-planner-lezioni.md §3.2): one block of the guided lesson.
+ * `citations[].quote` is validated verbatim against the cited chunk by the worker, never trusted.
+ */
+export const LessonBlockCitationSchema = z.object({
+  chunkId: z.string().min(1),
+  quote: z.string().min(1),
+});
+export type LessonBlockCitation = z.infer<typeof LessonBlockCitationSchema>;
+
+export const LessonExampleStepSchema = z.object({
+  text: z.string().min(1),
+  /** LaTeX, without `$` delimiters. */
+  formula: z.string().min(1).optional(),
+});
+export type LessonExampleStep = z.infer<typeof LessonExampleStepSchema>;
+
+export const LessonBlockContentSchema = z.object({
+  title: z.string().min(1),
+  /** Discursive markdown that starts from the intuition, not the definition. */
+  body: z.string().min(1),
+  /** LaTeX, without `$` delimiters. */
+  formula: z.string().min(1).nullable(),
+  exampleSteps: z.array(LessonExampleStepSchema).min(2).max(6),
+  /** Typical exam mistake on this concept. */
+  trap: z.string().min(1).nullable(),
+  /** Answered with one sentence. */
+  checkQuestion: z.string().min(1),
+  checkAnswer: z.string().min(1),
+  citations: z.array(LessonBlockCitationSchema).min(1).max(5),
+});
+export type LessonBlockContent = z.infer<typeof LessonBlockContentSchema>;
+
+export const SessionLessonOutputSchema = z.object({
+  /** 2-6; meaningful on block 0, echoed afterwards. */
+  blockCount: z.number().int().min(2).max(6),
+  /** 3-5 on block 0, `[]` on every other block. */
+  guideQuestions: z.array(z.string().min(1)).max(5),
+  block: LessonBlockContentSchema,
+});
+export type SessionLessonOutput = z.infer<typeof SessionLessonOutputSchema>;
+
 /** docs/03-ai-e-worker.md §2 "esami" + §3.4: `kind` is a closed taxonomy. */
 export const SimulationItemKindSchema = z.enum(['open', 'mcq', 'numeric', 'proof']);
 export type SimulationItemKind = z.infer<typeof SimulationItemKindSchema>;
@@ -211,12 +253,25 @@ export type SimulationOutput = z.infer<typeof SimulationOutputSchema>;
  * this slice — see docs/fasi/F6 "Stato") so the response can be matched
  * without relying on array order.
  */
+export const TopicLessonEstimateSchema = z.object({
+  title: z.string().min(1),
+  pageFrom: z.number().int().positive().optional(),
+  pageTo: z.number().int().positive().optional(),
+  docId: z.string().min(1).optional(),
+  /** A real lesson (understand, re-elaborate, exercises), not a plain read-through. */
+  standardMinutes: z.number().int().positive(),
+  sprintMinutes: z.number().int().positive(),
+});
+export type TopicLessonEstimate = z.infer<typeof TopicLessonEstimateSchema>;
+
 export const TopicEstimateSchema = z.object({
   key: z.string().min(1),
   estimatedMinutes: z.number().int().positive(),
   difficulty: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
   examWeight: z.number().min(0).max(1),
   prerequisites: z.array(z.string()),
+  /** v3: the unit split by content into lessons; `[]` (v2-style output) = one lesson, the planner decides. */
+  lessons: z.array(TopicLessonEstimateSchema).default([]),
 });
 export type TopicEstimate = z.infer<typeof TopicEstimateSchema>;
 

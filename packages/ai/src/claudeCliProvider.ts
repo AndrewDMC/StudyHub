@@ -18,6 +18,7 @@ import type {
   SchemaPromptInput,
   SchemaTranscriptionPromptInput,
   SessionBriefingPromptInput,
+  SessionLessonPromptInput,
   SessionChatPromptInput,
   PlanChangePromptInput,
   SubjectAskPromptInput,
@@ -38,6 +39,7 @@ import {
   SchemaGraphOutputSchema,
   SchemaOutputSchema,
   SessionBriefingOutputSchema,
+  SessionLessonOutputSchema,
   SimulationOutputSchema,
   SortFlashcardsAiOutputSchema,
   SummaryOutputSchema,
@@ -53,6 +55,7 @@ import {
   type SchemaGraphOutput,
   type SchemaOutput,
   type SessionBriefingOutput,
+  type SessionLessonOutput,
   type SimulationOutput,
   type SortFlashcardsAiOutput,
   type SummaryOutput,
@@ -71,6 +74,7 @@ import {
   renderPlanChangeUserPrompt,
   renderSubjectAskUserPrompt,
   renderSessionBriefingUserPrompt,
+  renderSessionLessonUserPrompt,
   renderSimulationUserPrompt,
   renderSortFlashcardsUserPrompt,
   renderSummaryUserPrompt,
@@ -245,6 +249,20 @@ export class ClaudeCliProvider implements AiProvider {
     return { data, usage, model, promptVersion };
   }
 
+  async generateLessonBlock(
+    input: SessionLessonPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<SessionLessonOutput>> {
+    const { text: system, promptVersion } = loadPrompt('session_lesson', 1);
+    const { data, usage } = await this.callWithSchema(
+      system,
+      renderSessionLessonUserPrompt(input),
+      SessionLessonOutputSchema,
+      model,
+    );
+    return { data, usage, model, promptVersion };
+  }
+
   async generateSchema(
     input: SchemaPromptInput,
     model: string,
@@ -409,7 +427,7 @@ export class ClaudeCliProvider implements AiProvider {
     input: EstimateTopicsPromptInput,
     model: string,
   ): Promise<GeneratedWithMeta<EstimateTopicsOutput>> {
-    const { text: system, promptVersion } = loadPrompt('estimate_topics', 2);
+    const { text: system, promptVersion } = loadPrompt('estimate_topics', 3);
     const { data, usage } = await this.callWithSchema(
       system,
       renderEstimateTopicsUserPrompt(input),

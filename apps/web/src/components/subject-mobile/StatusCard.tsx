@@ -9,7 +9,7 @@ import { StartTaskButton } from '../StartTaskButton';
 import { KIND_LABELS as EXAM_KIND_LABELS } from '../ExamsPanel';
 import { currentTasks, useTodayTasks } from './queries';
 
-const SESSION_KINDS = ['read', 'schema', 'drill'];
+const SESSION_KINDS = ['read', 'schema', 'drill', 'lesson', 'verify'];
 const OPEN_STATUSES_EXCLUDED = ['done', 'skipped', 'moved'];
 
 const primaryCta =

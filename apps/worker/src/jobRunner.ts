@@ -9,6 +9,7 @@ import {
   ExtractTextJobInputSchema,
   ExtractTopicsJobInputSchema,
   GenerateFlashcardsJobInputSchema,
+  GenerateLessonBlockJobInputSchema,
   GeneratePlanJobInputSchema,
   GenerateSchemaJobInputSchema,
   GenerateSimulationJobInputSchema,
@@ -34,6 +35,7 @@ import { processExtractTopics } from './processors/generation/extractTopics.js';
 import { processGenerateFlashcards } from './processors/generation/generateFlashcards.js';
 import { processGenerateSchema } from './processors/generation/generateSchema.js';
 import { processPrepareSession } from './processors/generation/prepareSession.js';
+import { processGenerateLessonBlock } from './processors/generation/generateLessonBlock.js';
 import { processGenerateSummary } from './processors/generation/generateSummary.js';
 import { processSortFlashcards } from './processors/generation/sortFlashcards.js';
 import { processExtractExamProfile } from './processors/exam/extractExamProfile.js';
@@ -161,6 +163,8 @@ async function dispatch(
       return processExtractTopics(db, dataRoot, ExtractTopicsJobInputSchema.parse(data));
     case 'prepare_session':
       return processPrepareSession(db, PrepareSessionJobInputSchema.parse(data));
+    case 'generate_lesson_block':
+      return processGenerateLessonBlock(db, GenerateLessonBlockJobInputSchema.parse(data));
     case 'sort_flashcards':
       return processSortFlashcards(db, SortFlashcardsJobInputSchema.parse(data));
     default: {

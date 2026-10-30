@@ -32,6 +32,7 @@ import {
   moveTask as coreMoveTask,
   resolveSubjectSubpath,
   schedulePlan,
+  splitTopicIntoLessons,
   weekday,
   type Feasibility,
   type PlannerInput,
@@ -129,7 +130,6 @@ function toTaskDto(row: Task, flashcardCount = 0): TaskDto {
   };
 }
 
-/** Task rows to DTOs with the attached-flashcard count (one query for the whole batch). */
 /** Plans made before lessons have no sprint/excluded lists. */
 function toFeasibilityDto(f: Feasibility): PlanDto['feasibility'] {
   return {
@@ -139,6 +139,7 @@ function toFeasibilityDto(f: Feasibility): PlanDto['feasibility'] {
   };
 }
 
+/** Task rows to DTOs with the attached-flashcard count (one query for the whole batch). */
 async function toTaskDtos(db: AnyDb, rows: Task[]): Promise<TaskDto[]> {
   const counts = await countTaskFlashcards(
     db,
@@ -293,7 +294,10 @@ export async function getPlanPreview(
     startDate: input.startDate,
     targetDate: input.targetDate,
     availability: input.availability,
-    topics: applyTimeFactor(heuristicPlannerTopics(units), timeFactor.factor),
+    topics: applyTimeFactor(heuristicPlannerTopics(units), timeFactor.factor).map((t) => ({
+      ...t,
+      lessons: splitTopicIntoLessons(t),
+    })),
     prefs: input.prefs,
     busyMinutesByDate,
     pinned: [],
@@ -865,12 +869,12 @@ export async function setTaskStatus(
     .returning();
 
   // Coverage (docs/02-filesystem-e-dati.md §5) is driven by material actually
-  // read, not scheduled — a completed reading session is the only signal for
+  // read, not scheduled — a completed reading or lesson session is the only signal for
   // it, so mastery only needs a nudge here, not on every status change: when a reading becomes done,
   // or stops being done (reopened).
   if (
     (status === 'done') !== (row.status === 'done') &&
-    updated.kind === 'read' &&
+    (updated.kind === 'read' || updated.kind === 'lesson' || updated.kind === 'verify') &&
     updated.topicId
   ) {
     await recomputeTopicMastery(db, updated.topicId);

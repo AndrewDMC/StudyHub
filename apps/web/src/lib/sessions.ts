@@ -17,7 +17,7 @@ import type {
   UpdateSessionRequest,
 } from '@studyhub/contracts';
 import { SubjectNotFoundError } from './errors';
-import { ConflictError, NotFoundError } from './examPrep';
+import { ConflictError, InvalidRequestError, NotFoundError } from './examPrep';
 import { setTaskStatus } from './plan';
 import { writeSessionTranscript } from './sessionChat';
 
@@ -82,6 +82,21 @@ async function resolveScope(
 }
 
 /**
+ * How a session starts from its task: a `lesson` task opens the guided lesson (phase `understand`
+ * for now), a `verify` task a verification; free sessions and the other tasks keep the layout
+ * without phases.
+ */
+function sessionShape(
+  task: TaskRow | null,
+): Pick<typeof studySessions.$inferInsert, 'kind' | 'method' | 'phase'> {
+  if (task?.kind === 'lesson') {
+    return { kind: 'lesson', method: task.payload.method ?? 'standard', phase: 'understand' };
+  }
+  if (task?.kind === 'verify') return { kind: 'verify', method: 'standard', phase: null };
+  return { kind: 'lesson', method: 'standard', phase: null };
+}
+
+/**
  * "Inizia" on a task (or a free session from topics). Re-opens the task's
  * active session instead of stacking a second one — a refresh or a second
  * click must not fork the student's timer.
@@ -124,6 +139,7 @@ export async function startSession(
       taskId: task?.id ?? null,
       topicIds: scope.topicIds,
       documentIds: scope.documentIds,
+      ...sessionShape(task),
     })
     .returning();
 
@@ -162,6 +178,13 @@ export async function updateSession(
     patch.topicIds = scope.topicIds;
     patch.documentIds = scope.documentIds;
   }
+  if (request.phase !== undefined) {
+    if (row.phase === null) {
+      throw new InvalidRequestError('Questa sessione non ha fasi: non nasce da una lezione.');
+    }
+    patch.phase = request.phase;
+  }
+  if (request.blockIndex !== undefined) patch.blockIndex = request.blockIndex;
   if (Object.keys(patch).length === 0) return toDto(db, row, task);
 
   const [updated] = await db

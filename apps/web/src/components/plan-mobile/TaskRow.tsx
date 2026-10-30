@@ -119,7 +119,11 @@ export function TaskRow({
       )}
       {startable && (
         <div className="shrink-0">
-          {task.kind === 'read' || task.kind === 'schema' || task.kind === 'drill' ? (
+          {task.kind === 'read' ||
+          task.kind === 'schema' ||
+          task.kind === 'drill' ||
+          task.kind === 'lesson' ||
+          task.kind === 'verify' ? (
             <StartTaskButton subjectSlug={slug} taskId={task.id} kind={task.kind} className={cta} />
           ) : task.kind === 'simulation' ? (
             <Link href={`/materie/${slug}?tab=simulazioni`} className={cta}>

@@ -12,6 +12,7 @@ import type {
   SchemaGraphOutput,
   SchemaOutput,
   SessionBriefingOutput,
+  SessionLessonOutput,
   SimulationItem,
   SimulationOutput,
   SortFlashcardsAiOutput,
@@ -164,6 +165,12 @@ export interface TopicEstimateUnit {
   /** A sample of the unit's content — not the whole document, to keep the call cheap. */
   excerpt: string;
   pages: number;
+  /**
+   * The real documents the unit is made of (id + page count). When present, each lesson's `docId`
+   * must be one of these ids and its pages are relative to that document. When absent, the unit is
+   * a single document whose id is `key`.
+   */
+  documents?: { docId: string; name?: string | undefined; pages: number }[] | undefined;
 }
 
 export interface EstimateTopicsPromptInput {
@@ -200,6 +207,33 @@ export interface SessionBriefingPromptInput {
   existingExercises: string[];
   /** One-line summary of how the course's exams are written, when an exam profile exists. */
   examStyle?: string | undefined;
+}
+
+/** One chunk of the lesson's material, with the id the model cites in `citations[].chunkId`. */
+export interface LessonChunk {
+  id: string;
+  docId: string;
+  /** Display name of the document, for orientation only. */
+  documentName?: string | undefined;
+  page: number;
+  text: string;
+}
+
+/** How to re-explain a block: simpler, with another worked example, or explaining the "why". */
+export type LessonBlockHint = 'simpler' | 'another_example' | 'why';
+
+/** `session_lesson` (docs/10-planner-lezioni.md §3.2): generates block `blockIndex` of a guided lesson. */
+export interface SessionLessonPromptInput {
+  subjectName: string;
+  topicNames: string[];
+  chunks: LessonChunk[];
+  /** 0-based index of the block to generate. */
+  blockIndex: number;
+  /** Titles of the blocks already done, in order (so the new block continues the thread). */
+  previousBlockTitles: string[];
+  hint?: LessonBlockHint | undefined;
+  /** The body being regenerated, when `hint` or a plain regeneration is requested. */
+  previousBody?: string | undefined;
 }
 
 /** One numbered source block of the study-session chat; the model cites it as `[n]`. */
@@ -315,6 +349,11 @@ export interface AiProvider {
     input: SessionBriefingPromptInput,
     model: string,
   ): Promise<GeneratedWithMeta<SessionBriefingOutput>>;
+  /** One block of the guided lesson (`session_lesson`); citations are checked verbatim by the caller. */
+  generateLessonBlock(
+    input: SessionLessonPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<SessionLessonOutput>>;
   /** Files existing flashcards under the subject's existing topics (`sort_flashcards`). */
   sortFlashcards(
     input: SortFlashcardsPromptInput,
