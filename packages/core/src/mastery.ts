@@ -1,5 +1,5 @@
 /**
- * mastery(topic) = 0.5·retrievability_media_card + 0.3·accuratezza_simulazioni + 0.2·copertura_materiale_letto
+ * mastery(topic) = 0.5·retrievability_media_card + 0.3·accuratezza_simulazioni_e_verifiche + 0.2·copertura_materiale_letto
  * (docs/02-filesystem-e-dati.md §5 — "formula esplicitata e mostrata all'utente: niente numeri magici").
  *
  * A component with no data yet (no reviewed cards, no simulation on the
@@ -8,8 +8,8 @@
  * topic with perfect simulations but no flashcards would be capped at 0.3 —
  * punishing the user for a feature they didn't use. Coverage (fraction of
  * the topic's assigned material actually read) is computed in
- * `packages/db/src/mastery.ts::recomputeTopicMastery` from `done` `read`
- * tasks — absent only for a topic with no material tagged to it at all.
+ * `packages/db/src/mastery.ts::recomputeTopicMastery` from `done` `read` and
+ * `lesson` tasks — absent only for a topic with no material tagged to it at all.
  */
 export const MASTERY_WEIGHTS = {
   retrievability: 0.5,
@@ -50,7 +50,7 @@ export function computeMastery(inputs: MasteryInputs): MasteryResult {
   const value = parts.reduce((s, p) => s + (p.weight / totalWeight) * p.value, 0);
   const labels: Record<keyof MasteryInputs, string> = {
     retrievability: 'retrievability media card',
-    simulationAccuracy: 'accuratezza simulazioni',
+    simulationAccuracy: 'accuratezza simulazioni e verifiche',
     coverage: 'copertura materiale',
   };
   const explanation = parts

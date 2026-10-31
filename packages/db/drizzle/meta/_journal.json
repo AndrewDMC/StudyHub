@@ -204,6 +204,13 @@
       "when": 1790701200000,
       "tag": "0028_sprint_lessons",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1790701300000,
+      "tag": "0029_verify_sessions",
+      "breakpoints": true
     }
   ]
 }

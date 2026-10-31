@@ -35,6 +35,7 @@ import type {
 import type { Queue } from 'bullmq';
 import { SubjectNotFoundError } from './errors';
 import { ConflictError, NotFoundError } from './examPrep';
+import { recomputeVerifyMastery } from './verifyMastery';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyDb = any;
@@ -307,6 +308,9 @@ export async function gradeSessionItem(
   ) {
     throw new ConflictError('Si correggono solo gli esercizi e le domande guida.');
   }
+  if (session.kind === 'verify' && session.verifyPreparedAt !== null && item.state !== 'open') {
+    throw new ConflictError('Hai già risposto a questa domanda: usa «Rifalla».');
+  }
   const answer = (item.answer ?? '').trim();
   if (!answer) throw new ConflictError('Scrivi prima la tua risposta.');
 
@@ -365,6 +369,9 @@ export async function gradeSessionItem(
     .where(eq(sessionItems.id, item.id))
     .returning();
 
+  // In a verification the outcome weighs on the topic's mastery at once, so the result shows the new value.
+  await recomputeVerifyMastery(db, session);
+
   // Same ledger as every other AI call, so the correction shows up in /admin and the monthly cost.
   await db.insert(jobs).values({
     id: randomUUID(),
@@ -399,6 +406,16 @@ export async function updateSessionItem(
     .from(sessionItems)
     .where(and(eq(sessionItems.id, itemId), eq(sessionItems.sessionId, session.id)));
   if (!item) throw new NotFoundError('Elemento');
+
+  if (session.kind === 'verify' && session.verifyPreparedAt !== null) {
+    // The outcome of a verification question comes from the correction (or "Non me lo ricordo"), not from the student.
+    if (request.state !== undefined || request.revealSolution !== undefined) {
+      throw new ConflictError('In una verifica l’esito lo decide la correzione.');
+    }
+    if (request.answer !== undefined && item.state !== 'open') {
+      throw new ConflictError('Hai già risposto a questa domanda: usa «Rifalla».');
+    }
+  }
 
   if (request.state !== undefined) {
     const allowed =

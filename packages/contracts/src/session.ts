@@ -178,6 +178,8 @@ export const PrepareSessionJobInputSchema = z.object({
   model: z.string().optional(),
   /** Bypasses the daily budget cap once, with an explicit ack. */
   force: z.boolean().default(false),
+  /** How many exercises to write (default: the briefing's); a verification asks only for what it lacks. */
+  exerciseCount: z.number().int().min(1).max(5).optional(),
 });
 export type PrepareSessionJobInput = z.infer<typeof PrepareSessionJobInputSchema>;
 
@@ -573,3 +575,79 @@ export function normalizeConcept(title: string): string {
     .replace(/[\s.,;:!?]+$/u, '')
     .trim();
 }
+
+// ---- Verifica a materiale chiuso (+3 / +7 giorni, docs/10-planner-lezioni.md §3.5) ----
+
+/** `partial` = la correzione l'ha giudicata a metà (vale 0.5 nella padronanza). */
+export const VerifyVerdictSchema = z.enum(['correct', 'partial', 'wrong']);
+export type VerifyDtoVerdict = z.infer<typeof VerifyVerdictSchema>;
+
+/** Il punto chiave da riaprire: solo se l'esito non è giusto (mai per `correct` né per le domande ancora aperte). */
+export const VerifyKeyPointDtoSchema = z.object({
+  title: z.string(),
+  /** Markdown. */
+  body: z.string(),
+  citation: SessionItemCitationDtoSchema.nullable(),
+});
+export type VerifyKeyPointDto = z.infer<typeof VerifyKeyPointDtoSchema>;
+
+export const VerifyItemDtoSchema = z.object({
+  id: z.string().uuid(),
+  kind: z.enum(['exercise', 'retry_exercise', 'guide_question']),
+  orderIndex: z.number().int(),
+  question: z.string(),
+  /** `open` finché non c'è un esito; poi `correct`, `wrong` o `unknown` ("Non me lo ricordo"). */
+  state: z.enum(['open', 'correct', 'wrong', 'unknown']),
+  studentAnswer: z.string().nullable(),
+  /** La correzione (verdetto + testo); `null` finché non corretta e per "Non me lo ricordo". */
+  feedback: z.object({ verdict: VerifyVerdictSchema, text: z.string() }).nullable(),
+  keyPoint: VerifyKeyPointDtoSchema.nullable(),
+  /** La lezione da cui viene la domanda; `null` per le domande nuove. */
+  originLessonTitle: z.string().nullable(),
+});
+export type VerifyItemDto = z.infer<typeof VerifyItemDtoSchema>;
+
+export const VerifySummaryDtoSchema = z.object({
+  /** Domande giuste (`correct`); `partial`, `wrong` e `unknown` non contano. */
+  correct: z.number().int().min(0),
+  total: z.number().int().min(0),
+  /** Titolo del blocco di lezione o della domanda, per ogni punto non giusto. */
+  unstable: z.array(z.string()),
+  /** Data (YYYY-MM-DD) della prossima verifica dello stesso argomento nel piano. */
+  nextVerifyDate: z.string().nullable(),
+  /** Padronanza (0..1, come `topics.mastery`) all'avvio della verifica e ora. */
+  masteryBefore: z.number().min(0).max(1).nullable(),
+  masteryNow: z.number().min(0).max(1).nullable(),
+});
+export type VerifySummaryDto = z.infer<typeof VerifySummaryDtoSchema>;
+
+export const VerifyStateDtoSchema = z.object({
+  /** false = verifica di prima di questa funzione: il client tiene il layout di prima. */
+  prepared: z.boolean(),
+  ended: z.boolean(),
+  subjectName: z.string(),
+  topicName: z.string().nullable(),
+  /** 3 o 7, dalla chiave `rev:*:02|03` della task; `null` se non deducibile. */
+  daysOffset: z.union([z.literal(3), z.literal(7)]).nullable(),
+  items: z.array(VerifyItemDtoSchema),
+  /** La generazione di domande nuove (quando la lezione non ne ha abbastanza). */
+  job: z
+    .object({
+      id: z.string().uuid(),
+      status: z.enum(['queued', 'running', 'succeeded', 'failed', 'cancelled']),
+      error: z.string().nullable(),
+    })
+    .nullable(),
+  /** Presente quando ogni domanda ha un esito. */
+  summary: VerifySummaryDtoSchema.nullable(),
+  /** Costo cumulativo di generazione e correzioni. */
+  costEur: z.number(),
+});
+export type VerifyStateDto = z.infer<typeof VerifyStateDtoSchema>;
+
+/** Body (opzionale) di `POST .../verify`: riprova a preparare le domande. */
+export const StartVerifyRequestSchema = z.object({
+  model: z.string().min(1).max(100).optional(),
+  force: z.boolean().default(false),
+});
+export type StartVerifyRequest = z.infer<typeof StartVerifyRequestSchema>;

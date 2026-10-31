@@ -869,6 +869,11 @@ export const studySessions = pgTable(
     blockIndex: integer('block_index').notNull().default(0),
     // How many blocks the guided lesson has: set when the first block is generated.
     blockCount: integer('block_count'),
+    // Verifications only: set once when the questions were picked (the claim that makes preparing idempotent);
+    // null = a verification from before them, which keeps the old layout.
+    verifyPreparedAt: timestamp('verify_prepared_at', { withTimezone: true }),
+    // Verifications only: the topic's mastery when the verification started, for "prima -> dopo".
+    masteryBefore: real('mastery_before'),
     startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
     endedAt: timestamp('ended_at', { withTimezone: true }),
   },

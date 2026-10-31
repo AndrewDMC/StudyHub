@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { StartSessionRequestSchema } from '@studyhub/contracts';
 import { getDb } from '@/lib/db';
 import { errorResponse, parseBody } from '@/lib/http';
+import { getJobQueue } from '@/lib/queue';
 import { startSession } from '@/lib/sessions';
 
 export const dynamic = 'force-dynamic';
@@ -14,7 +15,7 @@ export async function POST(request: Request, { params }: RouteParams) {
   const body = await parseBody(request, StartSessionRequestSchema);
   if (body.error) return body.error;
   try {
-    const session = await startSession(getDb(), slug, body.data);
+    const session = await startSession(getDb(), slug, body.data, { queue: getJobQueue() });
     return NextResponse.json({ session }, { status: 201 });
   } catch (err) {
     return errorResponse(err);

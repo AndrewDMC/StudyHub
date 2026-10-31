@@ -48,7 +48,7 @@ const EMPTY_SELECTION = new Set<string>();
 // docs/02-filesystem-e-dati.md §5 — "niente numeri magici": la formula è
 // sempre visibile nel tooltip, non solo il numero finale.
 const MASTERY_FORMULA =
-  '0.5·retrievability media card + 0.3·accuratezza simulazioni + 0.2·copertura materiale letto (pesi rinormalizzati sulle componenti con dati)';
+  '0.5·retrievability media card + 0.3·accuratezza simulazioni e verifiche + 0.2·copertura materiale letto (pesi rinormalizzati sulle componenti con dati)';
 
 function masteryColorClass(mastery: number | null): string {
   if (mastery === null) return 'bg-fg-muted/30';

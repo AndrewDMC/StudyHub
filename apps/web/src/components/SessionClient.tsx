@@ -21,6 +21,7 @@ import { SessionBriefing } from '@/components/SessionBriefing';
 import { SessionClosing } from '@/components/SessionClosing';
 import { SessionChat } from '@/components/SessionChat';
 import { LessonFlow } from '@/components/lesson/LessonFlow';
+import { VerifyClient } from '@/components/verify/VerifyClient';
 import { SessionMobile } from '@/components/session-mobile/SessionMobile';
 import { usesLessonFlow } from '@/lib/lessonClient';
 import { useIsMobile } from '@/lib/useIsMobile';
@@ -590,16 +591,36 @@ export function SessionClient({ slug, sessionId }: { slug: string; sessionId: st
       />
     );
   }
-  if (isMobile === null || sessionQuery.isLoading) {
-    return (
+  const standard =
+    isMobile === null || sessionQuery.isLoading ? (
       <p role="status" className="p-4 text-sm text-fg-muted">
         Caricamento…
       </p>
+    ) : isMobile ? (
+      <SessionMobile slug={slug} sessionId={sessionId} />
+    ) : (
+      <SessionDesktop slug={slug} sessionId={sessionId} />
+    );
+  // A closed-book check has its own single-column page; one from before it keeps the page of old.
+  if (loaded && loaded.kind === 'verify') {
+    return (
+      <VerifyClient
+        slug={slug}
+        sessionId={sessionId}
+        session={loaded}
+        fallback={standard}
+        renderDocument={({ doc, canAsk, onAsk, target }) => (
+          <DocumentViewer
+            key={doc.id}
+            slug={slug}
+            doc={doc}
+            canAsk={canAsk}
+            onAsk={onAsk}
+            target={target}
+          />
+        )}
+      />
     );
   }
-  return isMobile ? (
-    <SessionMobile slug={slug} sessionId={sessionId} />
-  ) : (
-    <SessionDesktop slug={slug} sessionId={sessionId} />
-  );
+  return standard;
 }
