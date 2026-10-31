@@ -48,6 +48,8 @@ export interface TaskPayload {
   topicId?: string | null;
   /** Lessons only. */
   method?: LessonMethod;
+  /** Lessons only: the minutes of the lesson with each method (mastery already applied). */
+  minutesByMethod?: { standard: number; sprint: number };
   /** Lessons only, when the topic is split into several. */
   part?: LessonPart;
 }

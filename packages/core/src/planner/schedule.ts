@@ -178,6 +178,8 @@ interface LessonUnit {
   material: MaterialRef[];
   n: number;
   of: number;
+  /** Minutes of the same lesson with the other method, when it splits the same way. */
+  otherMinutes?: number;
 }
 
 interface TopicState {
@@ -425,7 +427,14 @@ function run(input: PlannerInput, config: RunConfig): RunOutput {
 
   const state = new Map<string, TopicState>();
   for (const t of order) {
-    const units = buildUnits(t, methodOf(input, config, t), bestRoom > 0 ? bestRoom : Infinity);
+    const method = methodOf(input, config, t);
+    const room = bestRoom > 0 ? bestRoom : Infinity;
+    const units = buildUnits(t, method, room);
+    // Switching method later needs the minutes of the other one: only when both split the same way.
+    const other = buildUnits(t, method === 'sprint' ? 'standard' : 'sprint', room);
+    if (other.length === units.length) {
+      units.forEach((u, i) => (u.otherMinutes = other[i]!.minutes));
+    }
     state.set(t.key, {
       units,
       next: 0,
@@ -507,6 +516,14 @@ function run(input: PlannerInput, config: RunConfig): RunOutput {
         payload: {
           action: 'lesson',
           method,
+          ...(unit.otherMinutes !== undefined
+            ? {
+                minutesByMethod:
+                  method === 'sprint'
+                    ? { standard: unit.otherMinutes, sprint: unit.minutes }
+                    : { standard: unit.minutes, sprint: unit.otherMinutes },
+              }
+            : {}),
           ...(unit.of > 1 ? { part: { n: unit.n, of: unit.of } } : {}),
           material: unit.material,
           topicId: next.topicId,

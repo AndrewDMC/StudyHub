@@ -118,6 +118,32 @@ async function findPendingJob(
 }
 
 /**
+ * The sprint focus (concept and exercise) a block was queued with: the newest job of that block
+ * that carries one. A sprint block is regenerated or retried with the same focus.
+ */
+async function sprintFocus(
+  db: AnyDb,
+  sessionId: string,
+  blockIndex: number,
+): Promise<GenerateLessonBlockJobInput['focus'] | null> {
+  const [row] = await db
+    .select({ input: jobs.input })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.type, GENERATE_JOB),
+        sql`${jobs.input}->>'sessionId' = ${sessionId}`,
+        sql`(${jobs.input}->>'blockIndex')::int = ${blockIndex}`,
+        sql`${jobs.input}->'focus' is not null`,
+      ),
+    )
+    .orderBy(desc(jobs.createdAt))
+    .limit(1);
+  const focus = (row?.input as { focus?: GenerateLessonBlockJobInput['focus'] } | undefined)?.focus;
+  return focus ?? null;
+}
+
+/**
  * Queues the generation of one block: records a `queued` job row first (so the page sees "in
  * preparazione" at once; the worker finds the row and updates it) and then puts it on the queue.
  * Returns null when there is nothing to do (the block exists, or a job for it is already pending).
@@ -143,6 +169,11 @@ async function enqueueBlock(
   }
   if (await findPendingJob(db, session.id, blockIndex)) return null;
 
+  // A sprint block explains one concept: without its focus there is nothing to generate (the
+  // standard one-block-ahead chain does not apply). A sprint from before the phases is standard-like.
+  const focus = session.method === 'sprint' ? await sprintFocus(db, session.id, blockIndex) : null;
+  if (session.method === 'sprint' && session.phase !== 'understand' && !focus) return null;
+
   const model = options.model ?? (await lessonModel(db, session.id));
   const jobId = randomUUID();
   const data = {
@@ -153,6 +184,7 @@ async function enqueueBlock(
     force: options.force ?? false,
     ...(options.hint ? { hint: options.hint } : {}),
     ...(model ? { model } : {}),
+    ...(focus ? { focus } : {}),
   };
   await db.insert(jobs).values({
     id: jobId,
@@ -161,7 +193,20 @@ async function enqueueBlock(
     status: 'queued',
     input: data,
   });
-  await queue.add(GENERATE_JOB, data, { jobId });
+  try {
+    await queue.add(GENERATE_JOB, data, { jobId });
+  } catch (err) {
+    // Never leave a `queued` row nobody will pick up: the page would wait forever.
+    await db
+      .update(jobs)
+      .set({
+        status: 'failed',
+        error: { message: err instanceof Error ? err.message : 'Impossibile accodare il job.' },
+        finishedAt: new Date(),
+      })
+      .where(eq(jobs.id, jobId));
+    throw err;
+  }
   return jobId;
 }
 
@@ -235,6 +280,9 @@ export async function startLesson(
   const session = await requireSession(db, slug, sessionId);
   if (session.status === 'ended') throw new ConflictError('La sessione è già terminata.');
   if (session.kind !== 'lesson') throw new ConflictError('Solo una lezione ha dei blocchi.');
+  if (session.method === 'sprint' && session.phase !== 'understand') {
+    throw new ConflictError('In una lezione sprint la teoria si genera dagli esercizi.');
+  }
   if (session.documentIds.length === 0) {
     throw new ConflictError(
       'La sessione non ha documenti: scegli un argomento o collega i documenti agli argomenti.',

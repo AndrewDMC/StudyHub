@@ -128,7 +128,7 @@ export const SessionBriefingOutputSchema = z.object({
 export type SessionBriefingOutput = z.infer<typeof SessionBriefingOutputSchema>;
 
 /**
- * `session_lesson` v1 (docs/10-planner-lezioni.md §3.2): one block of the guided lesson.
+ * `session_lesson` v1/v2 (docs/10-planner-lezioni.md §3.2): one block of the guided lesson.
  * `citations[].quote` is validated verbatim against the cited chunk by the worker, never trusted.
  */
 export const LessonBlockCitationSchema = z.object({
@@ -168,6 +168,42 @@ export const SessionLessonOutputSchema = z.object({
   block: LessonBlockContentSchema,
 });
 export type SessionLessonOutput = z.infer<typeof SessionLessonOutputSchema>;
+
+/**
+ * `sprint_exercises` v1 (docs/10-planner-lezioni.md §3.3): the 3 exam-style exercises of a sprint lesson,
+ * each with the theory concepts it needs and a similar retry exercise.
+ * `citations[].quote` is validated verbatim against the cited chunk by the worker, never trusted.
+ */
+export const SprintSolutionStepSchema = z.object({
+  text: z.string().min(1),
+  /** LaTeX, without `$` delimiters. */
+  formula: z.string().min(1).optional(),
+});
+export type SprintSolutionStep = z.infer<typeof SprintSolutionStepSchema>;
+
+export const SprintRetrySchema = z.object({
+  question: z.string().min(1),
+  solutionSteps: z.array(SprintSolutionStepSchema).min(2).max(8),
+});
+export type SprintRetry = z.infer<typeof SprintRetrySchema>;
+
+export const SprintExerciseSchema = z.object({
+  title: z.string().min(1),
+  question: z.string().min(1),
+  solutionSteps: z.array(SprintSolutionStepSchema).min(2).max(8),
+  /** 1-3 short theory concept titles the exercise needs (the blocks the student reviews when wrong). */
+  concepts: z.array(z.string().min(1)).min(1).max(3),
+  /** Similar exercise with the same critical steps. */
+  retry: SprintRetrySchema,
+  citations: z.array(LessonBlockCitationSchema).min(1).max(3),
+});
+export type SprintExercise = z.infer<typeof SprintExerciseSchema>;
+
+export const SprintExercisesOutputSchema = z.object({
+  /** Exactly 3. */
+  exercises: z.array(SprintExerciseSchema).length(3),
+});
+export type SprintExercisesOutput = z.infer<typeof SprintExercisesOutputSchema>;
 
 /** One feedback point on a student's explanation: what to say, plus the chunk quote that backs it. */
 export const ExplainFeedbackPointSchema = z.object({

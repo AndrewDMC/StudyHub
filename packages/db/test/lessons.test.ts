@@ -80,3 +80,79 @@ describe('lessons', () => {
     expect(item?.linkedBlockIds).toEqual([blockId]);
   });
 });
+
+/** Migration 0028: what a sprint lesson stores on its exercises and blocks. */
+describe('sprint lessons', () => {
+  let db: Awaited<ReturnType<typeof createTestDb>>;
+  let sessionId: string;
+
+  beforeEach(async () => {
+    db = await createTestDb();
+    const subjectId = randomUUID();
+    await db.insert(subjects).values({
+      id: subjectId,
+      slug: 'fisica-1',
+      name: 'Fisica 1',
+      color: 'violet',
+      folderPath: '/data/subjects/fisica-1',
+    });
+    sessionId = randomUUID();
+    await db.insert(studySessions).values({
+      id: sessionId,
+      subjectId,
+      topicIds: [],
+      documentIds: [],
+      method: 'sprint',
+      phase: 'exercises',
+    });
+  });
+
+  it('keeps concepts, solution steps and the exercise a retry belongs to', async () => {
+    const exerciseId = randomUUID();
+    await db.insert(sessionItems).values({
+      id: exerciseId,
+      sessionId,
+      kind: 'exercise',
+      orderIndex: 0,
+      title: 'Calcola il lavoro',
+      body: 'Soluzione',
+      concepts: ['Lavoro di una forza', 'Energia cinetica'],
+      solutionSteps: [{ text: 'Scrivi la definizione', formula: 'W=Fd' }],
+      state: 'unknown',
+    });
+    const retryId = randomUUID();
+    await db.insert(sessionItems).values({
+      id: retryId,
+      sessionId,
+      kind: 'retry_exercise',
+      orderIndex: 0,
+      title: 'Calcola un altro lavoro',
+      body: 'Soluzione',
+      parentItemId: exerciseId,
+    });
+    const [exercise] = await db.select().from(sessionItems).where(eq(sessionItems.id, exerciseId));
+    expect(exercise).toMatchObject({ solutionRevealed: false, state: 'unknown' });
+    expect(exercise?.concepts).toHaveLength(2);
+    expect(exercise?.solutionSteps).toEqual([{ text: 'Scrivi la definizione', formula: 'W=Fd' }]);
+    const [retry] = await db.select().from(sessionItems).where(eq(sessionItems.id, retryId));
+    expect(retry).toMatchObject({ kind: 'retry_exercise', parentItemId: exerciseId });
+    expect(retry?.concepts).toEqual([]);
+
+    // A retry goes away with the exercise it belongs to.
+    await db.delete(sessionItems).where(eq(sessionItems.id, exerciseId));
+    expect(await db.select().from(sessionItems)).toHaveLength(0);
+  });
+
+  it('records the concept a block explains', async () => {
+    await db.insert(lessonBlocks).values({
+      id: randomUUID(),
+      sessionId,
+      orderIndex: 0,
+      title: 'Lavoro di una forza',
+      body: 'x',
+      concept: 'lavoro di una forza',
+    });
+    const [block] = await db.select().from(lessonBlocks);
+    expect(block?.concept).toBe('lavoro di una forza');
+  });
+});

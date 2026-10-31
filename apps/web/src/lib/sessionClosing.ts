@@ -208,7 +208,7 @@ export async function createKeyPointDeck(
 }
 
 /**
- * "Aggiungi gli esercizi sbagliati ai drill": the exercises the student marked `wrong` (by hand or from the
+ * "Aggiungi gli esercizi sbagliati ai drill": the exercises the student marked `wrong` or "non so" (by hand or from the
  * AI correction) become a drill simulation, to be attempted and graded like any other. Free to create; the
  * attempt is corrected by the usual exam grader.
  */
@@ -237,7 +237,7 @@ export async function createDrillFromWrongExercises(
   }
 
   const exercises = (await loadItems(db, session.id, 'exercise')).filter(
-    (e) => e.state === 'wrong' && e.citations.length > 0,
+    (e) => (e.state === 'wrong' || e.state === 'unknown') && e.citations.length > 0,
   );
   if (exercises.length === 0) {
     throw new ConflictError('Nessun esercizio sbagliato da aggiungere ai drill.');

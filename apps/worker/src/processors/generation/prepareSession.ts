@@ -60,6 +60,9 @@ export async function processPrepareSession(
     .where(and(eq(studySessions.id, input.sessionId), eq(studySessions.subjectId, subject.id)));
   if (!session) throw new Error(`Sessione non trovata: ${input.sessionId}`);
   if (session.status === 'ended') throw new Error('La sessione è già terminata.');
+  if (session.method === 'sprint' && session.phase !== 'understand') {
+    throw new Error('In una lezione sprint gli esercizi si generano dalla lezione.');
+  }
   if (session.documentIds.length === 0) {
     throw new Error(
       'La sessione non ha documenti: scegli un argomento o collega i documenti agli argomenti.',

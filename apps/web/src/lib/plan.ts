@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { join } from 'node:path';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull, notExists, sql } from 'drizzle-orm';
 import {
   buildPlanningUnits,
   countTaskFlashcards,
@@ -13,6 +13,7 @@ import {
   loadTimeFactor,
   recomputeTopicMastery,
   studyPlans,
+  studySessions,
   subjects,
   tasks,
   topics,
@@ -424,6 +425,28 @@ async function requireTask(db: AnyDb, subjectId: string, taskId: string): Promis
   return row;
 }
 
+/** Without the planner's own figure, a sprint lesson lasts 70% of the standard one. */
+const SPRINT_RATIO = 0.7;
+const MIN_LESSON_MINUTES = 15;
+const roundTo5 = (n: number) => Math.round(n / 5) * 5;
+
+/**
+ * The minutes of a lesson once its method changes: the planner's figure for that method
+ * (`payload.minutesByMethod`, mastery already applied) or, for plans without it, 70% / the inverse
+ * of the current minutes, rounded to 5 and never below 15.
+ */
+export function minutesForMethod(
+  payload: { minutesByMethod?: { standard: number; sprint: number } | undefined },
+  currentMinutes: number,
+  target: 'standard' | 'sprint',
+): number {
+  const planned = payload.minutesByMethod?.[target];
+  if (planned !== undefined) return planned;
+  const scaled =
+    target === 'sprint' ? currentMinutes * SPRINT_RATIO : currentMinutes / SPRINT_RATIO;
+  return Math.max(MIN_LESSON_MINUTES, roundTo5(scaled));
+}
+
 /** Edits a draft task in place (docs/04-planner.md §9.2: title/description/minutes/`pin`). Not for status transitions — see `setTaskStatus`. */
 export async function updateDraftTask(
   db: AnyDb,
@@ -451,15 +474,41 @@ export async function updateDraftTask(
   }
   if (request.method !== undefined && row.kind !== 'lesson')
     throw new PlanRequestError('Il metodo si cambia solo sulle lezioni.');
+  const methodChanges =
+    request.method !== undefined && request.method !== (row.payload.method ?? 'standard');
 
   const patch: Partial<Task> = { updatedAt: new Date() };
   if (request.title !== undefined) patch.title = request.title;
   if (request.description !== undefined) patch.description = request.description;
   if (request.minutes !== undefined) patch.minutes = request.minutes;
   if (request.pinned !== undefined) patch.pinned = request.pinned;
-  if (request.method !== undefined) patch.payload = { ...row.payload, method: request.method };
+  if (request.method !== undefined) {
+    patch.payload = { ...row.payload, method: request.method };
+    if (methodChanges && request.minutes === undefined) {
+      patch.minutes = minutesForMethod(row.payload, row.minutes, request.method);
+    }
+  }
 
-  const [updated] = await db.update(tasks).set(patch).where(eq(tasks.id, taskId)).returning();
+  // A lesson already opened keeps its method (its phases and what was generated depend on it): the
+  // condition is part of the UPDATE, so a session started meanwhile cannot slip in between.
+  const [updated] = await db
+    .update(tasks)
+    .set(patch)
+    .where(
+      methodChanges
+        ? and(
+            eq(tasks.id, taskId),
+            notExists(
+              db
+                .select({ one: sql`1` })
+                .from(studySessions)
+                .where(eq(studySessions.taskId, taskId)),
+            ),
+          )
+        : eq(tasks.id, taskId),
+    )
+    .returning();
+  if (!updated) throw new Error('La lezione è già iniziata.');
   return (await toTaskDtos(db, [updated]))[0]!;
 }
 

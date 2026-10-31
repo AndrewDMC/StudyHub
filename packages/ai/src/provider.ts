@@ -14,6 +14,7 @@ import type {
   SessionBriefingOutput,
   ExplainFeedbackOutput,
   SessionLessonOutput,
+  SprintExercisesOutput,
   SimulationItem,
   SimulationOutput,
   SortFlashcardsAiOutput,
@@ -235,6 +236,36 @@ export interface SessionLessonPromptInput {
   hint?: LessonBlockHint | undefined;
   /** The body being regenerated, when `hint` or a plain regeneration is requested. */
   previousBody?: string | undefined;
+  /**
+   * Sprint lesson (prompt v2): the block covers only `concept`, as needed by `exercise`, the one the
+   * student got wrong. The block is shorter; `blockCount` and `guideQuestions` are ignored.
+   */
+  focus?: SessionLessonFocus | undefined;
+}
+
+/** The concept to explain and the exercise (its text) it serves, for a focused `session_lesson` block. */
+export interface SessionLessonFocus {
+  concept: string;
+  exercise: string;
+}
+
+/** A past-exam excerpt, given to `sprint_exercises` as style reference only. */
+export interface SprintExamExcerpt {
+  /** Display name of the exam document, for orientation only. */
+  name?: string | undefined;
+  text: string;
+}
+
+/** `sprint_exercises` (docs/10-planner-lezioni.md §3.3): the 3 exam-style exercises of a sprint lesson. */
+export interface SprintExercisesPromptInput {
+  subjectName: string;
+  topicNames: string[];
+  /** Material chunks (id, document, page): the only valid targets for `citations[].chunkId`. */
+  chunks: LessonChunk[];
+  /** One-line summary of how the course's exams are written (`describeExamStyle`), when known. */
+  examStyle?: string | undefined;
+  /** Excerpts of uploaded past exams, as style reference only. */
+  examExcerpts?: SprintExamExcerpt[] | undefined;
 }
 
 /** A block of the lesson the student studied, given to `explain_feedback` as context. */
@@ -373,6 +404,11 @@ export interface AiProvider {
     input: SessionLessonPromptInput,
     model: string,
   ): Promise<GeneratedWithMeta<SessionLessonOutput>>;
+  /** The 3 exam-style exercises of a sprint lesson (`sprint_exercises`); citations are checked verbatim by the caller. */
+  generateSprintExercises(
+    input: SprintExercisesPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<SprintExercisesOutput>>;
   /** Feedback on the student's explanation (`explain_feedback`); quotes are checked verbatim by the caller. */
   gradeExplanation(
     input: ExplainFeedbackPromptInput,

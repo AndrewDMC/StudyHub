@@ -31,6 +31,8 @@ export function RecallStep({
   endError,
   onEnd,
   onGoApply,
+  variant = 'standard',
+  summary,
 }: {
   slug: string;
   sessionId: string;
@@ -42,8 +44,14 @@ export function RecallStep({
   ending: boolean;
   endError: string | null;
   onEnd: () => void;
-  onGoApply: () => void;
+  /** Standard lesson only: where the key points are made. */
+  onGoApply?: (() => void) | undefined;
+  /** A sprint lesson has no key points and no "Applica": the text and the closing differ. */
+  variant?: 'standard' | 'sprint';
+  /** Sprint: the line under the title (the standard one is computed from the key points). */
+  summary?: string | undefined;
 }) {
+  const sprint = variant === 'sprint';
   const closing = useSessionClosing(slug, sessionId, session, sessionKey);
 
   return (
@@ -62,12 +70,14 @@ export function RecallStep({
         </h2>
         {active && (
           <p className="text-sm text-fg-secondary">
-            {recallSummary({
-              activeMs,
-              keyPoints: closing.keyPoints,
-              right: closing.right,
-              answered: closing.answered.length,
-            })}
+            {sprint
+              ? (summary ?? recallSummary({ activeMs, keyPoints: 0, right: 0, answered: 0 }))
+              : recallSummary({
+                  activeMs,
+                  keyPoints: closing.keyPoints,
+                  right: closing.right,
+                  answered: closing.answered.length,
+                })}
           </p>
         )}
       </div>
@@ -76,13 +86,14 @@ export function RecallStep({
         <>
           <div className="space-y-2 rounded-[var(--radius-control)] border border-border bg-bg-inset p-4 text-sm text-fg-secondary">
             <p>
-              Quando chiudi la lezione potrai creare le flashcard dai punti chiave e un drill con
-              gli esercizi sbagliati. Sono gratis e restano in bozza finché non li approvi.
+              {sprint
+                ? 'Quando chiudi la lezione potrai creare un drill con gli esercizi sbagliati. Resta in bozza finché non lo approvi.'
+                : 'Quando chiudi la lezione potrai creare le flashcard dai punti chiave e un drill con gli esercizi sbagliati. Sono gratis e restano in bozza finché non li approvi.'}
             </p>
             {session.taskId && (
               <p>Le verifiche di questo argomento sono nel piano a +3 e +7 giorni.</p>
             )}
-            {!closing.briefing.isLoading && closing.keyPoints === 0 && (
+            {!sprint && onGoApply && !closing.briefing.isLoading && closing.keyPoints === 0 && (
               <p className="text-xs text-fg-muted">
                 Per le flashcard servono i punti chiave: li prepara «Genera punti chiave ed
                 esercizi» in Applica.{' '}
@@ -118,6 +129,7 @@ export function RecallStep({
             sessionId={sessionId}
             session={session}
             sessionKey={sessionKey}
+            hideFlashcards={sprint}
           />
           {session.taskId && (
             <p className="text-sm text-fg-secondary">

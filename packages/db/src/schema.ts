@@ -749,6 +749,8 @@ export interface TaskPayloadData {
   topicId?: string | null;
   /** Lessons only. */
   method?: LessonMethod;
+  /** Lessons only: the minutes of the lesson with each method (mastery already applied), for switching method. */
+  minutesByMethod?: { standard: number; sprint: number };
   /** Lessons only: part `n` of `of` when a topic is split by content. */
   part?: { n: number; of: number };
 }
@@ -946,9 +948,21 @@ export interface ExplanationItemFeedback {
 }
 
 // `guide_question`: what the lesson answers (Esplora); `explanation`: the student's own explanation (Rielabora).
-export type SessionItemKind = 'key_point' | 'exercise' | 'guide_question' | 'explanation';
-/** Key points: `open` | `done` (checked). Exercises: `open` | `correct` | `wrong` (self-assessed). */
-export type SessionItemState = 'open' | 'done' | 'correct' | 'wrong';
+// `retry_exercise`: the similar exercise a sprint lesson offers again (`parent_item_id` = the exercise it retries).
+export type SessionItemKind =
+  'key_point' | 'exercise' | 'guide_question' | 'explanation' | 'retry_exercise';
+/**
+ * Key points: `open` | `done` (checked). Exercises: `open` | `correct` | `wrong` (self-assessed);
+ * a sprint exercise can also be `unknown` ("non so da dove partire").
+ */
+export type SessionItemState = 'open' | 'done' | 'correct' | 'wrong' | 'unknown';
+
+/** One step of a worked solution (sprint exercises), revealed one at a time. */
+export interface SolutionStep {
+  text: string;
+  /** Optional formula of the step (LaTeX). */
+  formula?: string | undefined;
+}
 
 /**
  * The AI briefing of a study session (docs/08-sessione-di-studio.md §4, phase 3): the key points
@@ -976,6 +990,16 @@ export const sessionItems = pgTable(
     feedback: jsonb('feedback').$type<SessionItemFeedback | ExplanationItemFeedback>(),
     // Sprint exercises: the lesson blocks holding the theory needed to solve them.
     linkedBlockIds: jsonb('linked_block_ids').$type<string[]>().notNull().default([]),
+    // Sprint exercises: titles of the theory concepts needed to solve them (1-3).
+    concepts: jsonb('concepts').$type<string[]>().notNull().default([]),
+    // Sprint exercises: the solution split into steps (`body` keeps it as plain text for the grader).
+    solutionSteps: jsonb('solution_steps').$type<SolutionStep[]>().notNull().default([]),
+    // The student asked to see the solution before self-assessing.
+    solutionRevealed: boolean('solution_revealed').notNull().default(false),
+    // `retry_exercise` only: the exercise this one retries.
+    parentItemId: uuid('parent_item_id').references((): AnyPgColumn => sessionItems.id, {
+      onDelete: 'cascade',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index('session_items_session_idx').on(table.sessionId, table.kind, table.orderIndex)],
@@ -1016,6 +1040,8 @@ export const lessonBlocks = pgTable(
     citations: jsonb('citations').$type<SessionItemCitation[]>().notNull().default([]),
     state: text('state').$type<LessonBlockState>().notNull().default('locked'),
     studentAnswer: text('student_answer'),
+    // Sprint lessons: the concept (normalised title) this block explains; null for standard lessons.
+    concept: text('concept'),
     model: text('model'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

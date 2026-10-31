@@ -62,6 +62,10 @@ function item(over: Partial<SessionItemDto>): SessionItemDto {
     answer: null,
     feedback: null,
     linkedBlockIds: [],
+    concepts: [],
+    solutionSteps: [],
+    solutionVisible: true,
+    parentItemId: null,
     ...over,
   };
 }
@@ -99,7 +103,7 @@ describe('phases of the standard lesson', () => {
     expect(initialViewPhase({ status: 'ended', phase: 'understand' })).toBe('recall');
   });
 
-  it('mounts the shell for standard lessons and for a sprint lesson in Studia only', () => {
+  it('mounts the shell for standard lessons, for sprint phases and for an old sprint in Studia', () => {
     const s = (
       method: 'standard' | 'sprint',
       phase: never,
@@ -112,7 +116,8 @@ describe('phases of the standard lesson', () => {
     expect(usesLessonFlow(s('standard', 'explore' as never))).toBe(true);
     expect(usesLessonFlow(s('standard', 'recall' as never))).toBe(true);
     expect(usesLessonFlow(s('sprint', 'understand' as never))).toBe(true);
-    expect(usesLessonFlow(s('sprint', 'exercises' as never))).toBe(false);
+    expect(usesLessonFlow(s('sprint', 'exercises' as never))).toBe(true);
+    expect(usesLessonFlow(s('sprint', null as never))).toBe(false);
     expect(usesLessonFlow(s('standard', null as never))).toBe(false);
     expect(usesLessonFlow(s('standard', 'explore' as never, 'verify'))).toBe(false);
   });

@@ -43,7 +43,7 @@ describe('FakeProvider.generateLessonBlock', () => {
     expect(a.data).toEqual(b.data);
     expect(SessionLessonOutputSchema.safeParse(a.data).success).toBe(true);
     expect(a.promptVersion).toBe(SESSION_LESSON_PROMPT_VERSION);
-    expect(a.promptVersion).toBe('session_lesson/v1');
+    expect(a.promptVersion).toBe('session_lesson/v2');
   });
 
   it('cites verbatim quotes of existing chunks, for every block', async () => {
@@ -108,7 +108,7 @@ describe('AnthropicProvider.generateLessonBlock', () => {
     const provider = new AnthropicProvider({ client: { messages: { create } } as any });
     const res = await provider.generateLessonBlock(base, 'claude-sonnet-5-5');
     expect(res.data.block.title).toBe(out.block.title);
-    expect(res.promptVersion).toBe('session_lesson/v1');
+    expect(res.promptVersion).toBe('session_lesson/v2');
     expect(create.mock.calls[0][0].tool_choice).toEqual({
       type: 'tool',
       name: 'emit_session_lesson',

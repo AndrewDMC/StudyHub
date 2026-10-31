@@ -34,6 +34,7 @@ import {
   getPlanDiff,
   getPlanDrift,
   MoveRefusedError,
+  minutesForMethod,
   moveTaskInPlan,
   NoDraftPlanError,
   PlanNotFoundError,
@@ -447,6 +448,70 @@ describe('plan draft/commit lifecycle', () => {
     await commitPlan(db, dataRoot, subjectSlug, draftId);
     const back = await updateDraftTask(db, subjectSlug, lessonId, { method: 'standard' });
     expect(back.payload.method).toBe('standard');
+  });
+
+  describe('switching the method of a lesson', () => {
+    async function openLesson(over: Partial<typeof tasks.$inferInsert> = {}) {
+      const draftId = await insertDraftPlan();
+      const taskId = await insertTask(draftId, {
+        kind: 'lesson',
+        minutes: 60,
+        payload: {
+          action: 'lesson',
+          method: 'standard',
+          minutesByMethod: { standard: 60, sprint: 40 },
+        },
+        ...over,
+      });
+      await commitPlan(db, dataRoot, subjectSlug, draftId);
+      return taskId;
+    }
+
+    it('takes the minutes of the new method from the plan and back again', async () => {
+      const taskId = await openLesson();
+      const sprint = await updateDraftTask(db, subjectSlug, taskId, { method: 'sprint' });
+      expect(sprint.minutes).toBe(40);
+      expect(sprint.payload).toMatchObject({
+        method: 'sprint',
+        minutesByMethod: { standard: 60, sprint: 40 },
+      });
+      const back = await updateDraftTask(db, subjectSlug, taskId, { method: 'standard' });
+      expect(back.minutes).toBe(60);
+      expect(back.payload.method).toBe('standard');
+    });
+
+    it('falls back to 70% (and its inverse) for plans without minutesByMethod, never below 15', async () => {
+      expect(minutesForMethod({}, 60, 'sprint')).toBe(40);
+      expect(minutesForMethod({}, 40, 'standard')).toBe(55);
+      expect(minutesForMethod({}, 15, 'sprint')).toBe(15);
+      const taskId = await openLesson({ payload: { action: 'lesson', method: 'standard' } });
+      expect((await updateDraftTask(db, subjectSlug, taskId, { method: 'sprint' })).minutes).toBe(
+        40,
+      );
+      expect((await updateDraftTask(db, subjectSlug, taskId, { method: 'standard' })).minutes).toBe(
+        55,
+      );
+    });
+
+    it('refuses once the lesson has been started, with a conflict', async () => {
+      const taskId = await openLesson();
+      await db.insert(studySessions).values({
+        id: randomUUID(),
+        subjectId,
+        taskId,
+        topicIds: [],
+        documentIds: [],
+      });
+      await expect(updateDraftTask(db, subjectSlug, taskId, { method: 'sprint' })).rejects.toThrow(
+        'La lezione è già iniziata.',
+      );
+      const [row] = await db.select().from(tasks).where(eq(tasks.id, taskId));
+      expect(row).toMatchObject({ minutes: 60, payload: { method: 'standard' } });
+      // Asking for the method it already has changes nothing and is not an error.
+      expect((await updateDraftTask(db, subjectSlug, taskId, { method: 'standard' })).minutes).toBe(
+        60,
+      );
+    });
   });
 
   it('deleteDraftTask removes a proposed task', async () => {

@@ -20,6 +20,7 @@ import type {
   SessionBriefingPromptInput,
   ExplainFeedbackPromptInput,
   SessionLessonPromptInput,
+  SprintExercisesPromptInput,
   SessionChatPromptInput,
   PlanChangePromptInput,
   SubjectAskPromptInput,
@@ -42,6 +43,7 @@ import {
   SessionBriefingOutputSchema,
   ExplainFeedbackOutputSchema,
   SessionLessonOutputSchema,
+  SprintExercisesOutputSchema,
   SimulationOutputSchema,
   SortFlashcardsAiOutputSchema,
   SummaryOutputSchema,
@@ -59,6 +61,7 @@ import {
   type SessionBriefingOutput,
   type ExplainFeedbackOutput,
   type SessionLessonOutput,
+  type SprintExercisesOutput,
   type SimulationOutput,
   type SortFlashcardsAiOutput,
   type SummaryOutput,
@@ -79,6 +82,7 @@ import {
   renderSessionBriefingUserPrompt,
   renderExplainFeedbackUserPrompt,
   renderSessionLessonUserPrompt,
+  renderSprintExercisesUserPrompt,
   renderSimulationUserPrompt,
   renderSortFlashcardsUserPrompt,
   renderSummaryUserPrompt,
@@ -257,11 +261,25 @@ export class ClaudeCliProvider implements AiProvider {
     input: SessionLessonPromptInput,
     model: string,
   ): Promise<GeneratedWithMeta<SessionLessonOutput>> {
-    const { text: system, promptVersion } = loadPrompt('session_lesson', 1);
+    const { text: system, promptVersion } = loadPrompt('session_lesson', 2);
     const { data, usage } = await this.callWithSchema(
       system,
       renderSessionLessonUserPrompt(input),
       SessionLessonOutputSchema,
+      model,
+    );
+    return { data, usage, model, promptVersion };
+  }
+
+  async generateSprintExercises(
+    input: SprintExercisesPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<SprintExercisesOutput>> {
+    const { text: system, promptVersion } = loadPrompt('sprint_exercises', 1);
+    const { data, usage } = await this.callWithSchema(
+      system,
+      renderSprintExercisesUserPrompt(input),
+      SprintExercisesOutputSchema,
       model,
     );
     return { data, usage, model, promptVersion };

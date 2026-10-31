@@ -11,6 +11,68 @@ function LockIcon() {
   );
 }
 
+/** One row of an index: dot (done, number or lock), title and a short line under it. */
+export function OutlineRow({
+  number,
+  title,
+  subtitle,
+  state,
+  selectable,
+  current,
+  written,
+  onSelect,
+}: {
+  number: number;
+  title: string;
+  subtitle: string;
+  state: LessonBlockDto['state'];
+  selectable: boolean;
+  current: boolean;
+  /** The block exists: its title is the real one, not a placeholder. */
+  written: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-current={current ? 'step' : undefined}
+      aria-disabled={selectable ? undefined : true}
+      onClick={selectable ? onSelect : undefined}
+      className={cn(
+        'flex min-h-11 w-full items-center gap-2.5 rounded-[var(--radius-control)] px-2 py-1.5 text-left outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
+        current ? 'bg-bg-raised' : selectable ? 'hover:bg-bg-raised' : 'cursor-default',
+      )}
+    >
+      <span
+        className={cn(
+          'flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold',
+          state === 'done'
+            ? 'bg-ok text-bg-base'
+            : current
+              ? 'bg-accent text-bg-base'
+              : selectable
+                ? 'bg-border-strong text-fg-primary'
+                : 'bg-border text-fg-secondary',
+        )}
+        aria-hidden="true"
+      >
+        {state === 'done' ? '✓' : selectable ? number : <LockIcon />}
+      </span>
+      <span className="min-w-0">
+        <span
+          className={cn(
+            'block truncate text-[13px]',
+            written ? 'text-fg-primary' : 'text-fg-muted',
+          )}
+        >
+          {title}
+        </span>
+        <span className="block text-[11px] text-fg-secondary">{subtitle}</span>
+      </span>
+    </button>
+  );
+}
+
 /** Index of the lesson: one row per block, the ones not unlocked yet are shown but cannot be opened. */
 export function LessonOutline({
   blocks,
@@ -52,43 +114,16 @@ export function LessonOutline({
                   : `Si sblocca dopo il blocco ${i}`;
           return (
             <li key={i} className="min-w-[10rem] lg:min-w-0">
-              <button
-                type="button"
-                aria-current={current ? 'step' : undefined}
-                aria-disabled={selectable ? undefined : true}
-                onClick={selectable ? () => onSelect(i) : undefined}
-                className={cn(
-                  'flex min-h-11 w-full items-center gap-2.5 rounded-[var(--radius-control)] px-2 py-1.5 text-left outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
-                  current ? 'bg-bg-raised' : selectable ? 'hover:bg-bg-raised' : 'cursor-default',
-                )}
-              >
-                <span
-                  className={cn(
-                    'flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold',
-                    state === 'done'
-                      ? 'bg-ok text-bg-base'
-                      : current
-                        ? 'bg-accent text-bg-base'
-                        : selectable
-                          ? 'bg-border-strong text-fg-primary'
-                          : 'bg-border text-fg-secondary',
-                  )}
-                  aria-hidden="true"
-                >
-                  {state === 'done' ? '✓' : selectable ? i + 1 : <LockIcon />}
-                </span>
-                <span className="min-w-0">
-                  <span
-                    className={cn(
-                      'block truncate text-[13px]',
-                      block ? 'text-fg-primary' : 'text-fg-muted',
-                    )}
-                  >
-                    {block ? block.title : `Blocco ${i + 1}`}
-                  </span>
-                  <span className="block text-[11px] text-fg-secondary">{subtitle}</span>
-                </span>
-              </button>
+              <OutlineRow
+                number={i + 1}
+                title={block ? block.title : `Blocco ${i + 1}`}
+                subtitle={subtitle}
+                state={state}
+                selectable={selectable}
+                current={current}
+                written={!!block}
+                onSelect={() => onSelect(i)}
+              />
             </li>
           );
         })}

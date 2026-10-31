@@ -17,6 +17,7 @@ import type {
 } from '@studyhub/contracts';
 import { Button } from '@/components/ui/button';
 import { MODEL_OPTIONS, ModelPicker } from '@/components/ModelPicker';
+import { toInlineMath } from '@/lib/lessonClient';
 
 export const DIFFICULTY_LABELS: Record<number, string> = {
   1: 'Facile',
@@ -118,7 +119,7 @@ export function Markdown({ source }: { source: string }) {
   );
 }
 
-function CitationChips({
+export function CitationChips({
   citations,
   onOpen,
 }: {
@@ -196,6 +197,8 @@ function KeyPointRow({
 /**
  * An exercise, or (`variant="guide"`) a guide question: same answer box and AI correction, but no
  * difficulty, no solution to reveal and no self-assessment (a guide question has no model answer).
+ * `variant="retry"` is the similar exercise of a sprint lesson: the AI correction decides, the
+ * solution shows after it (or when the student gives up), and the theory can be reviewed.
  */
 export function ExerciseCard({
   item,
@@ -207,10 +210,12 @@ export function ExerciseCard({
   onPatch,
   onGrade,
   onOpenCitation,
+  similarTo,
+  onReviewTheory,
 }: {
   item: SessionItemDto;
   index: number;
-  variant?: 'exercise' | 'guide';
+  variant?: 'exercise' | 'guide' | 'retry';
   active: boolean;
   grading: boolean;
   gradeError: string | null;
@@ -218,23 +223,41 @@ export function ExerciseCard({
   /** Receives the answer as typed, so it is saved before it is graded. */
   onGrade: (answer: string) => void;
   onOpenCitation: (citation: SessionItemCitationDto) => void;
+  /** Retry: the number of the exercise it is similar to. */
+  similarTo?: number | undefined;
+  /** Retry: open the theory of the original exercise (omitted when it has none). */
+  onReviewTheory?: (() => void) | undefined;
 }) {
   const [answer, setAnswer] = useState(item.answer ?? '');
   const [showSolution, setShowSolution] = useState(item.state !== 'open');
   const assess = (state: 'correct' | 'wrong') =>
     onPatch({ state: item.state === state ? 'open' : state });
   const guide = variant === 'guide';
+  const retry = variant === 'retry';
 
   return (
     <li className="space-y-2 rounded-[var(--radius-card)] border border-border bg-bg-surface p-3">
       <div className="flex items-center gap-2 text-xs text-fg-muted">
         <span className="font-medium text-fg-primary">
-          {guide ? 'Domanda guida' : 'Esercizio'} {index + 1}
+          {retry ? 'Riprova' : guide ? 'Domanda guida' : 'Esercizio'} {index + 1}
         </span>
-        {!guide && item.difficulty && <span>· {DIFFICULTY_LABELS[item.difficulty]}</span>}
-        {!guide && item.state === 'correct' && <span className="ml-auto text-ok">Giusto</span>}
-        {!guide && item.state === 'wrong' && (
+        {retry && similarTo !== undefined && <span>· simile all&apos;esercizio {similarTo}</span>}
+        {!guide && !retry && item.difficulty && <span>· {DIFFICULTY_LABELS[item.difficulty]}</span>}
+        {!guide && !retry && item.state === 'correct' && (
+          <span className="ml-auto text-ok">Giusto</span>
+        )}
+        {!guide && !retry && item.state === 'wrong' && (
           <span className="ml-auto text-danger">Da rivedere</span>
+        )}
+        {retry && item.state === 'correct' && (
+          <span className="ml-auto text-ok">
+            <span aria-hidden="true">✓ </span>Rifatto giusto.
+          </span>
+        )}
+        {retry && item.state === 'wrong' && (
+          <span className="ml-auto text-danger">
+            <span aria-hidden="true">! </span>Da rivedere.
+          </span>
         )}
       </div>
       <Markdown source={item.title} />
@@ -246,25 +269,51 @@ export function ExerciseCard({
         onBlur={() => {
           if (answer !== (item.answer ?? '')) onPatch({ answer });
         }}
-        rows={3}
-        placeholder={guide ? 'Rispondi con parole tue…' : 'Scrivi qui il tuo svolgimento…'}
+        rows={retry ? 5 : 3}
+        placeholder={
+          retry
+            ? 'Scrivi i passaggi…'
+            : guide
+              ? 'Rispondi con parole tue…'
+              : 'Scrivi qui il tuo svolgimento…'
+        }
         aria-label={
-          guide ? `Risposta alla domanda guida ${index + 1}` : `Risposta all'esercizio ${index + 1}`
+          retry
+            ? `La tua risposta, riprova ${index + 1}`
+            : guide
+              ? `Risposta alla domanda guida ${index + 1}`
+              : `Risposta all'esercizio ${index + 1}`
         }
         className="w-full resize-y rounded-[var(--radius-control)] border border-border bg-bg-inset px-2 py-1.5 text-sm text-fg-primary outline-none focus:border-accent disabled:opacity-60"
       />
 
-      {active && (guide || !showSolution) && (
-        <div className="flex flex-wrap items-center gap-2">
+      {active && (guide || retry || !showSolution) && (
+        <div className="flex flex-wrap items-center gap-2 max-md:[&>button]:flex-1">
           <Button
             type="button"
             size="sm"
-            variant="secondary"
+            variant={retry ? 'primary' : 'secondary'}
+            aria-busy={grading}
             disabled={grading || !answer.trim()}
             onClick={() => onGrade(answer)}
           >
-            {grading ? 'Correggo…' : 'Correggi con l’AI'}
+            {grading ? 'Correggo…' : retry ? 'Correggi' : 'Correggi con l’AI'}
           </Button>
+          {retry && onReviewTheory && (
+            <Button type="button" size="sm" variant="secondary" onClick={onReviewTheory}>
+              Rivedi la teoria
+            </Button>
+          )}
+          {retry && !item.solutionVisible && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => onPatch({ revealSolution: true })}
+            >
+              Mostra la soluzione
+            </Button>
+          )}
           {!answer.trim() && (
             <span className="text-xs text-fg-muted">Scrivi prima una risposta.</span>
           )}
@@ -294,7 +343,26 @@ export function ExerciseCard({
         </div>
       )}
 
-      {guide ? null : showSolution || item.feedback ? (
+      {retry ? (
+        item.solutionVisible && (
+          <div className="space-y-2 rounded-[var(--radius-control)] border border-border bg-bg-inset p-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-fg-muted">Soluzione</p>
+            {item.solutionSteps.length > 0 ? (
+              <ol className="list-decimal space-y-2 pl-5 text-fg-secondary">
+                {item.solutionSteps.map((step, i) => (
+                  <li key={i}>
+                    <Markdown source={step.text} />
+                    {step.formula && <Markdown source={toInlineMath(step.formula)} />}
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <Markdown source={item.body} />
+            )}
+            <CitationChips citations={item.citations} onOpen={onOpenCitation} />
+          </div>
+        )
+      ) : guide ? null : showSolution || item.feedback ? (
         <div className="space-y-2 rounded-[var(--radius-control)] border border-border bg-bg-inset p-2">
           <p className="text-xs font-medium uppercase tracking-wide text-fg-muted">Soluzione</p>
           <Markdown source={item.body} />

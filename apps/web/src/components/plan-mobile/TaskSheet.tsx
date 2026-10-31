@@ -3,6 +3,14 @@
 import { useEffect, useState, type RefObject } from 'react';
 import type { PlanDto, TaskDto } from '@studyhub/contracts';
 import { KIND_LABELS, addDaysIso, formatDayTitle } from '@/lib/planMobile';
+import {
+  canSwitchMethod,
+  runMethodSwitch,
+  methodLabel,
+  otherMethod,
+  switchMethodLabel,
+  taskMethod,
+} from '@/lib/taskMethod';
 import { primaryButton, secondaryButton } from '../simulation-mobile/styles';
 import { BottomSheet } from '../subject-mobile/BottomSheet';
 import { todayIso } from '../subject-mobile/queries';
@@ -34,10 +42,25 @@ export function TaskSheet({
   const [pending, setPending] = useState(false);
   const taskId = task?.id;
   const [view, setView] = useState<PanelView>('detail');
+  const [methodNote, setMethodNote] = useState('');
   useEffect(() => {
     setError(null);
     setView('detail');
+    setMethodNote('');
   }, [taskId]);
+
+  // The sheet stays open: the new duration shows under the button once the plan is reloaded.
+  const switchMethod = async (id: string, next: 'standard' | 'sprint') => {
+    setPending(true);
+    setError(null);
+    const result = await runMethodSwitch(
+      () => mutations.setMethod.mutateAsync({ id, method: next }),
+      next,
+    );
+    setMethodNote(result.note);
+    setError(result.error);
+    setPending(false);
+  };
 
   const run = async (action: () => Promise<unknown>) => {
     setPending(true);
@@ -67,7 +90,7 @@ export function TaskSheet({
       title={task?.title ?? ''}
       description={
         task
-          ? `${KIND_LABELS[task.kind]} · ${task.minutes} min · ${formatDayTitle(task.date, today)}`
+          ? `${KIND_LABELS[task.kind]}${task.kind === 'lesson' ? ` · ${methodLabel(taskMethod(task))}` : ''} · ${task.minutes} min · ${formatDayTitle(task.date, today)}`
           : undefined
       }
       returnFocusRef={returnFocusRef}
@@ -152,6 +175,24 @@ export function TaskSheet({
                       Una nuova bozza la tiene alla stessa data.
                     </p>
                   )}
+                </>
+              )}
+              {canSwitchMethod(task) && (
+                <>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    aria-busy={pending}
+                    data-testid="task-method"
+                    onClick={() => void switchMethod(task.id, otherMethod(taskMethod(task)))}
+                    className={`${secondaryButton} min-h-12`}
+                  >
+                    {switchMethodLabel(taskMethod(task))}
+                  </button>
+                  <p className="text-xs text-fg-muted">Durata prevista: {task.minutes} min</p>
+                  <p role="status" aria-live="polite" className="sr-only">
+                    {methodNote}
+                  </p>
                 </>
               )}
               {(draft || open || task.kind === 'rest') && (

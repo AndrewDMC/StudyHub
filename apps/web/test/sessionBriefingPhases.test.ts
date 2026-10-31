@@ -23,6 +23,10 @@ function item(over: Partial<SessionItemDto>): SessionItemDto {
     answer: null,
     feedback: null,
     linkedBlockIds: [],
+    concepts: [],
+    solutionSteps: [],
+    solutionVisible: true,
+    parentItemId: null,
     ...over,
   };
 }

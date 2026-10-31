@@ -566,4 +566,20 @@ describe('Fase B — scenario tests', () => {
     schedulePlan(input({ topics }));
     expect(performance.now() - t0).toBeLessThan(500);
   });
+
+  it('17. every lesson carries the minutes of both methods, mastery applied', () => {
+    const r = schedulePlan(
+      input({
+        topics: [topic('a', { mastery: 0.5, lessons: lessonsOf('a', 2, 60, 40) })],
+      }),
+    );
+    const lessons = r.tasks.filter((t) => t.kind === 'lesson');
+    expect(lessons).toHaveLength(2);
+    for (const l of lessons) {
+      // 60 min at half mastery -> 45, 40 min -> 30.
+      expect(l.payload.method).toBe('standard');
+      expect(l.payload.minutesByMethod).toEqual({ standard: 45, sprint: 30 });
+      expect(l.minutes).toBe(l.payload.minutesByMethod!.standard);
+    }
+  });
 });

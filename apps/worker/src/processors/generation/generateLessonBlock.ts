@@ -22,7 +22,7 @@ import {
   type LessonChunk,
   type SessionLessonOutput,
 } from '@studyhub/ai';
-import type { GenerateLessonBlockJobInput } from '@studyhub/contracts';
+import { normalizeConcept, type GenerateLessonBlockJobInput } from '@studyhub/contracts';
 import { createJobQueue } from '../../queue.js';
 import { checkBudget } from './shared.js';
 
@@ -180,6 +180,7 @@ export async function processGenerateLessonBlock(
         .map((b) => b.title),
       ...(input.hint ? { hint: input.hint } : {}),
       ...(current ? { previousBody: current.body } : {}),
+      ...(input.focus ? { focus: input.focus } : {}),
     },
     model,
   );
@@ -214,6 +215,8 @@ export async function processGenerateLessonBlock(
     model: result.model,
     updatedAt: new Date(),
   };
+  // Sprint lessons: the block belongs to one concept, and serves the exercises that need it.
+  const concept = input.focus ? normalizeConcept(input.focus.concept) : null;
 
   let blockId: string;
   let blockCount: number | null = session.blockCount ?? null;
@@ -233,6 +236,7 @@ export async function processGenerateLessonBlock(
         sessionId: session.id,
         orderIndex: input.blockIndex,
         ...fields,
+        concept,
         state: open ? 'open' : 'locked',
       })
       .onConflictDoNothing()
@@ -264,14 +268,17 @@ export async function processGenerateLessonBlock(
         );
     }
 
-    if (input.blockIndex === 0) {
+    if (concept !== null) {
+      await linkExercises(db, session.id, concept, blockId);
+    } else if (input.blockIndex === 0) {
       blockCount = result.data.blockCount;
       await db.update(studySessions).set({ blockCount }).where(eq(studySessions.id, session.id));
       await saveGuideQuestions(db, session.id, result.data);
     }
   }
 
-  if (input.blockIndex === 0 && !current && (blockCount ?? 0) > 1) {
+  // A sprint lesson fixes its blocks up front (one job each): nothing to chain.
+  if (!input.focus && input.blockIndex === 0 && !current && (blockCount ?? 0) > 1) {
     await enqueueLessonBlock(db, enqueue, {
       subjectId: subject.id,
       sessionId: session.id,
@@ -291,6 +298,41 @@ export async function processGenerateLessonBlock(
     costEur,
     usage: result.usage,
   };
+}
+
+/**
+ * Adds a freshly created sprint block to the `linked_block_ids` of every exercise that lists its
+ * concept and was marked wrong / "non so" (the ones the theory is generated for).
+ */
+async function linkExercises(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  sessionId: string,
+  concept: string,
+  blockId: string,
+) {
+  const exercises: { id: string; concepts: string[]; linkedBlockIds: string[] }[] = await db
+    .select({
+      id: sessionItems.id,
+      concepts: sessionItems.concepts,
+      linkedBlockIds: sessionItems.linkedBlockIds,
+    })
+    .from(sessionItems)
+    .where(
+      and(
+        eq(sessionItems.sessionId, sessionId),
+        eq(sessionItems.kind, 'exercise'),
+        inArray(sessionItems.state, ['wrong', 'unknown']),
+      ),
+    );
+  for (const e of exercises) {
+    if (!e.concepts.some((c) => normalizeConcept(c) === concept)) continue;
+    if (e.linkedBlockIds.includes(blockId)) continue;
+    await db
+      .update(sessionItems)
+      .set({ linkedBlockIds: [...e.linkedBlockIds, blockId] })
+      .where(eq(sessionItems.id, e.id));
+  }
 }
 
 async function saveGuideQuestions(

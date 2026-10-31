@@ -117,6 +117,12 @@ export function usePlanMutations(slug: string) {
     mutationFn: (id: string) => send(`${base}/tasks/${id}`, 'DELETE'),
     onSuccess: () => invalidate(false),
   });
+  // Not optimistic: the server sets the minutes of the new method and returns the task.
+  const setMethod = useMutation({
+    mutationFn: async ({ id, method }: { id: string; method: 'standard' | 'sprint' }) =>
+      (await send(`${base}/tasks/${id}`, 'PATCH', { method })).task as TaskDto,
+    onSuccess: () => invalidate(false),
+  });
   const setStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: TaskStatusChange }) =>
       send(`${base}/tasks/${id}/status`, 'POST', { status }),
@@ -162,6 +168,7 @@ export function usePlanMutations(slug: string) {
     deletePlan,
     pin,
     removeTask,
+    setMethod,
     setStatus,
     move,
     bulk,

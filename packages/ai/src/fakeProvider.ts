@@ -15,6 +15,7 @@ import type {
   SessionBriefingPromptInput,
   ExplainFeedbackPromptInput,
   SessionLessonPromptInput,
+  SprintExercisesPromptInput,
   SessionChatPromptInput,
   PlanChangePromptInput,
   SubjectAskPromptInput,
@@ -41,6 +42,7 @@ import type {
   ExplainFeedbackOutput,
   ExplainFeedbackPoint,
   SessionLessonOutput,
+  SprintExercisesOutput,
   SimulationOutput,
   SortFlashcardsAiOutput,
   SummaryOutput,
@@ -72,6 +74,7 @@ import {
   SESSION_CHAT_PROMPT_VERSION,
   EXPLAIN_FEEDBACK_PROMPT_VERSION,
   SESSION_LESSON_PROMPT_VERSION,
+  SPRINT_EXERCISES_PROMPT_VERSION,
   SESSION_CHAT_DEEP_PROMPT_VERSION,
   PLAN_CHANGE_PROMPT_VERSION,
   SUBJECT_ASK_PROMPT_VERSION,
@@ -305,7 +308,8 @@ export class FakeProvider implements AiProvider {
     if (input.chunks.length === 0) {
       throw new Error('generateLessonBlock needs at least one chunk');
     }
-    const blockCount = Math.min(6, Math.max(2, input.chunks.length));
+    const focus = input.focus;
+    const blockCount = focus ? 2 : Math.min(6, Math.max(2, input.chunks.length));
     const chunk = input.chunks[input.blockIndex % input.chunks.length]!;
     const own = splitSentences(chunk.text);
     const all = input.chunks.flatMap((c) => splitSentences(c.text));
@@ -363,7 +367,7 @@ export class FakeProvider implements AiProvider {
     const data: SessionLessonOutput = {
       blockCount,
       guideQuestions:
-        input.blockIndex === 0
+        input.blockIndex === 0 && !focus
           ? [
               `Che cosa si intende, in sostanza, per ${topic}?`,
               `Quali sono le idee principali che reggono ${topic}?`,
@@ -371,10 +375,16 @@ export class FakeProvider implements AiProvider {
             ]
           : [],
       block: {
-        title: truncate(lead.replace(/[.!?]+$/, ''), 60),
-        body,
+        title: focus ? truncate(focus.concept, 60) : truncate(lead.replace(/[.!?]+$/, ''), 60),
+        body: focus
+          ? [
+              `Per l'esercizio "${truncate(focus.exercise, 80)}" ti serve questo concetto: ${focus.concept}.`,
+              '',
+              `Il punto è questo: ${lead}`,
+            ].join('\n')
+          : body,
         formula,
-        exampleSteps,
+        exampleSteps: focus ? exampleSteps.slice(0, 3) : exampleSteps,
         trap: `Errore tipico all'esame: dare per scontato il passaggio "${truncate(second, 70)}" senza verificarne le ipotesi.`,
         checkQuestion,
         checkAnswer,
@@ -389,6 +399,57 @@ export class FakeProvider implements AiProvider {
       },
       model: FAKE_MODEL,
       promptVersion: SESSION_LESSON_PROMPT_VERSION,
+    };
+  }
+
+  /**
+   * Extractive stand-in for the sprint exercises: always exactly 3 exercises, the i-th built on chunk
+   * `i` (wrapping around), with stable concept titles `<topic>: concetto N` (one per exercise), a
+   * retry exercise with the same steps, and verbatim citations. Deterministic.
+   */
+  async generateSprintExercises(
+    input: SprintExercisesPromptInput,
+    _model: string,
+  ): Promise<GeneratedWithMeta<SprintExercisesOutput>> {
+    if (input.chunks.length === 0) {
+      throw new Error('generateSprintExercises needs at least one chunk');
+    }
+    const topic = input.topicNames[0] ?? input.subjectName;
+    const all = input.chunks.flatMap((c) => splitSentences(c.text));
+    const exercises = [0, 1, 2].map((i) => {
+      const chunk = input.chunks[i % input.chunks.length]!;
+      const own = splitSentences(chunk.text);
+      const sentences = own.length >= 2 ? own : [...own, ...all.filter((s) => !own.includes(s))];
+      const lead = sentences[0] ?? chunk.text.trim();
+      const second = sentences[1] ?? lead;
+      const formulaMatch = /\$\$?([^$]+?)\$\$?/.exec(chunk.text);
+      const formula = formulaMatch ? formulaMatch[1]!.trim() : undefined;
+      const solutionSteps = [
+        { text: `Passaggio 1: ${lead}`, ...(formula ? { formula } : {}) },
+        { text: `Passaggio 2: ${second}` },
+      ];
+      const quotes = own.length > 0 ? own.slice(0, 2) : [chunk.text.trim().slice(0, 200)];
+      return {
+        title: `Esercizio ${i + 1} su ${topic}`,
+        question: `Esercizio ${i + 1}. Usando il materiale su ${topic}, spiega e applica: "${truncate(lead, 120)}"`,
+        solutionSteps,
+        concepts: [`${topic}: concetto ${i + 1}`],
+        retry: {
+          question: `Riprova ${i + 1}. Svolgi un esercizio simile su ${topic}, con gli stessi passaggi: "${truncate(second, 120)}"`,
+          solutionSteps: solutionSteps.map((step) => ({ ...step })),
+        },
+        citations: quotes.map((quote) => ({ chunkId: chunk.id, quote })),
+      };
+    });
+    const data: SprintExercisesOutput = { exercises };
+    return {
+      data,
+      usage: {
+        inputTokens: input.chunks.reduce((sum, c) => sum + estimateTokens(c.text), 0),
+        outputTokens: estimateTokens(JSON.stringify(data)),
+      },
+      model: FAKE_MODEL,
+      promptVersion: SPRINT_EXERCISES_PROMPT_VERSION,
     };
   }
 

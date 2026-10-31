@@ -3,7 +3,13 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { SessionDocumentDto, SessionFocus, SessionItemCitationDto } from '@studyhub/contracts';
+import type {
+  LessonPhase,
+  SessionDocumentDto,
+  SessionFocus,
+  SessionItemCitationDto,
+  UpdateSessionItemRequest,
+} from '@studyhub/contracts';
 import { Button } from '@/components/ui/button';
 import { formatClock, usePomodoro } from '@/components/PomodoroTimer';
 import { SessionChat } from '@/components/SessionChat';
@@ -16,18 +22,33 @@ import { PhaseNav } from '@/components/lesson/PhaseNav';
 import { PhaseStepper } from '@/components/lesson/PhaseStepper';
 import { RecallStep } from '@/components/lesson/RecallStep';
 import { SessionClosing } from '@/components/SessionClosing';
+import { SprintExercisesStep } from '@/components/lesson/SprintExercisesStep';
+import { SprintRetryStep } from '@/components/lesson/SprintRetryStep';
+import { SprintTheoryStep } from '@/components/lesson/SprintTheoryStep';
 import { SidePanel, type SidePanelTab } from '@/components/lesson/SidePanel';
 import {
   LESSON_PHASES,
+  SPRINT_LESSON_PHASES,
+  SPRINT_NEXT_ACTION,
+  SPRINT_PHASES,
+  STANDARD_PHASES,
   initialBlockIndex,
+  initialSprintViewPhase,
   initialViewPhase,
-  phaseIndex,
+  lessonFlowKind,
+  previousSprintPhase,
   readFurthest,
+  sprintPhaseDone,
+  sprintRecallSummary,
+  sprintStepStatus,
   useExplanation,
   useLesson,
   useLessonPhase,
+  useSprint,
   writeFurthest,
   type PhaseProgress,
+  type SprintPhase,
+  type SprintProgress,
   type StandardPhase,
 } from '@/lib/lessonClient';
 import { fetchSession, patchSession, postEnd } from '@/lib/sessionApi';
@@ -44,10 +65,11 @@ function revealSidePanel() {
 }
 
 /**
- * A standard lesson with its five phases (docs/10-planner-lezioni.md §3.2, §4): header, stepper, the
- * current phase and Material | Tutor on the right. Mounted by `SessionClient` for sessions with
- * `kind === 'lesson'` and a standard `phase`. The phase shown is saved on the server, so opening the
- * session again resumes from it.
+ * A lesson with its phases (docs/10-planner-lezioni.md §3.2, §3.3, §4): header, stepper, the current
+ * phase and Material | Tutor on the right. Mounted by `SessionClient` for sessions with
+ * `kind === 'lesson'`: the five standard phases, or the four of a sprint lesson (Esercizi, Teoria,
+ * Riprova, Ricorda); a sprint lesson from before them only shows "Studia", without stepper. The phase
+ * shown is saved on the server, so opening the session again resumes from it.
  */
 export function LessonFlow({
   slug,
@@ -72,17 +94,33 @@ export function LessonFlow({
   });
   const session = sessionQuery.data;
   const active = session?.status === 'active';
-  const lesson = useLesson({ slug, sessionId, active: !!active });
-  const explanation = useExplanation({ slug, sessionId, active: !!active });
+  const flow = lessonFlowKind(session);
+  const sprintFlow = flow === 'sprint';
+  // A sprint lesson asks for its theory from the exercises: never block 0 on its own, no "Rielabora"
+  // and no standard exercises.
+  const lesson = useLesson({
+    slug,
+    sessionId,
+    active: !!active,
+    autoStart: !!session && !sprintFlow,
+  });
+  const explanation = useExplanation({
+    slug,
+    sessionId,
+    active: !!active,
+    enabled: !sprintFlow,
+  });
   const briefing = useQuery({
     queryKey: ['sessionBriefing', slug, sessionId],
     queryFn: () => fetchBriefing(slug, sessionId),
+    enabled: !sprintFlow,
   });
+  const sprint = useSprint({ slug, sessionId, active: !!active, enabled: sprintFlow });
   const savePhase = useLessonPhase({ slug, sessionId });
   const blocks = lesson.data?.blocks ?? [];
   const blockCount = lesson.data?.blockCount ?? null;
 
-  const [viewPhase, setViewPhase] = useState<StandardPhase | null>(null);
+  const [viewPhase, setViewPhase] = useState<LessonPhase | null>(null);
   const [furthestState, setFurthestState] = useState<number | null>(null);
   const [phaseNonce, setPhaseNonce] = useState(0);
   const [announce, setAnnounce] = useState('');
@@ -97,12 +135,23 @@ export function LessonFlow({
   const persistTimer = useRef<number | undefined>(undefined);
   const mainRef = useRef<HTMLDivElement>(null);
 
-  // A sprint lesson only has "Studia" for now: no stepper, no way on to the other phases.
-  const staged = session?.method !== 'sprint';
-  const phase: StandardPhase = !staged
+  // A sprint lesson from before the sprint phases only has "Studia": no stepper, no way on.
+  const staged = flow !== 'legacy';
+  const phaseIds: readonly string[] = sprintFlow ? SPRINT_PHASES : STANDARD_PHASES;
+  const phaseDefs: { id: string; label: string; sub: string }[] = sprintFlow
+    ? SPRINT_LESSON_PHASES
+    : LESSON_PHASES;
+  const phase: LessonPhase = !staged
     ? 'understand'
-    : (viewPhase ?? (session ? initialViewPhase(session) : 'explore'));
-  const furthest = session ? (furthestState ?? readFurthest(sessionId, session.phase)) : 0;
+    : (viewPhase ??
+      (session
+        ? sprintFlow
+          ? initialSprintViewPhase(session)
+          : initialViewPhase(session)
+        : 'explore'));
+  const furthest = session
+    ? (furthestState ?? readFurthest(sessionId, session.phase, phaseIds))
+    : 0;
 
   const current =
     selected ??
@@ -148,9 +197,10 @@ export function LessonFlow({
     main.scrollIntoView?.({ block: 'start', behavior: reduce ? 'auto' : 'smooth' });
   }, [phaseNonce]);
 
-  function goTo(next: StandardPhase) {
+  function goTo(next: LessonPhase) {
     if (!staged) return;
-    const index = phaseIndex(next);
+    const index = phaseIds.indexOf(next);
+    if (index < 0) return;
     setViewPhase(next);
     if (index > furthest) {
       setFurthestState(index);
@@ -158,7 +208,7 @@ export function LessonFlow({
     } else {
       setFurthestState(furthest);
     }
-    setAnnounce(`Fase ${index + 1} di ${LESSON_PHASES.length}: ${LESSON_PHASES[index]!.label}`);
+    setAnnounce(`Fase ${index + 1} di ${phaseDefs.length}: ${phaseDefs[index]!.label}`);
     setPhaseNonce((n) => n + 1);
     if (active) savePhase.mutate(next);
   }
@@ -225,7 +275,27 @@ export function LessonFlow({
     exercisesAnswered: items.filter((i) => i.kind === 'exercise' && i.state !== 'open').length,
     ended: !active,
   };
-  const phaseLabel = LESSON_PHASES[phaseIndex(phase)]!.label;
+  const sprintProgress: SprintProgress = {
+    furthest,
+    view: sprint.view,
+    blocks,
+    ended: !active,
+  };
+  const phaseLabel = phaseDefs[phaseIds.indexOf(phase)]?.label ?? '';
+  const sprintView = sprint.view;
+  const sprintError = sprint.query.isError ? (sprint.query.error as Error).message : null;
+
+  // "Rivedi la teoria": open the block of the exercise, when it can be read already.
+  function goToTheoryBlock(blockId: string | null) {
+    const target = blockId ? blocks.find((b) => b.id === blockId) : undefined;
+    if (target && target.state !== 'locked') selectBlock(target.orderIndex, false);
+    goTo('theory');
+  }
+  function patchRetry(id: string, patch: UpdateSessionItemRequest) {
+    if (patch.revealSolution) sprint.reveal.mutate({ id });
+    else if (patch.answer !== undefined)
+      sprint.saveAnswer.mutate({ id, answer: patch.answer ?? '' });
+  }
 
   const material = doc ? (
     <div className="space-y-2">
@@ -258,7 +328,106 @@ export function LessonFlow({
   );
 
   let step: ReactNode;
-  switch (phase) {
+  switch (sprintFlow ? `sprint:${phase}` : phase) {
+    case 'sprint:exercises':
+      step = (
+        <SprintExercisesStep
+          view={sprintView}
+          loading={sprint.query.isLoading}
+          loadError={sprintError}
+          active={!!active}
+          hasDocuments={docs.length > 0}
+          generating={sprint.generateExercises.isPending}
+          generateError={
+            sprint.generateExercises.isError
+              ? (sprint.generateExercises.error as Error).message
+              : null
+          }
+          ratingId={sprint.rate.isPending ? (sprint.rate.variables?.id ?? null) : null}
+          revealingId={sprint.reveal.isPending ? (sprint.reveal.variables?.id ?? null) : null}
+          actionError={
+            sprint.rate.isError && sprint.rate.variables
+              ? { id: sprint.rate.variables.id, message: (sprint.rate.error as Error).message }
+              : sprint.reveal.isError && sprint.reveal.variables
+                ? {
+                    id: sprint.reveal.variables.id,
+                    message: (sprint.reveal.error as Error).message,
+                  }
+                : null
+          }
+          onGenerate={() => sprint.generateExercises.mutate({})}
+          asked={sprint.askedExercises}
+          onRate={(id, state) => {
+            // One rating at a time: a second tap before the first answer is ignored.
+            if (!sprint.rate.isPending) sprint.rate.mutate({ id, state });
+          }}
+          onReveal={(id) => sprint.reveal.mutate({ id })}
+          onOpenCitation={openCitation}
+        />
+      );
+      break;
+    case 'sprint:theory':
+      step = (
+        <SprintTheoryStep
+          view={sprintView}
+          loading={sprint.query.isLoading}
+          loadError={sprintError}
+          lesson={lesson}
+          active={!!active}
+          current={current}
+          focusNonce={focusNonce}
+          generating={sprint.generateTheory.isPending}
+          generateError={
+            sprint.generateTheory.isError ? (sprint.generateTheory.error as Error).message : null
+          }
+          onGenerate={() => sprint.generateTheory.mutate({})}
+          asked={sprint.askedTheory}
+          onSelect={selectBlock}
+          onOpenCitation={openCitation}
+          onPrefill={prefillTutor}
+          onGo={goTo}
+        />
+      );
+      break;
+    case 'sprint:retry':
+      step = (
+        <SprintRetryStep
+          view={sprintView}
+          items={sprint.query.data?.retries ?? []}
+          loading={sprint.query.isLoading}
+          loadError={sprintError}
+          active={!!active}
+          gradingId={sprint.grade.isPending ? (sprint.grade.variables?.id ?? null) : null}
+          gradeError={
+            sprint.grade.isError && sprint.grade.variables
+              ? { id: sprint.grade.variables.id, message: (sprint.grade.error as Error).message }
+              : null
+          }
+          onPatch={patchRetry}
+          onGrade={(id, answer) => sprint.grade.mutate({ id, answer })}
+          onOpenCitation={openCitation}
+          onGoTheory={goToTheoryBlock}
+          onGo={goTo}
+        />
+      );
+      break;
+    case 'sprint:recall':
+      step = (
+        <RecallStep
+          slug={slug}
+          sessionId={sessionId}
+          session={session}
+          sessionKey={sessionKey}
+          active={!!active}
+          activeMs={shownMs}
+          ending={endMutation.isPending}
+          endError={endMutation.isError ? (endMutation.error as Error).message : null}
+          onEnd={() => endMutation.mutate()}
+          variant="sprint"
+          summary={sprintRecallSummary(shownMs, sprintView)}
+        />
+      );
+      break;
     case 'explore':
       step = (
         <ExploreStep
@@ -355,10 +524,12 @@ export function LessonFlow({
         </div>
         <span aria-label="Tempo di studio totale" className="text-right text-xs text-fg-muted">
           Studio
-          {phase === 'understand'
+          {phase === (sprintFlow ? 'theory' : 'understand')
             ? blockCount
               ? ` · blocco ${Math.min(current + 1, blockCount)} di ${blockCount}`
-              : ''
+              : sprintFlow
+                ? ` · ${phaseLabel}`
+                : ''
             : ` · ${phaseLabel}`}
           <span className="block font-mono text-xl tabular-nums text-fg-primary">
             {formatClock(shownMs)}
@@ -393,7 +564,9 @@ export function LessonFlow({
           className="flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] border border-ok/40 bg-ok/5 p-3 text-sm text-fg-primary"
         >
           <span className="min-w-0 flex-1">
-            La lezione è terminata. Flashcard e drill sono in Ricorda.
+            {sprintFlow
+              ? 'La lezione è terminata. Il drill è in Ricorda.'
+              : 'La lezione è terminata. Flashcard e drill sono in Ricorda.'}
           </span>
           <Button type="button" size="sm" variant="secondary" onClick={() => goTo('recall')}>
             Vai a Ricorda
@@ -414,7 +587,17 @@ export function LessonFlow({
 
       {staged && (
         <>
-          <PhaseStepper current={phase} progress={progress} onSelect={goTo} />
+          {sprintFlow ? (
+            <PhaseStepper
+              current={phase as SprintPhase}
+              phases={SPRINT_LESSON_PHASES}
+              statusOf={(id) => sprintStepStatus(id, phase as SprintPhase, sprintProgress)}
+              ariaLabel="Fasi della lezione sprint"
+              onSelect={goTo}
+            />
+          ) : (
+            <PhaseStepper current={phase as StandardPhase} progress={progress} onSelect={goTo} />
+          )}
           <p role="status" className="sr-only">
             {announce}
           </p>
@@ -431,7 +614,28 @@ export function LessonFlow({
           className="min-w-0 space-y-4 outline-none"
         >
           {step}
-          {staged && <PhaseNav phase={phase} onGo={goTo} primary={phase !== 'understand'} />}
+          {sprintFlow ? (
+            <PhaseNav
+              prev={previousSprintPhase(phase as SprintPhase)}
+              next={SPRINT_NEXT_ACTION[phase as SprintPhase]}
+              onGo={goTo}
+              primary={
+                phase === 'exercises'
+                  ? !!sprintView && sprintPhaseDone('exercises', { ...sprintProgress, furthest: 0 })
+                  : phase === 'theory'
+                    ? sprintPhaseDone('theory', { ...sprintProgress, furthest: 0 })
+                    : true
+              }
+            />
+          ) : (
+            staged && (
+              <PhaseNav
+                phase={phase as StandardPhase}
+                onGo={goTo}
+                primary={phase !== 'understand'}
+              />
+            )
+          )}
         </div>
 
         <SidePanel

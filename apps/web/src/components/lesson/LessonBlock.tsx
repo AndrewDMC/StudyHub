@@ -52,6 +52,7 @@ export function LessonBlock({
   onCheck,
   onNext,
   onFinish,
+  finishLabel = 'Passa a Rielabora →',
   onRegenerate,
 }: {
   block: LessonBlockDto;
@@ -71,6 +72,8 @@ export function LessonBlock({
   onNext: () => void;
   /** The lesson sits in a phase flow: after the last block, the way to the next phase. */
   onFinish?: () => void;
+  /** Label of the way on after the last block (sprint lessons go to "Riprova"). */
+  finishLabel?: string;
   onRegenerate: () => void;
 }) {
   const done = block.state === 'done';
@@ -302,7 +305,7 @@ export function LessonBlock({
         )}
         {answered && isLast && onFinish && (
           <Button type="button" size="lg" onClick={onFinish} className="max-md:w-full">
-            Passa a Rielabora →
+            {finishLabel}
           </Button>
         )}
         {!readOnly && !answered && (

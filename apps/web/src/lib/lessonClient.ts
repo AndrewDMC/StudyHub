@@ -8,9 +8,14 @@ import type {
   LessonDto,
   LessonHint,
   LessonPhase,
+  SessionItemCitationDto,
   SessionItemDto,
+  SolutionStep,
+  SprintDto,
+  StartSprintTheoryResponse,
   StudySessionDto,
   SubmitExplanationRequest,
+  UpdateSessionItemRequest,
 } from '@studyhub/contracts';
 import { patchSession } from '@/lib/sessionApi';
 
@@ -152,14 +157,17 @@ export function isStandardPhase(phase: LessonPhase | null | undefined): phase is
 }
 
 /**
- * Sessions that open the lesson shell: a standard lesson in any of its phases, and a sprint lesson
- * only in "Studia" (the sprint phases are not built yet: it gets the shell without stepper).
+ * Sessions that open the lesson shell: a standard lesson in any of its phases, a sprint lesson in
+ * any of its phases, and an older sprint lesson (created before the sprint phases) only in "Studia":
+ * that one gets the shell without stepper.
  */
 export function usesLessonFlow(
   session: Pick<StudySessionDto, 'kind' | 'method' | 'phase'>,
 ): boolean {
-  if (session.kind !== 'lesson' || !isStandardPhase(session.phase)) return false;
-  return session.method === 'standard' || session.phase === 'understand';
+  if (session.kind !== 'lesson') return false;
+  if (session.method === 'sprint')
+    return isSprintPhase(session.phase) || session.phase === 'understand';
+  return isStandardPhase(session.phase);
 }
 
 /** Position of a phase in the stepper; -1 when it is not a standard one. */
@@ -236,12 +244,13 @@ const furthestKey = (sessionId: string) => `lesson-furthest:${sessionId}`;
 export function readFurthest(
   sessionId: string,
   savedPhase: LessonPhase | null | undefined,
+  phases: readonly string[] = STANDARD_PHASES,
 ): number {
-  const fromServer = Math.max(phaseIndex(savedPhase), 0);
+  const fromServer = Math.max(savedPhase ? phases.indexOf(savedPhase) : -1, 0);
   try {
     const raw = window.localStorage.getItem(furthestKey(sessionId));
     const n = raw === null ? NaN : Number(raw);
-    if (Number.isInteger(n) && n >= 0 && n < STANDARD_PHASES.length) return Math.max(n, fromServer);
+    if (Number.isInteger(n) && n >= 0 && n < phases.length) return Math.max(n, fromServer);
   } catch {
     /* private window or blocked storage */
   }
@@ -254,6 +263,279 @@ export function writeFurthest(sessionId: string, index: number): void {
   } catch {
     /* ignore */
   }
+}
+
+// ---- phases of the sprint lesson ----
+
+/** Mirror of `SPRINT_PHASES` from `@studyhub/contracts` (see `STANDARD_PHASES` above). */
+export const SPRINT_PHASES = ['exercises', 'theory', 'retry', 'recall'] as const;
+export type SprintPhase = (typeof SPRINT_PHASES)[number] & LessonPhase;
+
+export const SPRINT_LESSON_PHASES: { id: SprintPhase; label: string; sub: string }[] = [
+  { id: 'exercises', label: 'Esercizi', sub: 'Prova subito' },
+  { id: 'theory', label: 'Teoria', sub: 'Solo quella che serve' },
+  { id: 'retry', label: 'Riprova', sub: 'Esercizi simili' },
+  { id: 'recall', label: 'Ricorda', sub: 'Formule e verifiche' },
+];
+
+export function isSprintPhase(phase: LessonPhase | null | undefined): phase is SprintPhase {
+  return !!phase && (SPRINT_PHASES as readonly string[]).includes(phase);
+}
+
+/** Position of a phase in the sprint stepper; -1 when it is not a sprint one. */
+export function sprintPhaseIndex(phase: LessonPhase | null | undefined): number {
+  return phase ? (SPRINT_PHASES as readonly string[]).indexOf(phase) : -1;
+}
+
+/** Which phase list a lesson session follows: sprint phases, standard ones, or none (older sprint, no phase). */
+export type LessonFlowKind = 'standard' | 'sprint' | 'legacy';
+
+export function lessonFlowKind(
+  session: Pick<StudySessionDto, 'method' | 'phase'> | undefined,
+): LessonFlowKind {
+  if (!session) return 'legacy';
+  if (session.method === 'sprint') return isSprintPhase(session.phase) ? 'sprint' : 'legacy';
+  return 'standard';
+}
+
+/** The phase to open on arrival: the saved one, else "Esercizi"; a finished session opens on "Ricorda". */
+export function initialSprintViewPhase(
+  session: Pick<StudySessionDto, 'status' | 'phase'>,
+): SprintPhase {
+  if (session.status === 'ended') return 'recall';
+  return isSprintPhase(session.phase) ? session.phase : 'exercises';
+}
+
+export const SPRINT_NEXT_ACTION: Record<SprintPhase, { label: string; to: SprintPhase } | null> = {
+  exercises: { label: 'Vediamo cosa ti manca →', to: 'theory' },
+  theory: { label: 'Riprova su esercizi simili →', to: 'retry' },
+  retry: { label: 'Ho finito · chiudi la lezione →', to: 'recall' },
+  recall: null,
+};
+
+export function previousSprintPhase(
+  phase: SprintPhase,
+): (typeof SPRINT_LESSON_PHASES)[number] | null {
+  return SPRINT_LESSON_PHASES[sprintPhaseIndex(phase) - 1] ?? null;
+}
+
+// ---- sprint view model: the only place that knows the shape of `GET .../sprint` ----
+
+export type SelfAssessment = 'correct' | 'wrong' | 'unknown';
+
+export type SprintSolution = { steps: SolutionStep[]; citations: SessionItemCitationDto[] };
+
+export type SprintExerciseView = {
+  id: string;
+  /** 1-based position. */
+  n: number;
+  question: string;
+  /** "Tema del 18 luglio · 9 punti" when the backend knows it (it does not yet). */
+  origin: string | null;
+  /** `null` = not visible yet: the student has not self-assessed or asked for it. */
+  solution: SprintSolution | null;
+  concepts: string[];
+  selfAssessment: SelfAssessment | null;
+  linkedBlockIds: string[];
+  retryId: string | null;
+};
+
+export type SprintRetryView = {
+  id: string;
+  forExerciseId: string | null;
+  question: string;
+  solution: SprintSolution | null;
+  answer: string | null;
+  feedback: SessionItemDto['feedback'];
+  state: 'open' | 'correct' | 'wrong';
+};
+
+export type SprintConceptView = { title: string; exerciseIds: string[]; blockId: string | null };
+
+export type SprintView = {
+  exercises: SprintExerciseView[];
+  retries: SprintRetryView[];
+  theory: {
+    state: SprintDto['theory']['state'];
+    concepts: SprintConceptView[];
+    error: string | null;
+  };
+  job: { status: 'queued' | 'running' | 'failed' | 'done'; error: string | null } | null;
+  costEur: number;
+};
+
+function solutionOf(item: SessionItemDto): SprintSolution | null {
+  if (!item.solutionVisible) return null;
+  const steps =
+    item.solutionSteps.length > 0 ? item.solutionSteps : item.body ? [{ text: item.body }] : [];
+  return { steps, citations: item.citations };
+}
+
+function assessmentOf(state: SessionItemDto['state']): SelfAssessment | null {
+  return state === 'correct' || state === 'wrong' || state === 'unknown' ? state : null;
+}
+
+export function toSprintView(dto: SprintDto): SprintView {
+  const job = dto.job;
+  return {
+    exercises: dto.exercises.map((e, i) => ({
+      id: e.id,
+      n: i + 1,
+      question: e.title,
+      origin: null,
+      solution: solutionOf(e),
+      concepts: e.concepts,
+      selfAssessment: assessmentOf(e.state),
+      linkedBlockIds: e.linkedBlockIds,
+      retryId: e.retryId,
+    })),
+    retries: dto.retries.map((r) => ({
+      id: r.id,
+      forExerciseId: r.parentItemId,
+      question: r.title,
+      solution: solutionOf(r),
+      answer: r.answer,
+      feedback: r.feedback,
+      state: r.state === 'correct' ? 'correct' : r.state === 'wrong' ? 'wrong' : 'open',
+    })),
+    theory: {
+      state: dto.theory.state,
+      concepts: dto.theory.concepts,
+      error: dto.theory.error,
+    },
+    job: job
+      ? {
+          status:
+            job.status === 'succeeded'
+              ? 'done'
+              : job.status === 'cancelled'
+                ? 'failed'
+                : job.status,
+          error: job.error,
+        }
+      : null,
+    costEur: dto.costEur,
+  };
+}
+
+/** Exercises marked wrong or "non so da dove partire". */
+export function failedExercises(view: Pick<SprintView, 'exercises'>): SprintExerciseView[] {
+  return view.exercises.filter(
+    (e) => e.selfAssessment === 'wrong' || e.selfAssessment === 'unknown',
+  );
+}
+
+export function ratedCount(view: Pick<SprintView, 'exercises'>): number {
+  return view.exercises.filter((e) => e.selfAssessment !== null).length;
+}
+
+export function allRated(view: Pick<SprintView, 'exercises'>): boolean {
+  return view.exercises.length > 0 && ratedCount(view) === view.exercises.length;
+}
+
+/** Something rated and nothing to review: "Nessuna teoria da rivedere". */
+export function theoryIsEmpty(view: Pick<SprintView, 'exercises'>): boolean {
+  return ratedCount(view) > 0 && failedExercises(view).length === 0;
+}
+
+/** Concepts of the failed exercises whose block has not been written yet. */
+export function conceptsWithoutBlock(view: Pick<SprintView, 'theory'>): SprintConceptView[] {
+  return view.theory.concepts.filter((c) => c.blockId === null);
+}
+
+/**
+ * The retries to do: those of the failed exercises, in the order of the exercises; when everything
+ * was right, only the first one; before anything is rated, none.
+ */
+export function retrySet(view: Pick<SprintView, 'exercises' | 'retries'>): SprintRetryView[] {
+  if (ratedCount(view) === 0) return [];
+  const failed = failedExercises(view);
+  if (failed.length === 0) return view.retries.slice(0, 1);
+  const byParent = new Map(view.retries.map((r) => [r.forExerciseId, r]));
+  return failed.flatMap((e) => {
+    const retry = byParent.get(e.id);
+    return retry ? [retry] : [];
+  });
+}
+
+/** "Sistemati": exercises right at once, plus failed ones whose retry is no longer open. */
+export function settledCount(view: Pick<SprintView, 'exercises' | 'retries'>): number {
+  const byParent = new Map(view.retries.map((r) => [r.forExerciseId, r]));
+  return view.exercises.filter((e) => {
+    if (e.selfAssessment === 'correct') return true;
+    if (e.selfAssessment === null) return false;
+    const retry = byParent.get(e.id);
+    return !!retry && retry.state !== 'open';
+  }).length;
+}
+
+/** What the sprint stepper needs besides how far the student went. */
+export type SprintProgress = {
+  furthest: number;
+  view: SprintView | undefined;
+  blocks: Pick<LessonBlockDto, 'id' | 'state'>[];
+  ended: boolean;
+};
+
+export function sprintPhaseDone(phase: SprintPhase, p: SprintProgress): boolean {
+  if (sprintPhaseIndex(phase) < p.furthest) return true;
+  const view = p.view;
+  switch (phase) {
+    case 'exercises':
+      return !!view && allRated(view);
+    case 'theory': {
+      if (!view) return false;
+      if (theoryIsEmpty(view)) return true;
+      const ids = view.theory.concepts.map((c) => c.blockId);
+      if (ids.length === 0 || ids.some((id) => id === null)) return false;
+      const state = new Map(p.blocks.map((b) => [b.id, b.state]));
+      return ids.every((id) => state.get(id!) === 'done');
+    }
+    case 'retry': {
+      if (!view) return false;
+      const set = retrySet(view);
+      return set.length > 0 && set.every((r) => r.state !== 'open');
+    }
+    case 'recall':
+      return p.ended;
+  }
+}
+
+/** The current phase wins over "done". */
+export function sprintStepStatus(
+  phase: SprintPhase,
+  current: SprintPhase,
+  p: SprintProgress,
+): StepStatus {
+  if (phase === current) return 'current';
+  return sprintPhaseDone(phase, p) ? 'done' : 'todo';
+}
+
+/** Poll while the exercises or the theory blocks are being written. Never on a finished session. */
+export function shouldPollSprint(
+  data: Pick<SprintDto, 'job' | 'theory'> | undefined,
+  active: boolean,
+): boolean {
+  if (!data || !active) return false;
+  const status = data.job?.status;
+  return status === 'queued' || status === 'running' || data.theory.state === 'generating';
+}
+
+/** The line under "Ricorda" in a sprint lesson: only the pieces that are not zero. */
+export function sprintRecallSummary(
+  activeMs: number,
+  view: Pick<SprintView, 'exercises' | 'retries'> | undefined,
+): string {
+  const parts: string[] = [];
+  const min = Math.round(activeMs / 60000);
+  if (min > 0) parts.push(`${min} min di studio reale`);
+  if (view && view.exercises.length > 0) {
+    const settled = settledCount(view);
+    if (settled > 0) parts.push(`${settled} esercizi su ${view.exercises.length} sistemati`);
+    const redone = view.retries.filter((r) => r.state === 'correct').length;
+    if (redone > 0) parts.push(`${redone} rifatti giusti`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : 'Appena chiudi, qui trovi il riepilogo.';
 }
 
 // ---- Esplora ----
@@ -318,10 +600,13 @@ export function useLesson({
   slug,
   sessionId,
   active,
+  autoStart = true,
 }: {
   slug: string;
   sessionId: string;
   active: boolean;
+  /** false in a sprint lesson: its blocks are asked for by the exercises, never block 0 on its own. */
+  autoStart?: boolean;
 }) {
   const queryClient = useQueryClient();
   const key = lessonKey(slug, sessionId);
@@ -343,12 +628,12 @@ export function useLesson({
   // Opening the lesson asks for block 0 by itself, once.
   const autoStarted = useRef(false);
   useEffect(() => {
-    if (autoStarted.current || !active || !data) return;
+    if (!autoStart || autoStarted.current || !active || !data) return;
     if (data.blocks.length === 0 && !data.job) {
       autoStarted.current = true;
       start.mutate({});
     }
-  }, [active, data]);
+  }, [autoStart, active, data]);
 
   const check = useMutation({
     mutationFn: ({ index, answer }: { index: number; answer: string }) =>
@@ -393,7 +678,7 @@ export function useLessonPhase({ slug, sessionId }: { slug: string; sessionId: s
   return useMutation({
     // One save at a time, in click order: the last click is the one that stays.
     scope: { id: `lesson-phase-${sessionId}` },
-    mutationFn: (phase: StandardPhase) => patchSession(slug, sessionId, { phase }),
+    mutationFn: (phase: LessonPhase) => patchSession(slug, sessionId, { phase }),
     onMutate: (phase) => {
       const previous = queryClient.getQueryData<StudySessionDto>(key)?.phase ?? null;
       queryClient.setQueryData<StudySessionDto>(key, (prev) => (prev ? { ...prev, phase } : prev));
@@ -412,10 +697,13 @@ export function useExplanation({
   slug,
   sessionId,
   active,
+  enabled = true,
 }: {
   slug: string;
   sessionId: string;
   active: boolean;
+  /** false in a sprint lesson, which has no "Rielabora". */
+  enabled?: boolean;
 }) {
   const queryClient = useQueryClient();
   const key = explanationKey(slug, sessionId);
@@ -425,6 +713,7 @@ export function useExplanation({
     queryKey: key,
     queryFn: async () =>
       readJson<ExplanationStateDto>(await fetch(url), 'Impossibile caricare la spiegazione'),
+    enabled,
     refetchInterval: (q) => {
       const status = q.state.data?.job?.status;
       return active && (status === 'queued' || status === 'running') ? 2000 : false;
@@ -443,4 +732,160 @@ export function useExplanation({
   const job = query.data?.job ?? null;
   const inFlight = job?.status === 'queued' || job?.status === 'running';
   return { query, latest, job, inFlight, submit };
+}
+
+// ---- sprint lesson data ----
+
+export const sprintKey = (slug: string, sessionId: string) => ['sprint', slug, sessionId] as const;
+
+const sprintBase = (slug: string, sessionId: string) =>
+  `/api/subjects/${slug}/sessions/${sessionId}/sprint`;
+
+async function patchItem(
+  slug: string,
+  sessionId: string,
+  itemId: string,
+  patch: UpdateSessionItemRequest,
+): Promise<SessionItemDto> {
+  const res = await fetch(`/api/subjects/${slug}/sessions/${sessionId}/items/${itemId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  return (await readJson<{ item: SessionItemDto }>(res, 'Salvataggio non riuscito')).item;
+}
+
+async function postGrade(slug: string, sessionId: string, itemId: string): Promise<SessionItemDto> {
+  const res = await fetch(`/api/subjects/${slug}/sessions/${sessionId}/items/${itemId}/grade`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  return (await readJson<{ item: SessionItemDto }>(res, 'Correzione non riuscita')).item;
+}
+
+/** Put a returned item into the cached sprint, whether it is an exercise (keeps its `retryId`) or a retry. */
+export function mergeSprintItem(prev: SprintDto, item: SessionItemDto): SprintDto {
+  return {
+    ...prev,
+    exercises: prev.exercises.map((e) => (e.id === item.id ? { ...e, ...item } : e)),
+    retries: prev.retries.map((r) => (r.id === item.id ? item : r)),
+  };
+}
+
+/**
+ * The sprint lesson: exercises, the retries to do, the theory concepts and the generation job, as the
+ * `SprintView` the components read, plus the mutations. Polls while something is being written.
+ */
+export function useSprint({
+  slug,
+  sessionId,
+  active,
+  enabled = true,
+}: {
+  slug: string;
+  sessionId: string;
+  active: boolean;
+  enabled?: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const key = sprintKey(slug, sessionId);
+  const url = sprintBase(slug, sessionId);
+
+  const query = useQuery({
+    queryKey: key,
+    enabled,
+    queryFn: async () => readJson<SprintDto>(await fetch(url), 'Impossibile caricare la lezione'),
+    refetchInterval: (q) => (shouldPollSprint(q.state.data, active) ? 2000 : false),
+  });
+  const view = query.data ? toSprintView(query.data) : undefined;
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: key });
+
+  const generateExercises = useMutation({
+    mutationFn: (opts: { model?: string; force?: boolean } = {}) =>
+      post<{ jobId: string | null }>(url, opts, 'Impossibile preparare gli esercizi'),
+    onSettled: invalidate,
+  });
+
+  const generateTheory = useMutation({
+    mutationFn: (opts: { model?: string; force?: boolean } = {}) =>
+      post<StartSprintTheoryResponse>(`${url}/theory`, opts, 'Impossibile preparare la teoria'),
+    onSettled: () => {
+      invalidate();
+      queryClient.invalidateQueries({ queryKey: lessonKey(slug, sessionId) });
+    },
+  });
+
+  // The choice shows at once and goes back if the server refuses it; the server then releases the solution.
+  const rate = useMutation({
+    mutationFn: ({ id, state }: { id: string; state: SelfAssessment }) =>
+      patchItem(slug, sessionId, id, { state }),
+    onMutate: async ({ id, state }) => {
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<SprintDto>(key);
+      queryClient.setQueryData<SprintDto>(key, (prev) =>
+        prev
+          ? { ...prev, exercises: prev.exercises.map((e) => (e.id === id ? { ...e, state } : e)) }
+          : prev,
+      );
+      return { previous };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.previous) queryClient.setQueryData(key, ctx.previous);
+    },
+    onSuccess: (item) =>
+      queryClient.setQueryData<SprintDto>(key, (p) => p && mergeSprintItem(p, item)),
+    // Rating changes which retries are shown and which concepts need a block.
+    onSettled: invalidate,
+  });
+
+  const reveal = useMutation({
+    mutationFn: ({ id }: { id: string }) =>
+      patchItem(slug, sessionId, id, { revealSolution: true }),
+    onSuccess: (item) =>
+      queryClient.setQueryData<SprintDto>(key, (p) => p && mergeSprintItem(p, item)),
+  });
+
+  const saveAnswer = useMutation({
+    mutationFn: ({ id, answer }: { id: string; answer: string }) =>
+      patchItem(slug, sessionId, id, { answer }),
+    onSuccess: (item) =>
+      queryClient.setQueryData<SprintDto>(key, (p) => p && mergeSprintItem(p, item)),
+  });
+
+  // The textarea saves on blur; the correction must see what is on screen, so save it first.
+  const grade = useMutation({
+    mutationFn: async ({ id, answer }: { id: string; answer: string }) => {
+      const current = query.data?.retries.find((r) => r.id === id);
+      if (current && answer !== (current.answer ?? ''))
+        await patchItem(slug, sessionId, id, { answer });
+      return postGrade(slug, sessionId, id);
+    },
+    onSuccess: (item) =>
+      queryClient.setQueryData<SprintDto>(key, (p) => p && mergeSprintItem(p, item)),
+    // The paid call also moved the cost.
+    onSettled: invalidate,
+  });
+
+  // Kept here, not in the steps: leaving and coming back to a phase must not ask again.
+  const askedExercises = useRef(false);
+  const askedTheory = useRef('');
+
+  const job = view?.job ?? null;
+  const inFlight =
+    job?.status === 'queued' || job?.status === 'running' || view?.theory.state === 'generating';
+  return {
+    query,
+    view,
+    generateExercises,
+    generateTheory,
+    rate,
+    reveal,
+    saveAnswer,
+    grade,
+    askedExercises,
+    askedTheory,
+    job,
+    inFlight,
+  };
 }

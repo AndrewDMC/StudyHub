@@ -83,16 +83,16 @@ async function resolveScope(
 }
 
 /**
- * How a session starts from its task: a standard `lesson` task opens the guided lesson on "Esplora"
- * (sprint lessons still open on `understand` until their own phases exist), a `verify` task a verification; free sessions and the other tasks keep the layout
- * without phases.
+ * How a session starts from its task: a standard `lesson` task opens the guided lesson on "Esplora",
+ * a sprint one on "Esercizi"; a `verify` task a verification; free sessions and the other tasks keep
+ * the layout without phases.
  */
 function sessionShape(
   task: TaskRow | null,
 ): Pick<typeof studySessions.$inferInsert, 'kind' | 'method' | 'phase'> {
   if (task?.kind === 'lesson') {
     const method = task.payload.method ?? 'standard';
-    return { kind: 'lesson', method, phase: method === 'sprint' ? 'understand' : 'explore' };
+    return { kind: 'lesson', method, phase: method === 'sprint' ? 'exercises' : 'explore' };
   }
   if (task?.kind === 'verify') return { kind: 'verify', method: 'standard', phase: null };
   return { kind: 'lesson', method: 'standard', phase: null };
@@ -184,9 +184,14 @@ export async function updateSession(
     if (row.phase === null) {
       throw new InvalidRequestError('Questa sessione non ha fasi: non nasce da una lezione.');
     }
-    // A standard lesson moves among the standard phases, a sprint among the sprint ones.
+    // A standard lesson moves among the standard phases, a sprint among the sprint ones (a sprint
+    // started before they existed is still on `understand` and may stay there).
     const allowed: readonly string[] =
-      row.method === 'sprint' ? [...SPRINT_PHASES, 'understand'] : STANDARD_PHASES;
+      row.method === 'sprint'
+        ? row.phase === 'understand'
+          ? [...SPRINT_PHASES, 'understand']
+          : SPRINT_PHASES
+        : STANDARD_PHASES;
     if (!allowed.includes(request.phase)) {
       throw new InvalidRequestError(
         row.method === 'sprint'

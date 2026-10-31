@@ -105,6 +105,10 @@ export const TaskPayloadSchema = z.object({
   topicId: z.string().uuid().nullable().optional(),
   /** Solo lezioni. */
   method: LessonMethodSchema.optional(),
+  /** Solo lezioni: i minuti della lezione con ciascun metodo (padronanza già applicata), per cambiare metodo. */
+  minutesByMethod: z
+    .object({ standard: z.number().int().positive(), sprint: z.number().int().positive() })
+    .optional(),
   /** Solo lezioni: parte `n` di `of` quando un argomento è diviso per contenuto. */
   part: z.object({ n: z.number().int().positive(), of: z.number().int().positive() }).optional(),
 });

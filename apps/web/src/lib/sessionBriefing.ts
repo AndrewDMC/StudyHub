@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import {
   chunks,
   documents,
@@ -54,8 +54,13 @@ async function requireSession(db: AnyDb, slug: string, sessionId: string): Promi
   return row as StudySession;
 }
 
+/** A sprint lesson (new phases) keeps its exercises job in `briefingJobId`: it is not a briefing. */
+function isSprintLesson(session: StudySession): boolean {
+  return session.method === 'sprint' && session.phase !== 'understand';
+}
+
 async function loadBriefingJob(db: AnyDb, session: StudySession): Promise<BriefingJobDto | null> {
-  if (!session.briefingJobId) return null;
+  if (!session.briefingJobId || isSprintLesson(session)) return null;
   const [row] = await db.select().from(jobs).where(eq(jobs.id, session.briefingJobId));
   // No row yet = still waiting in the queue: the worker creates it when it picks the job up.
   if (!row) {
@@ -71,13 +76,25 @@ async function loadBriefingJob(db: AnyDb, session: StudySession): Promise<Briefi
   };
 }
 
-function toItemDto(row: SessionItem, documentNames: Map<string, string>): SessionItemDto {
+/**
+ * A sprint exercise or retry keeps its solution hidden until the student self-assesses (any state but
+ * `open`, "non so" included), asks for it, or has an AI correction. The other items always show theirs.
+ */
+export function isSolutionVisible(row: SessionItem): boolean {
+  const sprintItem =
+    row.kind === 'retry_exercise' || (row.kind === 'exercise' && row.solutionSteps.length > 0);
+  if (!sprintItem) return true;
+  return row.solutionRevealed || row.state !== 'open' || row.feedback !== null;
+}
+
+export function toItemDto(row: SessionItem, documentNames: Map<string, string>): SessionItemDto {
+  const visible = isSolutionVisible(row);
   return {
     id: row.id,
     kind: row.kind,
     orderIndex: row.orderIndex,
     title: row.title,
-    body: row.body,
+    body: visible ? row.body : '',
     difficulty: row.difficulty,
     citations: row.citations.map((c) => ({
       docId: c.docId,
@@ -90,6 +107,10 @@ function toItemDto(row: SessionItem, documentNames: Map<string, string>): Sessio
     answer: row.answer,
     feedback: row.feedback && 'score' in row.feedback ? row.feedback : null,
     linkedBlockIds: row.linkedBlockIds,
+    concepts: row.concepts,
+    solutionSteps: visible ? row.solutionSteps : [],
+    solutionVisible: visible,
+    parentItemId: row.parentItemId,
   };
 }
 
@@ -103,8 +124,14 @@ export async function getBriefing(
   const rows: SessionItem[] = await db
     .select()
     .from(sessionItems)
-    // The student's own explanations (phase "Rielabora") have their own route and feedback shape.
-    .where(and(eq(sessionItems.sessionId, session.id), ne(sessionItems.kind, 'explanation')))
+    // The student's own explanations (phase "Rielabora") have their own route and feedback shape;
+    // the retries of a sprint lesson are served with the rest of it (`getSprint`).
+    .where(
+      and(
+        eq(sessionItems.sessionId, session.id),
+        notInArray(sessionItems.kind, ['explanation', 'retry_exercise']),
+      ),
+    )
     .orderBy(asc(sessionItems.kind), asc(sessionItems.orderIndex));
 
   const docIds = [...new Set(rows.flatMap((r) => r.citations.map((c) => c.docId)))];
@@ -144,6 +171,9 @@ export async function startBriefing(
 ): Promise<{ jobId: string }> {
   const session = await requireSession(db, slug, sessionId);
   if (session.status === 'ended') throw new ConflictError('La sessione è già terminata.');
+  if (isSprintLesson(session)) {
+    throw new ConflictError('In una lezione sprint gli esercizi si generano dalla lezione.');
+  }
   if (session.documentIds.length === 0) {
     throw new ConflictError(
       'La sessione non ha documenti: scegli un argomento o collega i documenti agli argomenti.',
@@ -230,6 +260,8 @@ export async function estimateBriefing(
 
 const KEY_POINT_STATES = new Set(['open', 'done']);
 const EXERCISE_STATES = new Set(['open', 'correct', 'wrong']);
+/** A sprint exercise can also be marked "non so da dove partire". */
+const SPRINT_EXERCISE_STATES = new Set(['open', 'correct', 'wrong', 'unknown']);
 
 /** Most characters of lesson text handed to the grader as the reference for a guide question. */
 export const GUIDE_REFERENCE_MAX_CHARS = 6000;
@@ -268,7 +300,11 @@ export async function gradeSessionItem(
     .from(sessionItems)
     .where(and(eq(sessionItems.id, itemId), eq(sessionItems.sessionId, session.id)));
   if (!item) throw new NotFoundError('Elemento');
-  if (item.kind !== 'exercise' && item.kind !== 'guide_question') {
+  if (
+    item.kind !== 'exercise' &&
+    item.kind !== 'guide_question' &&
+    item.kind !== 'retry_exercise'
+  ) {
     throw new ConflictError('Si correggono solo gli esercizi e le domande guida.');
   }
   const answer = (item.answer ?? '').trim();
@@ -365,7 +401,12 @@ export async function updateSessionItem(
   if (!item) throw new NotFoundError('Elemento');
 
   if (request.state !== undefined) {
-    const allowed = item.kind === 'key_point' ? KEY_POINT_STATES : EXERCISE_STATES;
+    const allowed =
+      item.kind === 'key_point'
+        ? KEY_POINT_STATES
+        : item.kind === 'exercise' && session.method === 'sprint'
+          ? SPRINT_EXERCISE_STATES
+          : EXERCISE_STATES;
     if (!allowed.has(request.state)) {
       throw new ConflictError(
         item.kind === 'key_point'
@@ -374,10 +415,18 @@ export async function updateSessionItem(
       );
     }
   }
+  if (request.revealSolution !== undefined && !isSprintItem(item)) {
+    throw new ConflictError('La soluzione si mostra solo negli esercizi di una lezione sprint.');
+  }
   if (item.kind === 'explanation') {
     throw new ConflictError('La spiegazione si invia dalla fase Rielabora.');
   }
-  if (request.answer !== undefined && item.kind !== 'exercise' && item.kind !== 'guide_question') {
+  if (
+    request.answer !== undefined &&
+    item.kind !== 'exercise' &&
+    item.kind !== 'guide_question' &&
+    item.kind !== 'retry_exercise'
+  ) {
     throw new ConflictError('Solo gli esercizi e le domande guida hanno una risposta.');
   }
 
@@ -386,6 +435,7 @@ export async function updateSessionItem(
     .set({
       ...(request.state !== undefined ? { state: request.state } : {}),
       ...(request.answer !== undefined ? { answer: request.answer } : {}),
+      ...(request.revealSolution ? { solutionRevealed: true } : {}),
       // A correction belongs to the answer it graded: a changed answer must be corrected again.
       ...(request.answer !== undefined && request.answer !== item.answer ? { feedback: null } : {}),
     })
@@ -393,6 +443,13 @@ export async function updateSessionItem(
     .returning();
 
   return toItemDto(updated, await citationNames(db, updated));
+}
+
+/** A sprint exercise (it has a step-by-step solution) or a retry. */
+function isSprintItem(item: SessionItem): boolean {
+  return (
+    item.kind === 'retry_exercise' || (item.kind === 'exercise' && item.solutionSteps.length > 0)
+  );
 }
 
 async function citationNames(db: AnyDb, item: SessionItem): Promise<Map<string, string>> {

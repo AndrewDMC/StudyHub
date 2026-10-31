@@ -202,17 +202,23 @@ export const EstimateBriefingResponseSchema = z.object({
 });
 export type EstimateBriefingResponse = z.infer<typeof EstimateBriefingResponseSchema>;
 
-/** Stato di un punto chiave (`open`/`done`) o di un esercizio (`open`/`correct`/`wrong`, autovalutato). */
-export const SessionItemStateSchema = z.enum(['open', 'done', 'correct', 'wrong']);
+/**
+ * Stato di un punto chiave (`open`/`done`) o di un esercizio (`open`/`correct`/`wrong`, autovalutato);
+ * negli esercizi di una lezione sprint anche `unknown` ("non so da dove partire").
+ */
+export const SessionItemStateSchema = z.enum(['open', 'done', 'correct', 'wrong', 'unknown']);
 
 export const UpdateSessionItemRequestSchema = z
   .object({
     state: SessionItemStateSchema.optional(),
     answer: z.string().max(8000).nullable().optional(),
+    /** Esercizi di una lezione sprint: "Mostra soluzione" prima di autovalutarsi. */
+    revealSolution: z.literal(true).optional(),
   })
-  .refine((v) => v.state !== undefined || v.answer !== undefined, {
-    message: 'Niente da aggiornare',
-  });
+  .refine(
+    (v) => v.state !== undefined || v.answer !== undefined || v.revealSolution !== undefined,
+    { message: 'Niente da aggiornare' },
+  );
 export type UpdateSessionItemRequest = z.infer<typeof UpdateSessionItemRequestSchema>;
 
 export const SessionItemCitationDtoSchema = z.object({
@@ -238,14 +244,26 @@ export const GradeSessionItemRequestSchema = z.object({
 });
 export type GradeSessionItemRequest = z.infer<typeof GradeSessionItemRequestSchema>;
 
-/** `guide_question`: a cosa risponde la lezione (Esplora); `explanation`: la spiegazione dello studente (Rielabora). */
+/**
+ * `guide_question`: a cosa risponde la lezione (Esplora); `explanation`: la spiegazione dello studente
+ * (Rielabora); `retry_exercise`: l'esercizio simile che una lezione sprint ripropone (Riprova).
+ */
 export const SessionItemKindSchema = z.enum([
   'key_point',
   'exercise',
   'guide_question',
   'explanation',
+  'retry_exercise',
 ]);
 export type SessionItemKind = z.infer<typeof SessionItemKindSchema>;
+
+/** Un passaggio di una soluzione (esercizi sprint). */
+export const SolutionStepSchema = z.object({
+  text: z.string(),
+  /** Formula del passaggio (LaTeX), se c'è. */
+  formula: z.string().optional(),
+});
+export type SolutionStep = z.infer<typeof SolutionStepSchema>;
 
 export const SessionItemDtoSchema = z.object({
   id: z.string().uuid(),
@@ -263,6 +281,17 @@ export const SessionItemDtoSchema = z.object({
   feedback: SessionItemFeedbackDtoSchema.nullable(),
   /** Esercizi sprint: i blocchi di teoria che servono a risolverli. */
   linkedBlockIds: z.array(z.string().uuid()).default([]),
+  /** Esercizi sprint: i titoli dei concetti di teoria che servono (1-3). */
+  concepts: z.array(z.string()).default([]),
+  /** Esercizi sprint e riprove: la soluzione a passaggi (vuota finché `solutionVisible` è false). */
+  solutionSteps: z.array(SolutionStepSchema).default([]),
+  /**
+   * Esercizi sprint e riprove: false finché lo studente non si autovaluta o chiede "Mostra soluzione";
+   * allora `body` e `solutionSteps` sono vuoti. Sempre true per gli altri item.
+   */
+  solutionVisible: z.boolean().default(true),
+  /** Riprove: l'esercizio che ripropongono. */
+  parentItemId: z.string().uuid().nullable().default(null),
 });
 export type SessionItemDto = z.infer<typeof SessionItemDtoSchema>;
 
@@ -388,6 +417,11 @@ export const GenerateLessonBlockJobInputSchema = z.object({
   hint: LessonHintSchema.optional(),
   model: z.string().optional(),
   force: z.boolean().default(false),
+  /**
+   * Lezione sprint: il blocco spiega solo `concept`, per l'esercizio `exercise` (il suo testo); è più
+   * corto e non ha domande guida. Assente = blocco di una lezione standard.
+   */
+  focus: z.object({ concept: z.string().min(1), exercise: z.string() }).optional(),
 });
 export type GenerateLessonBlockJobInput = z.infer<typeof GenerateLessonBlockJobInputSchema>;
 
@@ -445,3 +479,97 @@ export const ExplainFeedbackJobInputSchema = z.object({
   force: z.boolean().default(false),
 });
 export type ExplainFeedbackJobInput = z.infer<typeof ExplainFeedbackJobInputSchema>;
+
+// ---- Lezione sprint: esercizi, teoria, riprova, ricorda (docs/10-planner-lezioni.md §3.3) ----
+
+export const GenerateSprintExercisesJobInputSchema = z.object({
+  subjectId: z.string().uuid(),
+  sessionId: z.string().uuid(),
+  model: z.string().optional(),
+  /** Bypasses the daily budget cap once, with an explicit ack. */
+  force: z.boolean().default(false),
+});
+export type GenerateSprintExercisesJobInput = z.infer<typeof GenerateSprintExercisesJobInputSchema>;
+
+/** Body di `POST .../sprint`: la generazione dei 3 esercizi (un solo costo, visibile). */
+export const StartSprintRequestSchema = z.object({
+  model: z.string().min(1).max(100).optional(),
+  force: z.boolean().default(false),
+});
+export type StartSprintRequest = z.infer<typeof StartSprintRequestSchema>;
+
+/** Body di `POST .../sprint/theory`: i blocchi dei concetti degli esercizi sbagliati. */
+export const StartSprintTheoryRequestSchema = z.object({
+  model: z.string().min(1).max(100).optional(),
+  force: z.boolean().default(false),
+});
+export type StartSprintTheoryRequest = z.infer<typeof StartSprintTheoryRequestSchema>;
+
+/**
+ * Un concetto di teoria da rivedere. `blockId` è null finché il blocco non è pronto;
+ * `exerciseIds` sono gli esercizi sbagliati (o "non so") che lo richiedono.
+ */
+export const SprintConceptDtoSchema = z.object({
+  title: z.string(),
+  exerciseIds: z.array(z.string().uuid()),
+  blockId: z.string().uuid().nullable(),
+});
+export type SprintConceptDto = z.infer<typeof SprintConceptDtoSchema>;
+
+/**
+ * `idle` = i blocchi non sono ancora stati richiesti (o non c'è nulla di segnato); `generating`;
+ * `ready` = tutti i blocchi dei concetti ci sono; `failed` = l'ultimo job è fallito;
+ * `empty` = ogni esercizio è giusto: "Nessuna teoria da rivedere".
+ */
+export const SprintTheoryStateSchema = z.enum(['idle', 'generating', 'ready', 'failed', 'empty']);
+export type SprintTheoryState = z.infer<typeof SprintTheoryStateSchema>;
+
+export const SprintExerciseDtoSchema = SessionItemDtoSchema.extend({
+  /** La riprova di questo esercizio, se è già stata generata. */
+  retryId: z.string().uuid().nullable(),
+});
+export type SprintExerciseDto = z.infer<typeof SprintExerciseDtoSchema>;
+
+export const SprintDtoSchema = z.object({
+  /** I 3 esercizi (vuoto finché non sono generati), in ordine. */
+  exercises: z.array(SprintExerciseDtoSchema),
+  /**
+   * Le riprove da fare: quelle degli esercizi sbagliati o "non so"; se nessuno lo è, solo quella del
+   * primo esercizio. Ognuna ha `parentItemId`.
+   */
+  retries: z.array(SessionItemDtoSchema),
+  theory: z.object({
+    state: SprintTheoryStateSchema,
+    /** Concetti degli esercizi sbagliati o "non so", deduplicati, nell'ordine degli esercizi. */
+    concepts: z.array(SprintConceptDtoSchema),
+    error: z.string().nullable(),
+  }),
+  /** L'ultimo job di generazione degli esercizi, per "in preparazione" o l'errore con "riprova". */
+  job: z
+    .object({
+      id: z.string().uuid(),
+      status: z.enum(['queued', 'running', 'succeeded', 'failed', 'cancelled']),
+      error: z.string().nullable(),
+    })
+    .nullable(),
+  /** Costo cumulativo di esercizi, blocchi di teoria e correzioni di questa lezione. */
+  costEur: z.number(),
+});
+export type SprintDto = z.infer<typeof SprintDtoSchema>;
+
+/** Risposta di `POST .../sprint/theory`: i job accodati (vuoto = nulla da fare, idempotente). */
+export const StartSprintTheoryResponseSchema = z.object({
+  jobIds: z.array(z.string().uuid()),
+  /** Quanti blocchi di teoria ha la lezione in tutto, dopo la richiesta. */
+  blockCount: z.number().int().min(0),
+});
+export type StartSprintTheoryResponse = z.infer<typeof StartSprintTheoryResponseSchema>;
+
+/** Per confrontare i concetti: minuscole, spazi compressi, senza punteggiatura finale. */
+export function normalizeConcept(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[\s.,;:!?]+$/u, '')
+    .trim();
+}

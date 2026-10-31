@@ -10,6 +10,14 @@ import {
   type StepStatus,
 } from '@/lib/lessonClient';
 
+/** Tailwind needs the whole class name: one constant per number of phases. */
+const GRID_COLUMNS: Record<number, string> = {
+  4: 'grid-cols-[repeat(4,minmax(7.5rem,1fr))] md:grid-cols-[repeat(4,minmax(9.5rem,1fr))]',
+  5: 'grid-cols-[repeat(5,minmax(7.5rem,1fr))] md:grid-cols-[repeat(5,minmax(9.5rem,1fr))]',
+};
+
+export type StepperPhase<P extends string = StandardPhase> = { id: P; label: string; sub: string };
+
 const STATUS_TEXT: Record<StepStatus, string> = {
   done: ', fatta',
   current: ', fase corrente',
@@ -17,17 +25,25 @@ const STATUS_TEXT: Record<StepStatus, string> = {
 };
 
 /**
- * The five phases of the lesson. Navigation is free: every step can be opened at any time (nothing is
- * locked), Left/Right/Home/End only move the focus and Enter or Space opens the step.
+ * The phases of the lesson (the five standard ones, or the four of a sprint lesson via `phases` and
+ * `statusOf`). Navigation is free: every step can be opened at any time (nothing is locked),
+ * Left/Right/Home/End only move the focus and Enter or Space opens the step.
  */
-export function PhaseStepper({
+export function PhaseStepper<P extends string = StandardPhase>({
   current,
   progress,
+  phases = LESSON_PHASES as unknown as StepperPhase<P>[],
+  statusOf,
+  ariaLabel = 'Fasi della lezione',
   onSelect,
 }: {
-  current: StandardPhase;
-  progress: PhaseProgress;
-  onSelect: (phase: StandardPhase) => void;
+  current: P;
+  /** Standard lesson: how far the student went (ignored when `statusOf` is given). */
+  progress?: PhaseProgress;
+  phases?: StepperPhase<P>[];
+  statusOf?: (phase: P) => StepStatus;
+  ariaLabel?: string;
+  onSelect: (phase: P) => void;
 }) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const first = useRef(true);
@@ -38,7 +54,7 @@ export function PhaseStepper({
       first.current = false;
       return;
     }
-    const el = refs.current[LESSON_PHASES.findIndex((p) => p.id === current)];
+    const el = refs.current[phases.findIndex((p) => p.id === current)];
     const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     el?.scrollIntoView?.({
       inline: 'center',
@@ -48,7 +64,7 @@ export function PhaseStepper({
   }, [current]);
 
   function onKeyDown(e: KeyboardEvent, index: number) {
-    const last = LESSON_PHASES.length - 1;
+    const last = phases.length - 1;
     const next =
       e.key === 'ArrowRight'
         ? Math.min(index + 1, last)
@@ -65,10 +81,18 @@ export function PhaseStepper({
   }
 
   return (
-    <nav aria-label="Fasi della lezione">
-      <ol className="grid grid-cols-[repeat(5,minmax(7.5rem,1fr))] gap-2 overflow-x-auto md:grid-cols-[repeat(5,minmax(9.5rem,1fr))]">
-        {LESSON_PHASES.map((phase, i) => {
-          const status = stepStatus(phase.id, current, progress);
+    <nav aria-label={ariaLabel}>
+      <ol
+        className={cn('grid gap-2 overflow-x-auto', GRID_COLUMNS[phases.length] ?? GRID_COLUMNS[5])}
+      >
+        {phases.map((phase, i) => {
+          const status = statusOf
+            ? statusOf(phase.id)
+            : stepStatus(
+                phase.id as unknown as StandardPhase,
+                current as unknown as StandardPhase,
+                progress!,
+              );
           return (
             <li key={phase.id} className="min-w-0">
               <button

@@ -141,13 +141,13 @@ describe('guided lesson', () => {
   }
 
   describe('startSession', () => {
-    it('a lesson task opens a lesson with its method and the understand phase', async () => {
+    it('a lesson task opens a lesson with its method and its first phase', async () => {
       const taskId = await addTask({ payload: { action: 'lesson', method: 'sprint' } });
       const session = await startSession(db, slug, { taskId });
       expect(session).toMatchObject({
         kind: 'lesson',
         method: 'sprint',
-        phase: 'understand',
+        phase: 'exercises',
         blockIndex: 0,
       });
     });

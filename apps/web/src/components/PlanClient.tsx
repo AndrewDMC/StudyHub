@@ -15,6 +15,15 @@ import type {
   TopicDto,
 } from '@studyhub/contracts';
 import { useIsMobile } from '@/lib/useIsMobile';
+import {
+  canSwitchMethod,
+  lessonMetaLabel,
+  runMethodSwitch,
+  otherMethod,
+  switchMethodLabel,
+  taskMethod,
+  type LessonMethodChoice,
+} from '@/lib/taskMethod';
 import { PlanChangeBox } from './PlanChangeBox';
 import { PlanMobile } from './plan-mobile/PlanMobile';
 import { TaskFlashcardsPanel } from './task-flashcards/TaskFlashcardsSection';
@@ -550,6 +559,7 @@ function TaskRow({
   onPin,
   onDelete,
   onStatus,
+  onMethod,
 }: {
   slug: string;
   task: TaskDto;
@@ -557,8 +567,24 @@ function TaskRow({
   onPin: (id: string, pinned: boolean) => void;
   onDelete: (id: string) => void;
   onStatus: (id: string, status: 'done' | 'skipped' | 'todo') => void;
+  /** Switches a lesson between standard and sprint; resolves with the updated task. */
+  onMethod: (id: string, method: LessonMethodChoice) => Promise<TaskDto>;
 }) {
   const [cardsOpen, setCardsOpen] = useState(false);
+  const [switching, setSwitching] = useState(false);
+  const [methodError, setMethodError] = useState<string | null>(null);
+  const [methodNote, setMethodNote] = useState('');
+  const method = taskMethod(task);
+  const switchable = canSwitchMethod(task);
+  async function switchMethod() {
+    const next = otherMethod(method);
+    setSwitching(true);
+    setMethodError(null);
+    const result = await runMethodSwitch(() => onMethod(task.id, next), next);
+    setMethodNote(result.note);
+    setMethodError(result.error);
+    setSwitching(false);
+  }
   const hasCards = task.kind !== 'rest';
   const pill =
     'rounded-full border border-border px-2 py-0.5 text-xs text-fg-secondary hover:text-fg-primary max-md:min-h-11';
@@ -567,7 +593,10 @@ function TaskRow({
       <div className="min-w-0 flex-1 basis-56">
         <div className="flex items-center gap-2">
           <p className="text-xs uppercase tracking-wide text-fg-muted">
-            {KIND_LABELS[task.kind]} · {task.minutes} min{task.pinned ? ' · fissata' : ''}
+            {task.kind === 'lesson'
+              ? lessonMetaLabel(task)
+              : `${KIND_LABELS[task.kind]} · ${task.minutes} min`}
+            {task.pinned ? ' · fissata' : ''}
           </p>
           {hasCards && task.flashcardCount > 0 && (
             <button
@@ -596,6 +625,18 @@ function TaskRow({
             className="rounded-[var(--radius-control)] border border-border px-2 py-1 text-[11px] text-fg-secondary hover:text-fg-primary"
           >
             Flashcard{task.flashcardCount > 0 ? ` (${task.flashcardCount})` : ''}
+          </button>
+        )}
+        {switchable && (
+          <button
+            type="button"
+            disabled={switching}
+            aria-busy={switching}
+            aria-label={`${switchMethodLabel(method)}: ${task.title}`}
+            onClick={() => void switchMethod()}
+            className="rounded-[var(--radius-control)] border border-border px-2 py-1 text-[11px] text-fg-secondary hover:text-fg-primary"
+          >
+            {switching ? 'Cambio…' : switchMethodLabel(method)}
           </button>
         )}
         {isDraft ? (
@@ -648,6 +689,16 @@ function TaskRow({
           </>
         )}
       </div>
+      {task.kind === 'lesson' && (
+        <p role="status" aria-live="polite" className="sr-only">
+          {methodNote}
+        </p>
+      )}
+      {methodError && (
+        <p role="alert" className="basis-full text-xs text-danger">
+          {methodError}
+        </p>
+      )}
       {hasCards && (
         <Dialog open={cardsOpen} onOpenChange={setCardsOpen}>
           <DialogContent className="max-w-xl">
@@ -750,6 +801,12 @@ function PlanDesktop({ slug }: { slug: string }) {
   });
   const removeTask = useMutation({
     mutationFn: (id: string) => send(`/api/subjects/${slug}/plan/tasks/${id}`, 'DELETE'),
+    onSuccess: invalidatePlan,
+  });
+  // Not optimistic: the server sets the minutes of the new method, the row shows what comes back.
+  const setMethod = useMutation({
+    mutationFn: async ({ id, method }: { id: string; method: LessonMethodChoice }) =>
+      (await send(`/api/subjects/${slug}/plan/tasks/${id}`, 'PATCH', { method })).task as TaskDto,
     onSuccess: invalidatePlan,
   });
   const setStatus = useMutation({
@@ -958,6 +1015,7 @@ function PlanDesktop({ slug }: { slug: string }) {
                         onPin={(id, pinned) => pin.mutate({ id, pinned })}
                         onDelete={(id) => removeTask.mutate(id)}
                         onStatus={(id, status) => setStatus.mutate({ id, status })}
+                        onMethod={(id, method) => setMethod.mutateAsync({ id, method })}
                       />
                     ))}
                   </ul>
