@@ -11,8 +11,27 @@ import type {
   TopicDto,
   TopicTrendDto,
 } from '@studyhub/contracts';
+import { PASS_RATIO } from '@studyhub/core/browser';
 import { formatRecurringTopic } from '@/lib/format';
 import { ModelPicker, MODEL_OPTIONS } from './ModelPicker';
+import { ProgressBar } from './subject-tabs/ProgressBar';
+import { StatusBadge } from './subject-tabs/StatusBadge';
+import { TabCard } from './subject-tabs/TabCard';
+import { TabEmptyState } from './subject-tabs/TabEmptyState';
+import { TabSection } from './subject-tabs/TabSection';
+import { TabError, TabLoading } from './subject-tabs/TabState';
+import {
+  BTN_GHOST,
+  BTN_PRIMARY,
+  BTN_SECONDARY,
+  CARD_BOX,
+  DIVIDED,
+  FOCUS,
+  INPUT,
+  SECTION_TITLE,
+  TAB_STACK,
+  TEXTAREA,
+} from './subject-tabs/styles';
 
 export async function getJson<T>(url: string, key: string): Promise<T> {
   const res = await fetch(url);
@@ -128,46 +147,42 @@ function ProfileEditor({
     key: 'itemCount' | 'durationMin' | 'totalPoints' | 'avgMinutesPerItem',
     label: string,
   ) => (
-    <label className="flex items-center justify-between gap-2 text-xs text-fg-secondary">
+    <label className="flex items-center justify-between gap-3 text-[13px] text-fg-secondary">
       {label}
       <input
         type="number"
         min={1}
         value={draft[key]}
         onChange={(e) => setDraft({ ...draft, [key]: Number(e.target.value) })}
-        className="w-20 rounded-[var(--radius-control)] border border-border bg-bg-inset px-2 py-0.5 text-right font-mono text-xs text-fg-primary"
+        className={`${INPUT} w-24 text-right font-mono`}
       />
     </label>
   );
   return (
-    <div className="space-y-1.5">
+    <div className="flex flex-col gap-3">
       {num('itemCount', 'Esercizi')}
       {num('durationMin', 'Durata (min)')}
       {num('totalPoints', 'Punti totali')}
       {num('avgMinutesPerItem', 'Min per esercizio')}
-      <label className="flex flex-col gap-1 text-xs text-fg-secondary">
+      <label className="flex flex-col gap-1.5 text-[13px] text-fg-secondary">
         Note
         <textarea
           value={draft.notes}
           onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
           rows={2}
-          className="rounded-[var(--radius-control)] border border-border bg-bg-inset px-2 py-1 text-xs text-fg-primary"
+          className={`${TEXTAREA} text-[13px]`}
         />
       </label>
-      <div className="flex gap-2 pt-1">
+      <div className="flex gap-2">
         <button
           type="button"
           onClick={() => save.mutate()}
           disabled={save.isPending}
-          className="rounded-[var(--radius-control)] bg-accent px-2.5 py-1 text-xs font-medium text-white hover:bg-accent-hover"
+          className={BTN_PRIMARY}
         >
           Salva
         </button>
-        <button
-          type="button"
-          onClick={onDone}
-          className="text-xs text-fg-muted hover:text-fg-secondary"
-        >
+        <button type="button" onClick={onDone} className={BTN_GHOST}>
           Annulla
         </button>
       </div>
@@ -176,6 +191,56 @@ function ProfileEditor({
           {(save.error as Error).message}
         </p>
       )}
+    </div>
+  );
+}
+
+const shortDate = (iso: string) =>
+  new Date(iso).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+
+/** Vertical bars of the last graded simulations, with the pass line. */
+function ScoreChart({ sims }: { sims: SimulationSummaryDto[] }) {
+  const graded = sims
+    .filter((s) => s.lastScoreRatio !== null)
+    .sort((a, b) => (a.lastGradedAt ?? '').localeCompare(b.lastGradedAt ?? ''))
+    .slice(-6);
+  if (graded.length === 0)
+    return <p className="text-sm text-fg-secondary">Nessuna simulazione corretta ancora.</p>;
+  const summary = graded.map((s) => `${Math.round(s.lastScoreRatio! * 100)}%`).join(', ');
+  const passPct = Math.round(PASS_RATIO * 100);
+  return (
+    <div className="flex flex-col gap-2">
+      <div role="img" aria-label={`Voti: ${summary}`} className="relative">
+        <div className="flex h-[120px] items-end gap-3">
+          {graded.map((s) => {
+            const ratio = s.lastScoreRatio!;
+            return (
+              <div key={s.id} className="flex min-w-0 flex-1 flex-col items-center justify-end">
+                <span className="font-mono text-xs tabular-nums text-fg-primary">
+                  {Math.round(ratio * 100)}%
+                </span>
+                <span
+                  className={`mt-1 w-full rounded ${ratio >= PASS_RATIO ? 'bg-ok' : 'bg-warn'}`}
+                  style={{ height: `${Math.max(2, ratio * 80)}px` }}
+                />
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-1 flex gap-3">
+          {graded.map((s) => (
+            <span key={s.id} className="flex-1 text-center text-xs text-fg-secondary">
+              {s.lastGradedAt ? shortDate(s.lastGradedAt) : '—'}
+            </span>
+          ))}
+        </div>
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 border-t border-dashed border-border-strong"
+          style={{ bottom: `${(passPct / 100) * 80 + 20}px` }}
+        />
+      </div>
+      <p className="text-xs text-fg-secondary">Sufficienza {passPct}%</p>
     </div>
   );
 }
@@ -256,174 +321,234 @@ export function ExamPrepPanel({
     ? formatCost(estimateQuery.data.perKind.simulation!.costEur)
     : null;
 
-  return (
-    <div className="rounded-[var(--radius-card)] border border-border bg-bg-surface p-3">
-      <h2 className="mb-2 px-1 text-xs font-medium uppercase tracking-wide text-fg-muted">
-        Simulazioni d&apos;esame
-      </h2>
+  const sims = simsQuery.data ?? [];
+  const topicName = (id: string | null) =>
+    id ? (topicsQuery.data ?? []).find((t) => t.id === id)?.name : undefined;
 
-      <div className="space-y-2 px-1 text-xs">
-        {profileQuery.isLoading && <p className="text-fg-muted">Caricamento…</p>}
-        {profileQuery.isError && (
-          <p role="alert" className="text-danger">
-            {(profileQuery.error as Error).message}
-          </p>
-        )}
-        {profileQuery.isSuccess && !profile && (
-          <p className="text-fg-muted">
-            Nessun profilo d&apos;esame. Carica gli esami passati come tipo &quot;Esami&quot;, poi
-            estrai il profilo.
-          </p>
-        )}
-        {profile && !editing && (
-          <div className="space-y-1 text-fg-secondary">
-            <p className="font-mono tabular-nums">
-              {profile.profile.itemCount} esercizi · {profile.profile.durationMin} min ·{' '}
-              {profile.profile.totalPoints} pt
+  return (
+    <div className={TAB_STACK}>
+      <div className="grid grid-cols-1 gap-5 @2xl/tab:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <TabCard label="Simulazioni d'esame" labelId="sim-card-title">
+          {profileQuery.isLoading && <TabLoading rows={2} />}
+          {profileQuery.isError && (
+            <TabError
+              message={(profileQuery.error as Error).message}
+              onRetry={() => profileQuery.refetch()}
+            />
+          )}
+          {profileQuery.isSuccess && !profile && (
+            <p className="text-sm text-fg-secondary">
+              Nessun profilo d&apos;esame. Carica gli esami passati come tipo &quot;Esami&quot;, poi
+              estrai il profilo.
             </p>
-            <p>
-              {Object.entries(profile.profile.kindDistribution)
-                .filter(([, v]) => (v ?? 0) > 0)
-                .map(
-                  ([k, v]) =>
-                    `${Math.round((v ?? 0) * 100)}% ${KIND_LABELS[k as keyof typeof KIND_LABELS]}`,
-                )
-                .join(' · ')}
-            </p>
-            {profile.profile.recurringTopics.length > 0 && (
-              <p className="text-fg-muted">
-                Ricorrenti: {profile.profile.recurringTopics.map(formatRecurringTopic).join(', ')}
+          )}
+          {profile && !editing && (
+            <div className="flex flex-col gap-2">
+              <p className="font-mono text-2xl font-semibold tracking-[-0.02em] tabular-nums text-fg-primary">
+                {profile.profile.itemCount} esercizi · {profile.profile.durationMin} min ·{' '}
+                {profile.profile.totalPoints} pt
               </p>
-            )}
-            {profile.edited && <p className="text-[11px] text-info">Modificato a mano</p>}
+              <p className="text-sm text-fg-secondary">
+                {Object.entries(profile.profile.kindDistribution)
+                  .filter(([, v]) => (v ?? 0) > 0)
+                  .map(
+                    ([k, v]) =>
+                      `${Math.round((v ?? 0) * 100)}% ${KIND_LABELS[k as keyof typeof KIND_LABELS]}`,
+                  )
+                  .join(' · ')}
+              </p>
+              {profile.profile.recurringTopics.length > 0 && (
+                <p className="text-sm text-fg-secondary">
+                  Ricorrenti: {profile.profile.recurringTopics.map(formatRecurringTopic).join(', ')}
+                </p>
+              )}
+              {profile.edited && (
+                <div>
+                  <StatusBadge tone="info">Modificato a mano</StatusBadge>
+                </div>
+              )}
+              <div>
+                <button type="button" onClick={() => setEditing(true)} className={BTN_GHOST}>
+                  Modifica profilo
+                </button>
+              </div>
+            </div>
+          )}
+          {profile && editing && (
+            <ProfileEditor slug={subjectSlug} profile={profile} onDone={() => setEditing(false)} />
+          )}
+
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => setEditing(true)}
-              className="text-fg-muted underline hover:text-fg-secondary"
+              onClick={() => extract.mutate()}
+              disabled={extract.isPending}
+              className={BTN_SECONDARY}
             >
-              Modifica profilo
+              {profile ? 'Ri-estrai profilo' : 'Estrai profilo'}
+            </button>
+            <button
+              type="button"
+              onClick={() => generate.mutate({ mode: 'esame_completo' })}
+              disabled={!profile || generate.isPending}
+              className={`${BTN_PRIMARY} h-11`}
+            >
+              Simula esame{!drillTopic && costLabel && ` · ${costLabel}`}
             </button>
           </div>
-        )}
-        {profile && editing && (
-          <ProfileEditor slug={subjectSlug} profile={profile} onDone={() => setEditing(false)} />
-        )}
 
-        <ModelPicker
-          value={model}
-          onChange={setModel}
-          disabled={generate.isPending}
-          defaultId={MODEL_OPTIONS[2].id}
-        />
+          <div className="grid gap-3 border-t border-border pt-4 @lg/tab:grid-cols-2">
+            <ModelPicker
+              value={model}
+              onChange={setModel}
+              disabled={generate.isPending}
+              defaultId={MODEL_OPTIONS[2].id}
+            />
+            <div className="flex gap-2">
+              <select
+                value={drillTopic}
+                onChange={(e) => setDrillTopic(e.target.value)}
+                className={`${INPUT} min-w-0 flex-1 text-[13px]`}
+                aria-label="Argomento del drill"
+              >
+                <option value="">Drill su argomento…</option>
+                {(topicsQuery.data ?? []).map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => generate.mutate({ mode: 'drill_argomento', topicId: drillTopic })}
+                disabled={!drillTopic || generate.isPending}
+                className={BTN_SECONDARY}
+              >
+                Drill{drillTopic && costLabel && ` · ${costLabel}`}
+              </button>
+            </div>
+            <label className="col-span-full flex items-start gap-2 text-[13px] text-fg-secondary">
+              <input
+                type="checkbox"
+                checked={useImages}
+                onChange={(e) => setUseImages(e.target.checked)}
+                className={`mt-0.5 ${FOCUS}`}
+              />
+              Usa anche le pagine degli esami come immagini (figure e grafici; costa di più)
+            </label>
+          </div>
 
-        <label className="flex items-center gap-1.5 text-[11px] text-fg-muted">
-          <input
-            type="checkbox"
-            checked={useImages}
-            onChange={(e) => setUseImages(e.target.checked)}
-          />
-          Usa anche le pagine degli esami come immagini (figure e grafici; costa di più)
-        </label>
+          {(extract.isSuccess || generate.isSuccess) && !error && (
+            <p role="status" className="text-xs text-ok">
+              Job avviato — la lista si aggiorna a breve.
+            </p>
+          )}
+          {error && (
+            <p role="alert" className="text-sm text-danger">
+              {(error as Error).message}
+            </p>
+          )}
+        </TabCard>
 
-        <div className="flex flex-wrap gap-2 pt-1">
-          <button
-            type="button"
-            onClick={() => extract.mutate()}
-            disabled={extract.isPending}
-            className="rounded-[var(--radius-control)] border border-border px-2.5 py-1 text-xs text-fg-secondary hover:text-fg-primary"
-          >
-            {profile ? 'Ri-estrai profilo' : 'Estrai profilo'}
-          </button>
-          <button
-            type="button"
-            onClick={() => generate.mutate({ mode: 'esame_completo' })}
-            disabled={!profile || generate.isPending}
-            className="rounded-[var(--radius-control)] bg-accent px-2.5 py-1 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
-          >
-            Simula esame{!drillTopic && costLabel && ` · ${costLabel}`}
-          </button>
-        </div>
-
-        <div className="flex gap-1.5">
-          <select
-            value={drillTopic}
-            onChange={(e) => setDrillTopic(e.target.value)}
-            className="min-w-0 flex-1 rounded-[var(--radius-control)] border border-border bg-bg-inset px-2 py-1 text-xs text-fg-primary"
-            aria-label="Argomento del drill"
-          >
-            <option value="">Drill su argomento…</option>
-            {(topicsQuery.data ?? []).map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() => generate.mutate({ mode: 'drill_argomento', topicId: drillTopic })}
-            disabled={!drillTopic || generate.isPending}
-            className="rounded-[var(--radius-control)] border border-border px-2.5 py-1 text-xs text-fg-secondary hover:text-fg-primary disabled:opacity-50"
-          >
-            Drill{drillTopic && costLabel && ` · ${costLabel}`}
-          </button>
-        </div>
-
-        {(extract.isSuccess || generate.isSuccess) && !error && (
-          <p className="text-[11px] text-ok">Job avviato — la lista si aggiorna a breve.</p>
-        )}
-        {error && (
-          <p role="alert" className="text-danger">
-            {(error as Error).message}
-          </p>
-        )}
+        <TabCard label="Andamento" aria-label="Voti delle simulazioni">
+          <ScoreChart sims={sims} />
+        </TabCard>
       </div>
+
+      <TabSection title="Simulazioni" {...(simsQuery.isSuccess ? { count: sims.length } : {})}>
+        {simsQuery.isLoading && <TabLoading rows={3} />}
+        {simsQuery.isError && (
+          <TabError
+            message={(simsQuery.error as Error).message}
+            onRetry={() => simsQuery.refetch()}
+          />
+        )}
+        {simsQuery.isSuccess && sims.length === 0 && (
+          <TabEmptyState
+            title="Nessuna simulazione ancora."
+            text="Estrai il profilo e genera la prima simulazione."
+          />
+        )}
+        {sims.length > 0 && (
+          <ul className={`${CARD_BOX} ${DIVIDED}`}>
+            {sims.map((sim) => {
+              const simHref = `/materie/${subjectSlug}/simulations/${sim.id}`;
+              const name = topicName(sim.topicId);
+              const kind =
+                sim.mode === 'drill_argomento'
+                  ? name
+                    ? `Drill: ${name}`
+                    : 'Drill'
+                  : 'Esame completo';
+              return (
+                <li
+                  key={sim.id}
+                  className="flex flex-col gap-3 px-5 py-3.5 @3xl/tab:grid @3xl/tab:grid-cols-[minmax(0,1.6fr)_minmax(140px,1fr)_auto] @3xl/tab:items-center @3xl/tab:gap-4"
+                >
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <Link
+                      href={simHref}
+                      className={`truncate text-sm font-medium text-fg-primary hover:underline ${FOCUS}`}
+                    >
+                      {sim.title}
+                    </Link>
+                    <span className="truncate text-xs text-fg-secondary">
+                      {kind} · {sim.itemCount} esercizi · {sim.timeBudgetMin} min
+                    </span>
+                  </div>
+                  {sim.lastScoreRatio === null ? (
+                    <span className="font-mono text-xs tabular-nums text-fg-secondary">
+                      {sim.timeBudgetMin} min
+                    </span>
+                  ) : (
+                    <div className="flex flex-col gap-1.5">
+                      <ProgressBar
+                        ratio={sim.lastScoreRatio}
+                        tone={sim.lastScoreRatio >= PASS_RATIO ? 'ok' : 'warn'}
+                      />
+                      <span className="font-mono text-xs tabular-nums text-fg-secondary">
+                        {Math.round(sim.lastScoreRatio * 100)}% · {sim.attemptCount}×
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {sim.openAttemptId ? (
+                      <Link href={simHref} className={`${BTN_SECONDARY} h-9`}>
+                        Riprendi
+                      </Link>
+                    ) : sim.lastAttemptId ? null : (
+                      <Link href={simHref} className={`${BTN_SECONDARY} h-9`}>
+                        Inizia
+                      </Link>
+                    )}
+                    {sim.lastAttemptId && (
+                      <Link
+                        href={`/materie/${subjectSlug}/attempts/${sim.lastAttemptId}/results`}
+                        className={BTN_GHOST}
+                      >
+                        Vedi la correzione
+                      </Link>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </TabSection>
 
       {trendsQuery.isSuccess && trendsQuery.data.length > 0 && (
-        <section
-          aria-label="Andamento per argomento"
-          className="mt-3 border-t border-border px-1 pt-2"
-        >
-          <h3 className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-fg-muted">
-            Andamento per argomento
-          </h3>
-          <ul className="space-y-1 text-xs">
-            {trendsQuery.data.map((t) => (
-              <TopicTrendRow key={t.topicId} trend={t} />
-            ))}
-          </ul>
-        </section>
+        <TabCard>
+          <section aria-label="Andamento per argomento" className="flex flex-col gap-3">
+            <h3 className={SECTION_TITLE}>Andamento per argomento</h3>
+            <ul className="flex flex-col gap-2 text-xs">
+              {trendsQuery.data.map((t) => (
+                <TopicTrendRow key={t.topicId} trend={t} />
+              ))}
+            </ul>
+          </section>
+        </TabCard>
       )}
-
-      <div className="mt-3 border-t border-border pt-2">
-        {simsQuery.isSuccess && simsQuery.data.length === 0 && (
-          <p className="px-1 text-xs text-fg-muted">Nessuna simulazione ancora.</p>
-        )}
-        {simsQuery.isError && (
-          <p role="alert" className="px-1 text-xs text-danger">
-            {(simsQuery.error as Error).message}
-          </p>
-        )}
-        <ul className="space-y-1">
-          {(simsQuery.data ?? []).map((sim) => (
-            <li
-              key={sim.id}
-              className="flex items-center justify-between gap-2 rounded-[var(--radius-control)] px-2 py-1 hover:bg-bg-raised"
-            >
-              <Link
-                href={`/materie/${subjectSlug}/simulations/${sim.id}`}
-                className="min-w-0 truncate text-sm text-fg-primary underline-offset-2 hover:underline"
-              >
-                {sim.title}
-              </Link>
-              <span className="shrink-0 font-mono text-[11px] tabular-nums text-fg-muted">
-                {sim.lastScoreRatio === null
-                  ? `${sim.timeBudgetMin} min`
-                  : `${Math.round(sim.lastScoreRatio * 100)}% · ${sim.attemptCount}×`}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
     </div>
   );
 }

@@ -2,6 +2,13 @@
 
 import { useQuery } from '@tanstack/react-query';
 import type { CoverageMapDto, CoverageTopicDto } from '@studyhub/contracts';
+import { SkeletonBlock, SkeletonRows } from '@/components/flashcards/shared/Skeletons';
+import { ProgressBar } from './subject-tabs/ProgressBar';
+import { StatTile } from './subject-tabs/StatTile';
+import { TabEmptyState } from './subject-tabs/TabEmptyState';
+import { TabSection } from './subject-tabs/TabSection';
+import { TabError } from './subject-tabs/TabState';
+import { CARD_BOX, DIVIDED, TAB_STACK } from './subject-tabs/styles';
 
 async function fetchCoverage(slug: string): Promise<CoverageMapDto> {
   const res = await fetch(`/api/subjects/${slug}/coverage`);
@@ -19,19 +26,16 @@ const FLAG_LABELS: Record<CoverageTopicDto['flags'][number], string> = {
 /** Frequency as text *and* a bar: the color is never the only carrier (docs/05-design-system.md §6). */
 function ExamFrequency({ topic }: { topic: CoverageTopicDto }) {
   if (topic.examTotal === 0)
-    return <span className="text-fg-muted">{topic.recurring ? 'ricorrente' : '—'}</span>;
+    return <span className="text-fg-secondary">{topic.recurring ? 'ricorrente' : '—'}</span>;
   const ratio = topic.examMentions / topic.examTotal;
   return (
     <span className="flex items-center gap-2">
       <span
-        className="relative h-1.5 w-16 rounded-full bg-bg-inset"
         role="img"
         aria-label={`${topic.examMentions} esami su ${topic.examTotal}`}
+        className="w-16"
       >
-        <span
-          className="absolute inset-y-0 left-0 rounded-full bg-accent"
-          style={{ width: `${ratio * 100}%` }}
-        />
+        <ProgressBar ratio={ratio} tone="accent" />
       </span>
       <span className="font-mono tabular-nums text-fg-secondary">
         {topic.examMentions}/{topic.examTotal}
@@ -51,112 +55,152 @@ export function CoveragePanel({ subjectSlug }: { subjectSlug: string }) {
     queryFn: () => fetchCoverage(subjectSlug),
   });
 
-  if (query.isLoading) return <p className="text-sm text-fg-muted">Caricamento…</p>;
+  if (query.isLoading)
+    return (
+      <div role="status" aria-busy="true" className={TAB_STACK}>
+        <span className="sr-only">Caricamento…</span>
+        <div className="grid grid-cols-1 gap-3 @xl/tab:grid-cols-3">
+          <SkeletonBlock className="h-24" />
+          <SkeletonBlock className="h-24" />
+          <SkeletonBlock className="h-24" />
+        </div>
+        <SkeletonRows count={4} />
+      </div>
+    );
   if (query.isError)
     return (
-      <p role="alert" className="text-sm text-danger">
-        {(query.error as Error).message}
-      </p>
+      <div className={TAB_STACK}>
+        <TabError message={(query.error as Error).message} onRetry={() => query.refetch()} />
+      </div>
     );
   const map = query.data!;
   const gaps = map.topics.filter((t) => t.flags.length > 0);
+  const weak = map.topics.filter((t) => t.flags.includes('weak')).length;
 
   if (map.topics.length === 0 && map.unmapped.length === 0)
     return (
-      <div className="rounded-[var(--radius-card)] border border-dashed border-border bg-bg-surface p-8 text-center text-sm text-fg-muted">
-        Nessun argomento ancora. Aggiungi gli argomenti della materia (o estraili dai documenti): la
-        mappa incrocia poi materiale, flashcard ed esami passati.
+      <div className={TAB_STACK}>
+        <TabEmptyState
+          title="Nessun argomento ancora"
+          text="Aggiungi gli argomenti della materia (o estraili dai documenti): la mappa incrocia poi materiale, flashcard ed esami passati."
+        />
       </div>
     );
 
   return (
-    <div className="space-y-4" data-testid="coverage">
-      <p className="text-xs text-fg-muted">
-        {map.examTotal === 0
-          ? 'Nessun esame passato con testo estratto: la frequenza non è calcolabile.'
-          : `Frequenza calcolata su ${map.examTotal} ${map.examTotal === 1 ? 'esame passato' : 'esami passati'} cercando le parole dell'argomento nel testo: è un indizio, non un verdetto.`}
-      </p>
+    <div className={TAB_STACK} data-testid="coverage">
+      <div className="grid grid-cols-1 gap-3 @xl/tab:grid-cols-3">
+        <StatTile
+          label="Argomenti senza lacune"
+          value={`${map.topics.length - gaps.length}/${map.topics.length}`}
+          hint="con materiale, flashcard e mastery non bassa"
+        />
+        <StatTile label="Argomenti deboli" value={weak} hint="con mastery bassa" />
+        <StatTile
+          label="Temi senza argomento"
+          value={map.unmapped.length}
+          hint="ricorrono negli esami ma non sono argomenti"
+        />
+      </div>
 
       {gaps.length > 0 && (
-        <section
-          aria-label="Lacune principali"
-          className="rounded-[var(--radius-card)] border border-warn bg-bg-surface p-4"
+        <TabSection
+          title="Da colmare per primo"
+          description="Ordinati per peso all'esame e per quanto ti manca."
         >
-          <h2 className="mb-2 text-sm font-semibold text-fg-primary">Da colmare per primo</h2>
-          <ol className="space-y-1.5 text-sm text-fg-secondary">
-            {gaps.slice(0, 5).map((t) => (
-              <li key={t.topicId}>{t.message}</li>
+          <ol className={`${CARD_BOX} ${DIVIDED}`}>
+            {gaps.slice(0, 5).map((t, i) => (
+              <li key={t.topicId} className="flex flex-wrap items-center gap-x-5 gap-y-2 px-5 py-4">
+                <span className="w-5 font-mono text-xs text-fg-secondary">{i + 1}</span>
+                <div className="flex min-w-0 flex-1 basis-72 flex-col gap-0.5">
+                  <span className="font-medium text-fg-primary">{t.name}</span>
+                  <span className="text-[13px] text-fg-secondary">{t.message}</span>
+                </div>
+                <div className="text-xs">
+                  <ExamFrequency topic={t} />
+                </div>
+              </li>
             ))}
           </ol>
-        </section>
+        </TabSection>
       )}
       {gaps.length === 0 && map.topics.length > 0 && (
-        <p className="rounded-[var(--radius-card)] border border-ok bg-bg-surface p-4 text-sm text-ok">
+        <p className={`${CARD_BOX} border-ok p-4 text-sm text-ok`}>
           Nessuna lacuna: ogni argomento ha materiale, flashcard e una mastery non bassa.
         </p>
       )}
 
       {map.unmapped.length > 0 && (
-        <section
-          aria-label="Temi d'esame senza argomento"
-          className="rounded-[var(--radius-card)] border border-border bg-bg-surface p-4"
+        <TabSection
+          title="Temi d'esame senza argomento"
+          description="Ricorrono negli esami ma non sono argomenti della materia."
         >
-          <h2 className="mb-1 text-sm font-semibold text-fg-primary">
-            Ricorrono negli esami ma non sono argomenti della materia
-          </h2>
-          <ul className="space-y-1 text-sm text-fg-secondary">
+          <ul className={`${CARD_BOX} ${DIVIDED}`}>
             {map.unmapped.map((u) => (
-              <li key={u.name}>
-                <span className="font-medium text-fg-primary">{u.name}</span> —{' '}
-                {u.materialMentions === 0
-                  ? 'nessun tuo documento ne parla'
-                  : `citato in ${u.materialMentions} ${u.materialMentions === 1 ? 'tuo documento' : 'tuoi documenti'}`}
+              <li key={u.name} className="px-5 py-3.5">
+                <span className="font-medium text-fg-primary">{u.name}</span>
+                <span className="text-[13px] text-fg-secondary">
+                  {' — '}
+                  {u.materialMentions === 0
+                    ? 'nessun tuo documento ne parla'
+                    : `citato in ${u.materialMentions} ${u.materialMentions === 1 ? 'tuo documento' : 'tuoi documenti'}`}
+                </span>
               </li>
             ))}
           </ul>
-        </section>
+        </TabSection>
       )}
 
-      <div className="overflow-x-auto rounded-[var(--radius-card)] border border-border bg-bg-surface">
-        <table className="w-full text-left text-xs">
-          <thead className="text-fg-muted">
-            <tr>
-              <th className="px-3 py-2 font-medium">Argomento</th>
-              <th className="px-3 py-2 font-medium">Negli esami</th>
-              <th className="px-3 py-2 font-medium">Materiale</th>
-              <th className="px-3 py-2 font-medium">Card</th>
-              <th className="px-3 py-2 font-medium">Mastery</th>
-              <th className="px-3 py-2 font-medium">Stato</th>
-            </tr>
-          </thead>
-          <tbody>
-            {map.topics.map((t) => (
-              <tr key={t.topicId} className="border-t border-border">
-                <td className="px-3 py-2 font-medium text-fg-primary">{t.name}</td>
-                <td className="px-3 py-2">
-                  <ExamFrequency topic={t} />
-                </td>
-                <td className="px-3 py-2 font-mono tabular-nums text-fg-secondary">
-                  {t.materialDocs === 0 ? '—' : `${t.materialDocs} doc · ${t.materialPages} pag`}
-                </td>
-                <td className="px-3 py-2 font-mono tabular-nums text-fg-secondary">{t.cards}</td>
-                <td className="px-3 py-2 font-mono tabular-nums text-fg-secondary">
-                  {t.mastery === null ? 'N/D' : `${Math.round(t.mastery * 100)}%`}
-                </td>
-                <td className="px-3 py-2">
-                  {t.flags.length === 0 ? (
-                    <span className="text-ok">OK</span>
-                  ) : (
-                    <span className="text-warn">
-                      {t.flags.map((f) => FLAG_LABELS[f]).join(' · ')}
-                    </span>
-                  )}
-                </td>
+      <TabSection title="Tutti gli argomenti">
+        <div className={`${CARD_BOX} overflow-x-auto`}>
+          <table className="w-full text-left text-[13px]">
+            <thead className="text-xs uppercase tracking-[0.05em] text-fg-secondary">
+              <tr>
+                <th className="px-4 py-2.5 font-medium">Argomento</th>
+                <th className="px-4 py-2.5 font-medium">Negli esami</th>
+                <th className="px-4 py-2.5 font-medium">Materiale</th>
+                <th className="px-4 py-2.5 font-medium">Card</th>
+                <th className="px-4 py-2.5 font-medium">Mastery</th>
+                <th className="px-4 py-2.5 font-medium">Stato</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {map.topics.map((t) => (
+                <tr key={t.topicId} className="border-t border-border">
+                  <td className="px-4 py-2.5 font-medium text-fg-primary">{t.name}</td>
+                  <td className="px-4 py-2.5">
+                    <ExamFrequency topic={t} />
+                  </td>
+                  <td className="px-4 py-2.5 font-mono tabular-nums text-fg-secondary">
+                    {t.materialDocs === 0 ? '—' : `${t.materialDocs} doc · ${t.materialPages} pag`}
+                  </td>
+                  <td className="px-4 py-2.5 font-mono tabular-nums text-fg-secondary">
+                    {t.cards}
+                  </td>
+                  <td className="px-4 py-2.5 font-mono tabular-nums text-fg-secondary">
+                    {t.mastery === null ? 'N/D' : `${Math.round(t.mastery * 100)}%`}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    {t.flags.length === 0 ? (
+                      <span className="text-ok">OK</span>
+                    ) : (
+                      <span className="text-warn">
+                        {t.flags.map((f) => FLAG_LABELS[f]).join(' · ')}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </TabSection>
+
+      <p className="text-xs text-fg-secondary">
+        {map.examTotal === 0
+          ? 'Nessun esame passato con testo estratto: la frequenza non è calcolabile.'
+          : `Frequenza calcolata su ${map.examTotal} ${map.examTotal === 1 ? 'esame passato' : 'esami passati'} cercando le parole dell'argomento nel testo: è un indizio, non un verdetto.`}
+      </p>
     </div>
   );
 }

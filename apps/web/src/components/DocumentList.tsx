@@ -6,28 +6,19 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { DocumentDto, TopicDto } from '@studyhub/contracts';
 import { DeleteDocumentButton } from '@/components/DeleteDocumentButton';
+import { StatusBadge } from '@/components/subject-tabs/StatusBadge';
+import { CARD_BOX, FOCUS, LINK_TEXT } from '@/components/subject-tabs/styles';
+import {
+  DOC_STATUS,
+  DOC_TYPE_LABELS,
+  docExt,
+  formatBytes,
+} from '@/components/subject-tabs/documentMeta';
 
-const STATUS_LABEL: Record<DocumentDto['status'], string> = {
-  uploaded: 'Caricato',
-  parsing: 'Estrazione…',
-  parsed: 'Pronto',
-  failed: 'Errore',
-  missing: 'Mancante',
-};
-
-const STATUS_COLOR: Record<DocumentDto['status'], string> = {
-  uploaded: 'var(--fg-muted)',
-  parsing: 'var(--info)',
-  parsed: 'var(--ok)',
-  failed: 'var(--danger)',
-  missing: 'var(--warn)',
-};
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
+// One column (topics under the name, actions wrapping) until the tab container is wide enough.
+const GRID =
+  'grid grid-cols-1 items-start gap-x-4 gap-y-2 @3xl/tab:grid-cols-[minmax(200px,1fr)_minmax(150px,0.7fr)_auto]';
+const OUTLINE_LINK = `inline-flex h-9 items-center rounded-[var(--radius-control)] border border-border-strong px-3 text-[13px] text-fg-primary hover:bg-bg-raised ${FOCUS}`;
 
 export async function fetchTopics(slug: string): Promise<TopicDto[]> {
   const res = await fetch(`/api/subjects/${slug}/topics`);
@@ -80,14 +71,14 @@ function TypeSuggestion({ subjectSlug, doc }: { subjectSlug: string; doc: Docume
   const pct = doc.typeConfidence !== null ? Math.round(doc.typeConfidence * 100) : null;
 
   return (
-    <p className="mt-1 text-[11px] text-fg-secondary">
+    <p className="mt-1 text-xs text-fg-secondary">
       AI: {doc.typeSuggested}
       {pct !== null ? ` (${pct}%)` : ''} —{' '}
       <button
         type="button"
         disabled={mutation.isPending}
         onClick={() => mutation.mutate(true)}
-        className="text-accent underline-offset-2 hover:underline"
+        className={`text-accent-hover underline-offset-2 hover:underline ${FOCUS}`}
       >
         conferma
       </button>{' '}
@@ -96,7 +87,7 @@ function TypeSuggestion({ subjectSlug, doc }: { subjectSlug: string; doc: Docume
         type="button"
         disabled={mutation.isPending}
         onClick={() => mutation.mutate(false)}
-        className="text-fg-muted underline-offset-2 hover:underline"
+        className={`text-fg-secondary underline-offset-2 hover:underline ${FOCUS}`}
       >
         ignora
       </button>
@@ -130,18 +121,26 @@ function TopicTagger({
   const taggedNames = topics.filter((t) => doc.topicIds.includes(t.id)).map((t) => t.name);
 
   return (
-    <div className="mt-1">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="text-[11px] text-fg-muted underline-offset-2 hover:text-fg-secondary hover:underline"
-      >
-        {taggedNames.length > 0 ? taggedNames.join(', ') : 'Aggiungi argomenti'}
-      </button>
+    <div className="flex flex-col gap-1.5">
+      <div className="flex flex-wrap items-center gap-x-2">
+        {taggedNames.length > 0 ? (
+          <span className="text-[13px] text-fg-primary">{taggedNames.join(', ')}</span>
+        ) : (
+          <span className="text-[13px] text-warn">Nessun argomento</span>
+        )}
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className={LINK_TEXT}
+        >
+          {taggedNames.length > 0 ? 'Modifica' : 'Assegna'}
+        </button>
+      </div>
       {open && (
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1.5">
           {topics.length === 0 && (
-            <span className="text-[11px] text-fg-muted">
+            <span className="text-xs text-fg-secondary">
               Nessun argomento nella materia ancora.
             </span>
           )}
@@ -154,10 +153,10 @@ function TopicTagger({
                 onClick={() => toggle(topic.id)}
                 disabled={mutation.isPending}
                 aria-pressed={checked}
-                className={`rounded-full border px-2 py-0.5 text-[11px] ${
+                className={`rounded-full border px-2.5 py-1 text-xs ${FOCUS} ${
                   checked
-                    ? 'border-accent bg-accent/10 text-accent'
-                    : 'border-border text-fg-secondary hover:text-fg-primary'
+                    ? 'border-accent bg-accent-subtle text-accent-hover'
+                    : 'border-border-strong text-fg-secondary hover:text-fg-primary'
                 }`}
               >
                 {topic.name}
@@ -167,7 +166,9 @@ function TopicTagger({
         </div>
       )}
       {mutation.isError && (
-        <p className="mt-1 text-[11px] text-danger">{(mutation.error as Error).message}</p>
+        <p role="alert" className="text-xs text-danger">
+          {(mutation.error as Error).message}
+        </p>
       )}
     </div>
   );
@@ -211,7 +212,7 @@ export function DocumentList({
   const rowVirtualizer = useVirtualizer({
     count: documents.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 96,
+    estimateSize: () => 76,
     overscan: 8,
   });
 
@@ -223,105 +224,127 @@ export function DocumentList({
           <button
             type="button"
             onClick={() => onSelectionChange(new Set())}
-            className="text-fg-muted underline-offset-2 hover:text-fg-primary hover:underline"
+            className={`text-fg-secondary underline-offset-2 hover:text-fg-primary hover:underline ${FOCUS}`}
           >
             Deseleziona tutti
           </button>
         </div>
       )}
-      <div
-        ref={parentRef}
-        className="max-h-[70vh] overflow-y-auto rounded-[var(--radius-card)] border border-border bg-bg-surface"
-      >
-        <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative' }}>
-          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-            const doc = documents[virtualRow.index]!;
-            return (
-              <div
-                key={doc.id}
-                data-index={virtualRow.index}
-                ref={rowVirtualizer.measureElement}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  transform: `translateY(${virtualRow.start}px)`,
-                }}
-                className="flex items-center justify-between gap-3 border-b border-border px-4 py-3"
-              >
-                <div className="flex min-w-0 items-start gap-2.5">
-                  {onSelectionChange && doc.status === 'parsed' && (
-                    <input
-                      type="checkbox"
-                      checked={selectedDocIds?.has(doc.id) ?? false}
-                      onChange={() => toggleSelected(doc.id)}
-                      aria-label={`Seleziona ${doc.originalName}`}
-                      className="mt-1 shrink-0"
-                    />
-                  )}
+      <div className={`${CARD_BOX} overflow-hidden`}>
+        <div
+          aria-hidden="true"
+          className="hidden items-start gap-x-4 border-b border-border px-5 py-2.5 text-xs uppercase tracking-[0.05em] text-fg-secondary @3xl/tab:grid @3xl/tab:grid-cols-[minmax(200px,1fr)_minmax(150px,0.7fr)_auto]"
+        >
+          <span>Documento</span>
+          <span>Argomenti</span>
+          <span />
+        </div>
+        <div ref={parentRef} className="max-h-[70vh] overflow-y-auto">
+          <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative' }}>
+            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const doc = documents[virtualRow.index]!;
+              const status = DOC_STATUS[doc.status];
+              const showVerify = doc.type === 'schemi' && doc.status === 'parsed';
+              const verifyHref = `/materie/${subjectSlug}/documenti/${doc.id}/verifica`;
+              return (
+                <div
+                  key={doc.id}
+                  data-index={virtualRow.index}
+                  ref={rowVirtualizer.measureElement}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                  className={`${GRID} border-b border-border px-5 py-3`}
+                >
                   <div className="min-w-0">
-                    <p className="truncate text-sm text-fg-primary">{doc.originalName}</p>
-                    <p className="mt-0.5 font-mono text-[11px] text-fg-muted">
-                      {doc.type} · {formatBytes(doc.bytes)}
-                      {doc.pages !== null ? ` · ${doc.pages} pag.` : ''}
-                    </p>
+                    <div className="flex min-w-0 items-start gap-2.5">
+                      {onSelectionChange && doc.status === 'parsed' && (
+                        <input
+                          type="checkbox"
+                          checked={selectedDocIds?.has(doc.id) ?? false}
+                          onChange={() => toggleSelected(doc.id)}
+                          aria-label={`Seleziona ${doc.originalName}`}
+                          className="mt-2 shrink-0"
+                        />
+                      )}
+                      <span
+                        aria-hidden="true"
+                        className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-control)] bg-bg-raised font-mono text-[10px] text-fg-secondary"
+                      >
+                        {docExt(doc.originalName)}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-fg-primary">
+                          {doc.originalName}
+                        </p>
+                        <p className="text-xs text-fg-secondary">
+                          {DOC_TYPE_LABELS[doc.type]} · {formatBytes(doc.bytes)}
+                          {doc.pages !== null ? ` · ${doc.pages} pag.` : ''}
+                        </p>
+                      </div>
+                    </div>
                     <TypeSuggestion subjectSlug={subjectSlug} doc={doc} />
+                  </div>
+                  <div className="min-w-0">
                     {topicsQuery.isSuccess && (
                       <TopicTagger subjectSlug={subjectSlug} doc={doc} topics={topicsQuery.data} />
                     )}
                   </div>
+                  <div className="flex min-w-0 flex-col items-start gap-1.5 @3xl/tab:items-end">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+                      <Link
+                        href={`/materie/${subjectSlug}/documenti/${doc.id}/originale`}
+                        aria-label={`Apri ${doc.originalName}`}
+                        className={OUTLINE_LINK}
+                      >
+                        Apri
+                      </Link>
+                      {showVerify && doc.blockedBlocks > 0 && (
+                        <Link href={verifyHref} className={`${OUTLINE_LINK} text-warn`}>
+                          {doc.blockedBlocks} da verificare
+                        </Link>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 text-xs">
+                      {showVerify && doc.blockedBlocks === 0 && (
+                        <Link
+                          href={verifyHref}
+                          className="text-fg-secondary underline-offset-2 hover:text-fg-primary hover:underline"
+                        >
+                          Verifica
+                        </Link>
+                      )}
+                      {doc.status === 'parsed' && doc.mdPath && (
+                        <Link
+                          href={`/materie/${subjectSlug}/documenti/${doc.id}`}
+                          className={`underline-offset-2 hover:underline ${
+                            doc.mdConflict ? 'text-warn' : 'text-fg-secondary hover:text-fg-primary'
+                          }`}
+                        >
+                          {doc.mdConflict ? 'Conflitto da risolvere' : 'Vedi testo'}
+                        </Link>
+                      )}
+                      <DeleteDocumentButton
+                        subjectSlug={subjectSlug}
+                        doc={doc}
+                        onDeleted={(id) => {
+                          if (!onSelectionChange || !selectedDocIds?.has(id)) return;
+                          const next = new Set(selectedDocIds);
+                          next.delete(id);
+                          onSelectionChange(next);
+                        }}
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="flex shrink-0 flex-col items-end gap-1">
-                  <span
-                    className="rounded-full border px-2 py-0.5 text-[11px] font-medium"
-                    style={{
-                      color: STATUS_COLOR[doc.status],
-                      borderColor: STATUS_COLOR[doc.status],
-                    }}
-                  >
-                    {STATUS_LABEL[doc.status]}
-                  </span>
-                  <Link
-                    href={`/materie/${subjectSlug}/documenti/${doc.id}/originale`}
-                    className="text-[11px] text-fg-muted underline-offset-2 hover:text-fg-primary hover:underline"
-                  >
-                    Apri
-                  </Link>
-                  {doc.type === 'schemi' && doc.status === 'parsed' && (
-                    <Link
-                      href={`/materie/${subjectSlug}/documenti/${doc.id}/verifica`}
-                      className={`text-[11px] underline-offset-2 hover:underline ${
-                        doc.blockedBlocks > 0 ? 'text-warn' : 'text-fg-muted'
-                      }`}
-                    >
-                      {doc.blockedBlocks > 0 ? `${doc.blockedBlocks} da verificare` : 'Verifica'}
-                    </Link>
-                  )}
-                  {doc.status === 'parsed' && doc.mdPath && (
-                    <Link
-                      href={`/materie/${subjectSlug}/documenti/${doc.id}`}
-                      className={`text-[11px] underline-offset-2 hover:underline ${
-                        doc.mdConflict ? 'text-warn' : 'text-fg-muted'
-                      }`}
-                    >
-                      {doc.mdConflict ? 'Conflitto da risolvere' : 'Vedi testo'}
-                    </Link>
-                  )}
-                  <DeleteDocumentButton
-                    subjectSlug={subjectSlug}
-                    doc={doc}
-                    onDeleted={(id) => {
-                      if (!onSelectionChange || !selectedDocIds?.has(id)) return;
-                      const next = new Set(selectedDocIds);
-                      next.delete(id);
-                      onSelectionChange(next);
-                    }}
-                  />
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>

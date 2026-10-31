@@ -339,9 +339,7 @@ function SubjectDetailClientInner({ slug }: { slug: string }) {
               {activeTab === 'lacune' && <CoveragePanel subjectSlug={slug} />}
 
               {activeTab === 'simulazioni' && (
-                <div className="max-w-md">
-                  <ExamPrepPanel subjectSlug={slug} documents={documents} />
-                </div>
+                <ExamPrepPanel subjectSlug={slug} documents={documents} />
               )}
             </main>
 
