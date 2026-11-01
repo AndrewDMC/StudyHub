@@ -3,10 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Loader2 } from 'lucide-react';
-import type { GeneratePlanRequest, PlanDto, TaskDto } from '@studyhub/contracts';
+import type { GeneratePlanRequest, Intensity, PlanDto, TaskDto } from '@studyhub/contracts';
 import { dayRange, defaultDay, excludableTopics, overdueTasks } from '@/lib/planMobile';
 import { materialHref } from '@/lib/subjectTabs';
-import { SUBJECT_COLOR_HEX } from '@/lib/subjectColors';
+import { topicName } from '../plan/planModel';
 import { secondaryButton } from '../simulation-mobile/styles';
 import { SectionError, SkeletonRows } from '../subject-mobile/SectionState';
 import { todayIso } from '../subject-mobile/queries';
@@ -18,16 +18,18 @@ import { DraftCard } from './DraftCard';
 import { DriftCard } from './DriftCard';
 import { EmptyPlan } from './EmptyPlan';
 import { ExcludeTopicSheet } from './ExcludeTopicSheet';
-import { FeasibilityCard } from './FeasibilityCard';
+import { FitCard } from './FitCard';
+import { IntensityCard } from './IntensityCard';
 import { PlanHeader } from './PlanHeader';
 import { PlanSheet } from './PlanSheet';
+import { PlanTopicsList } from './PlanTopicsList';
 import { PlanSummaryCard } from './PlanSummaryCard';
 import { TaskSheet } from './TaskSheet';
 import { usePlanMutations, usePlanQueries } from './usePlanData';
 
 type Sheet =
   | { type: 'task'; taskId: string }
-  | { type: 'plan'; planId?: string }
+  | { type: 'plan'; planId?: string; intensity?: Intensity }
   | { type: 'exclude' | 'delete' }
   | null;
 
@@ -45,6 +47,8 @@ export function PlanMobile({ slug }: { slug: string }) {
   const [awaiting, setAwaiting] = useState<{ prevDraftId: string | null } | null>(null);
   const [timedOut, setTimedOut] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // The intensity tapped on the card: the plan stays as it is until a new draft is confirmed.
+  const [chosenIntensity, setChosenIntensity] = useState<Intensity | null>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
   const [actionsOpen, setActionsOpen] = useState(false);
   const actionsButtonRef = useRef<HTMLButtonElement>(null);
@@ -78,7 +82,6 @@ export function PlanMobile({ slug }: { slug: string }) {
 
   const today = todayIso();
   const subject = q.subject.data;
-  const subjectHex = subject ? SUBJECT_COLOR_HEX[subject.color] : undefined;
   // Mutation errors are shared by sheets and page: clear them when a sheet opens or closes.
   const { generate: genM, bulk: bulkM, deletePlan: delM } = mutations;
   const {
@@ -112,6 +115,10 @@ export function PlanMobile({ slug }: { slug: string }) {
     const exam = p.examId ? (q.exams.data ?? []).find((x) => x.id === p.examId) : null;
     return `${exam ? exam.title : 'Generale'}${p.status === 'draft' ? ' (bozza)' : ''}`;
   };
+
+  const topicList = q.topics.data ?? [];
+  const documentList = q.documents.data ?? [];
+  const nameOf = (key: string) => topicName(key, topicList, documentList);
 
   const days = plan ? dayRange(plan.tasks) : [];
   const day = selectedDay && days.includes(selectedDay) ? selectedDay : defaultDay(days, today);
@@ -294,7 +301,20 @@ export function PlanMobile({ slug }: { slug: string }) {
                 }
               />
             )}
-            <FeasibilityCard plan={plan} />
+            <IntensityCard
+              intensity={plan.prefs.intensity}
+              locked={plan.status === 'draft' || awaiting !== null}
+              chosen={chosenIntensity}
+              onChange={(next, t) => {
+                setChosenIntensity(next);
+                openSheet({ type: 'plan', planId: plan.id, intensity: next }, t);
+              }}
+            />
+            <FitCard
+              plan={plan}
+              nameOf={nameOf}
+              onAddAvailability={(t) => openSheet({ type: 'plan', planId: plan.id }, t)}
+            />
 
             {day === null ? (
               <div className="rounded-[var(--radius-card)] border border-dashed border-border bg-bg-surface p-5 text-center text-sm text-fg-muted">
@@ -315,14 +335,12 @@ export function PlanMobile({ slug }: { slug: string }) {
                   onSelect={setSelectedDay}
                   today={today}
                   lateDays={lateDays}
-                  subjectHex={subjectHex}
                 />
                 <DayTasks
                   slug={slug}
                   plan={plan}
                   day={day}
                   today={today}
-                  subjectHex={subjectHex}
                   busy={busy}
                   triggerRef={triggerRef}
                   onOpenTask={(taskId) => setSheet({ type: 'task', taskId })}
@@ -336,6 +354,8 @@ export function PlanMobile({ slug }: { slug: string }) {
                 )}
               </>
             )}
+
+            <PlanTopicsList plan={plan} today={today} nameOf={nameOf} />
 
             <div className="flex flex-col gap-2">
               <button
@@ -391,6 +411,7 @@ export function PlanMobile({ slug }: { slug: string }) {
           plans.find((p) => p.id === (sheet?.type === 'plan' ? sheet.planId : undefined)) ?? plan
         }
         hasDraft={draftPlan !== null}
+        defaultIntensity={sheet?.type === 'plan' ? sheet.intensity : undefined}
         exams={q.exams.data ?? []}
         returnFocusRef={triggerRef}
         pending={mutations.generate.isPending}

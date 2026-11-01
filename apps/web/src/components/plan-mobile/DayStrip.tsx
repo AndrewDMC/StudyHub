@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import type { TaskDto } from '@studyhub/contracts';
 import { dayParts, formatDayTitle } from '@/lib/planMobile';
-import { kindBar } from './kindStyle';
+import { toneBar } from './kindStyle';
 
 function dayLabel(iso: string, today: string, count: number, late: boolean): string {
   const title = iso === today ? 'Oggi' : formatDayTitle(iso, today);
@@ -18,7 +18,6 @@ export function DayStrip({
   onSelect,
   today,
   lateDays,
-  subjectHex,
 }: {
   days: string[];
   tasksByDay: Map<string, TaskDto[]>;
@@ -27,7 +26,6 @@ export function DayStrip({
   today: string;
   /** Days with open overdue tasks. */
   lateDays: Set<string>;
-  subjectHex: string | undefined;
 }) {
   const selectedRef = useRef<HTMLButtonElement>(null);
 
@@ -49,7 +47,7 @@ export function DayStrip({
       {days.map((iso) => {
         const visible = (tasksByDay.get(iso) ?? []).filter((t) => t.status !== 'moved');
         const first = visible.find((t) => t.kind !== 'rest');
-        const bar = first ? kindBar(first.kind, subjectHex) : null;
+        const bar = first ? toneBar(first) : null;
         const { weekday, day } = dayParts(iso);
         const active = iso === selected;
         const late = lateDays.has(iso);
@@ -76,8 +74,7 @@ export function DayStrip({
             </span>
             <span
               aria-hidden="true"
-              className={`size-1.5 rounded-full ${bar ? bar.className : 'bg-transparent'}`}
-              style={bar?.style}
+              className={`size-1.5 rounded-full ${bar ?? 'bg-transparent'}`}
             />
             {late && (
               <span

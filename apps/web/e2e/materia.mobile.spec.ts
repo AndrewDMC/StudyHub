@@ -156,39 +156,36 @@ test.describe('Materia mobile — shell e Panoramica', () => {
     test.setTimeout(120_000);
     await open(page, `/materie/${ctx.slug}`, ctx.name);
 
-    const status = page.getByRole('region', { name: 'Stato della materia' });
-    await expect(status).toContainText('0 documenti');
-    await expect(status).toContainText('1 argomenti');
-    await expect(status).toContainText('3 flashcard');
-    await expect(status).toContainText('Scritto');
-    await expect(status.getByText('giorni all’esame')).toBeVisible();
+    // Testata: il sottotitolo dice quale esame è vicino.
+    await expect(page.getByText(/^Scritto .* · /)).toBeVisible();
 
-    await expect(page.getByRole('heading', { level: 2, name: 'Da fare adesso' })).toBeVisible();
-    await expect(page.getByRole('heading', { level: 2, name: /^Oggi/ })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Lezione di oggi' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Ricordo' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Argomenti' })).toBeVisible();
     await expect(page.getByRole('heading', { level: 2, name: 'Attività recente' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Apri il piano', exact: true })).toHaveAttribute(
+
+    // Nessun piano: la carta lo dice e "Genera il piano" porta alla pagina del piano.
+    const today = page.getByTestId('lesson-today');
+    await expect(today).toContainText('Nessun piano di studio');
+    await expect(today.getByRole('link', { name: 'Genera il piano' })).toHaveAttribute(
       'href',
       `/materie/${ctx.slug}/piano`,
     );
+    await expect(page.getByTestId('overview-topics')).toBeVisible();
 
-    // Nessun piano: "Studia ora" porta al piano.
-    await expect(status.getByRole('link', { name: 'Studia ora' })).toHaveAttribute(
-      'href',
-      `/materie/${ctx.slug}/piano`,
-    );
-    await status.getByRole('link', { name: 'Studia ora' }).click();
-    await expect(page).toHaveURL(new RegExp(`/materie/${ctx.slug}/piano$`), { timeout: 20_000 });
-
-    // "Ripassa N card" porta al ripasso della materia.
-    await open(page, `/materie/${ctx.slug}`, ctx.name);
+    // "Ricordo": le flashcard da ripassare portano al ripasso della materia.
     const review = page
-      .getByRole('region', { name: 'Stato della materia' })
-      .getByRole('link', { name: /^Ripassa \d+ card$/ });
-    await expect(review).toHaveText('Ripassa 3 card');
+      .getByTestId('overview-recall')
+      .getByRole('link', { name: /flashcard da ripassare$/ });
+    await expect(review).toContainText('3 flashcard da ripassare');
     await review.click();
     await expect(page).toHaveURL(new RegExp(`/ripasso\\?materia=${ctx.slug}$`), {
       timeout: 20_000,
     });
+
+    await open(page, `/materie/${ctx.slug}`, ctx.name);
+    await page.getByTestId('lesson-today').getByRole('link', { name: 'Genera il piano' }).click();
+    await expect(page).toHaveURL(new RegExp(`/materie/${ctx.slug}/piano$`), { timeout: 20_000 });
   });
 
   for (const [trigger, label] of [

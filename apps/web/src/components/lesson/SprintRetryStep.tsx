@@ -120,7 +120,7 @@ export function SprintRetryStep({
   return (
     <section
       aria-labelledby="sr-title"
-      className="space-y-4 rounded-[var(--radius-card)] border border-border bg-bg-surface p-5 md:p-6"
+      className="space-y-4 rounded-[var(--radius-card)] border border-border bg-bg-surface p-5 max-md:border-0 max-md:bg-transparent max-md:px-0 md:p-6"
     >
       <div className="space-y-1">
         <h2

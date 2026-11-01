@@ -186,6 +186,7 @@ export function SprintTheoryStep({
   onOpenCitation,
   onPrefill,
   onGo,
+  barSlot,
 }: {
   view: SprintView | undefined;
   loading: boolean;
@@ -205,6 +206,8 @@ export function SprintTheoryStep({
   onOpenCitation: (citation: Pick<SessionItemCitationDto, 'docId' | 'page'>) => void;
   onPrefill: (text: string) => void;
   onGo: (phase: SprintPhase) => void;
+  /** Phone: the fixed bar of the lesson (see `LessonBlock`). */
+  barSlot?: HTMLElement | null | undefined;
 }) {
   const [results, setResults] = useState<Record<number, CheckLessonBlockResponse>>({});
   const blocks = lesson.data?.blocks ?? [];
@@ -256,7 +259,7 @@ export function SprintTheoryStep({
     </div>
   );
   const shell =
-    'space-y-4 rounded-[var(--radius-card)] border border-border bg-bg-surface p-5 md:p-6';
+    'space-y-4 rounded-[var(--radius-card)] border border-border bg-bg-surface p-5 max-md:border-0 max-md:bg-transparent max-md:px-0 md:p-6';
 
   if (!view) {
     return (
@@ -356,6 +359,7 @@ export function SprintTheoryStep({
           onCheck={check}
           onNext={() => onSelect(block.orderIndex + 1, true)}
           onFinish={() => onGo('retry')}
+          {...(barSlot !== undefined ? { barSlot } : {})}
           finishLabel="Riprova su esercizi simili →"
           onRegenerate={() => lesson.regenerate.mutate({ index: block.orderIndex })}
         />

@@ -427,3 +427,19 @@ export const INTENSITY_INFO: Record<
 };
 
 export const INTENSITY_ORDER: Intensity[] = ['sostenibile', 'standard', 'sprint'];
+
+/** "2 lezioni · fatte", "1 di 2 fatte", "Fuori dal piano": the line under a topic of the study order. */
+export function topicMetaLabel(
+  e: Pick<PlanTopicEntry, 'method' | 'total' | 'done' | 'userSprint'>,
+): string {
+  if (e.method === 'fuori') return 'Fuori dal piano';
+  const base =
+    e.done === e.total
+      ? `${e.total === 1 ? '1 lezione' : `${e.total} lezioni`} · ${e.total === 1 ? 'fatta' : 'fatte'}`
+      : e.done > 0
+        ? `${e.done} di ${e.total} fatte`
+        : e.total === 1
+          ? '1 lezione'
+          : `${e.total} lezioni`;
+  return e.userSprint ? `${base} · sprint scelto da te` : base;
+}

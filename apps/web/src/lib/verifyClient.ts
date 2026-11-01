@@ -237,3 +237,22 @@ export function useVerify({
 
   return { query, data: query.data, grade, markUnknown, retry, prepare };
 }
+
+// ---- mobile action bar (below 768 px) ----
+
+/**
+ * What the fixed bar of the mobile verify shows: the open question (Correggi / Non me lo ricordo), the
+ * way on once it has an outcome, the two arrows of a finished check, or nothing (outcome page, no question).
+ */
+export type VerifyBarState = 'none' | 'open' | 'next' | 'review';
+
+export function verifyBarState(input: {
+  /** A question is on screen (not the outcome page). */
+  hasItem: boolean;
+  ended: boolean;
+  answered: boolean;
+}): VerifyBarState {
+  if (!input.hasItem) return 'none';
+  if (input.ended) return 'review';
+  return input.answered ? 'next' : 'open';
+}

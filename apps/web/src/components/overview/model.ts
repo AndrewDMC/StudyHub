@@ -549,3 +549,33 @@ export function fixRows(input: {
   }
   return rows;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Mobile additions (Panoramica below md)
+
+/** Colour family of the dot in front of a topic row (the label next to it carries the meaning). */
+export function topicDotTone(kind: TopicPlanKind): 'ok' | 'accent' | 'neutral' | 'danger' {
+  switch (kind) {
+    case 'studied':
+      return 'ok';
+    case 'in_progress':
+    case 'today':
+    case 'late':
+      return 'accent';
+    case 'out':
+    case 'skipped':
+      return 'danger';
+    default:
+      return 'neutral';
+  }
+}
+
+/** "4 studiati · 1 in corso · 3 da fare · 1 fuori": the four counts in words (zeros are left out). */
+export function statusCountsLabel(counts: ProgressCounts): string {
+  const parts: string[] = [];
+  if (counts.studied > 0) parts.push(`${counts.studied} studiati`);
+  if (counts.inProgress > 0) parts.push(`${counts.inProgress} in corso`);
+  if (counts.todo > 0) parts.push(`${counts.todo} da fare`);
+  if (counts.out > 0) parts.push(`${counts.out} fuori`);
+  return parts.join(' · ');
+}

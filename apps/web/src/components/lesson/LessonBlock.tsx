@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type {
   CheckLessonBlockResponse,
   LessonBlockDto,
@@ -54,6 +55,8 @@ export function LessonBlock({
   onFinish,
   finishLabel = 'Passa a Rielabora →',
   onRegenerate,
+  barSlot,
+  headerAction,
 }: {
   block: LessonBlockDto;
   total: number | null;
@@ -71,11 +74,19 @@ export function LessonBlock({
   onCheck: (answer: string) => void;
   onNext: () => void;
   /** The lesson sits in a phase flow: after the last block, the way to the next phase. */
-  onFinish?: () => void;
+  onFinish?: (() => void) | undefined;
   /** Label of the way on after the last block (sprint lessons go to "Riprova"). */
   finishLabel?: string;
   onRegenerate: () => void;
+  /**
+   * Phone: the fixed bar of the lesson. When given (even while still `null`), "Controlla" and the way on
+   * are drawn in it instead of in the page; the desktop leaves it out.
+   */
+  barSlot?: HTMLElement | null | undefined;
+  /** Phone: the "Indice" button, next to "Blocco n di N". */
+  headerAction?: ReactNode;
 }) {
+  const inBar = barSlot !== undefined;
   const done = block.state === 'done';
   const stepCount = block.exampleSteps.length;
   const [shown, setShown] = useState(done ? stepCount : Math.min(1, stepCount));
@@ -123,7 +134,7 @@ export function LessonBlock({
       ref={articleRef}
       aria-labelledby="blk-title"
       aria-busy={busy}
-      className="space-y-4 rounded-[var(--radius-card)] border border-border bg-bg-surface p-4 md:p-7"
+      className="space-y-4 rounded-[var(--radius-card)] border border-border bg-bg-surface p-4 max-md:border-0 max-md:bg-transparent max-md:p-0 md:p-7"
     >
       {regenerating && (
         <p
@@ -135,15 +146,18 @@ export function LessonBlock({
       )}
 
       <header className="space-y-1">
-        <p className="text-xs font-medium uppercase tracking-wide text-accent">
-          Blocco {block.orderIndex + 1} di {total ?? '…'}
-        </p>
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="text-xs font-medium uppercase tracking-wide text-accent">
+            Blocco {block.orderIndex + 1} di {total ?? '…'}
+          </p>
+          {headerAction}
+        </div>
         <h2
           id="blk-title"
           data-phase-heading
           ref={titleRef}
           tabIndex={-1}
-          className="text-xl font-semibold text-fg-primary outline-none md:text-2xl"
+          className="text-xl font-semibold text-fg-primary outline-none max-md:text-[22px] max-md:leading-[1.25] max-md:tracking-[-0.02em] md:text-2xl"
         >
           {block.title}
         </h2>
@@ -246,13 +260,15 @@ export function LessonBlock({
           <h3 id="blk-check" className="text-sm font-semibold text-accent">
             Prima di andare avanti
           </h3>
-          <form onSubmit={submit} className="space-y-3">
+          <form id={`chk-form-${block.id}`} onSubmit={submit} className="space-y-3">
             <label htmlFor={`chk-${block.id}`} className="block text-sm text-fg-primary">
               {block.checkQuestion}
             </label>
             <input
               id={`chk-${block.id}`}
               type="text"
+              enterKeyHint="send"
+              autoComplete="off"
               maxLength={4000}
               placeholder="Una frase, con parole tue"
               value={answered ? (block.studentAnswer ?? answer) : answer}
@@ -261,7 +277,7 @@ export function LessonBlock({
               onChange={(e) => setAnswer(e.target.value)}
               className="h-11 w-full rounded-[var(--radius-control)] border border-border bg-bg-surface px-3 text-sm text-fg-primary outline-none focus:border-accent"
             />
-            {!answered && !readOnly && (
+            {!answered && !readOnly && !inBar && (
               <Button
                 type="submit"
                 size="lg"
@@ -297,13 +313,46 @@ export function LessonBlock({
         </section>
       )}
 
+      {inBar &&
+        barSlot &&
+        createPortal(
+          !answered && !readOnly && block.checkQuestion !== null ? (
+            <Button
+              type="submit"
+              form={`chk-form-${block.id}`}
+              aria-busy={checking}
+              disabled={!answer.trim() || busy}
+              className="h-[52px] w-full text-base font-semibold"
+            >
+              {checking ? 'Controllo…' : 'Controlla'}
+            </Button>
+          ) : answered && !isLast ? (
+            <Button
+              type="button"
+              onClick={onNext}
+              className="h-[52px] w-full text-base font-semibold"
+            >
+              Blocco successivo →
+            </Button>
+          ) : answered && isLast && onFinish ? (
+            <Button
+              type="button"
+              onClick={onFinish}
+              className="h-[52px] w-full text-base font-semibold"
+            >
+              {finishLabel}
+            </Button>
+          ) : null,
+          barSlot,
+        )}
+
       <div className="flex flex-wrap items-center gap-3">
-        {answered && !isLast && (
+        {!inBar && answered && !isLast && (
           <Button type="button" size="lg" onClick={onNext} className="max-md:w-full">
             Blocco successivo →
           </Button>
         )}
-        {answered && isLast && onFinish && (
+        {!inBar && answered && isLast && onFinish && (
           <Button type="button" size="lg" onClick={onFinish} className="max-md:w-full">
             {finishLabel}
           </Button>

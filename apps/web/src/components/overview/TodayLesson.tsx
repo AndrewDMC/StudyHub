@@ -16,33 +16,11 @@ import {
   switchMethodLabel,
   taskMethod,
 } from '@/lib/taskMethod';
+import { patchMethod, postStatus } from '../subject-mobile/todayActions';
 import { MethodBadge } from '../plan/MethodBadge';
 import { PhaseList } from '../plan/PhaseList';
 import { KIND_LABELS, stripPartSuffix } from '../plan/planModel';
 import { formatDayLong, lessonMeta, plural, type TodayModel } from './model';
-
-async function patchMethod(slug: string, taskId: string, method: 'standard' | 'sprint') {
-  const res = await fetch(`/api/subjects/${slug}/plan/tasks/${taskId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ method }),
-  });
-  const body = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(body?.error?.message ?? 'Azione fallita');
-  return body.task as TaskDto;
-}
-
-async function postStatus(slug: string, taskId: string, status: 'done' | 'skipped') {
-  const res = await fetch(`/api/subjects/${slug}/plan/tasks/${taskId}/status`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status }),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => null);
-    throw new Error(body?.error?.message ?? 'Azione fallita');
-  }
-}
 
 const KIND_WORD: Partial<Record<TaskDto['kind'], string>> = {
   lesson: 'la lezione',

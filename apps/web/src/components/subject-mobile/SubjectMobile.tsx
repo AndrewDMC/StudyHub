@@ -3,13 +3,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { MessageSquare } from 'lucide-react';
-import type {
-  DocumentDto,
-  ExamDto,
-  FlashcardStatsDto,
-  SubjectDto,
-  TopicDto,
-} from '@studyhub/contracts';
+import type { DocumentDto, ExamDto, SubjectDto, TopicDto } from '@studyhub/contracts';
 import { materialHref, type MaterialFilter, type MobileTab } from '@/lib/subjectTabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { EditSubjectForm } from '../EditSubjectForm';
@@ -20,6 +14,21 @@ import { MobileOverview } from './MobileOverview';
 import { MobileMaterial } from './MobileMaterial';
 import { MobileTabContent } from './MobileTabContent';
 import { AssistantSheet } from './AssistantSheet';
+import { formatDayShort } from '../overview/model';
+import { formatExamCountdown } from '@/lib/format';
+
+const EXAM_KIND: Record<ExamDto['kind'], string> = {
+  scritto: 'Scritto',
+  orale: 'Orale',
+  parziale: 'Parziale',
+  progetto: 'Progetto',
+};
+
+/** "Scritto 12 nov · tra 14 giorni", or nothing without an upcoming exam. */
+function examSubtitle(exam: ExamDto | undefined): string | undefined {
+  if (!exam) return undefined;
+  return `${EXAM_KIND[exam.kind]} ${formatDayShort(exam.date)} · ${formatExamCountdown(exam.date)}`;
+}
 
 /** The subject page below md (docs/design/materia-mobile): header, six tabs, content, assistant FAB. */
 export function SubjectMobile({
@@ -27,9 +36,6 @@ export function SubjectMobile({
   subject,
   documents,
   topics,
-  topicsLoaded,
-  stats,
-  flashcardTotal,
   nextExam,
   tab,
   filter,
@@ -39,9 +45,6 @@ export function SubjectMobile({
   subject: SubjectDto;
   documents: DocumentDto[];
   topics: TopicDto[];
-  topicsLoaded: boolean;
-  stats: FlashcardStatsDto | undefined;
-  flashcardTotal: number | null;
   nextExam: ExamDto | undefined;
   tab: MobileTab;
   filter: MaterialFilter;
@@ -75,6 +78,7 @@ export function SubjectMobile({
       <div className="sticky top-0 z-10 bg-bg-surface pt-[env(safe-area-inset-top)]">
         <MobileHeader
           subject={subject}
+          subtitle={examSubtitle(nextExam)}
           searchOpen={searchOpen}
           searchRegionId={searchRegionId}
           onToggleSearch={() => setSearchOpen((v) => !v)}
@@ -104,11 +108,9 @@ export function SubjectMobile({
         {tab === 'panoramica' && (
           <MobileOverview
             slug={slug}
-            documentCount={documents.length}
-            topicCount={topicsLoaded ? topics.length : null}
-            flashcardTotal={flashcardTotal}
+            topics={topics}
+            documents={documents}
             nextExam={nextExam}
-            stats={stats}
             fakeProvider={fakeProvider}
           />
         )}

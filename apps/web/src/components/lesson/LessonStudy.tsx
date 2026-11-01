@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import type { CheckLessonBlockResponse, SessionItemCitationDto } from '@studyhub/contracts';
 import { Button } from '@/components/ui/button';
 import { LessonBlock } from '@/components/lesson/LessonBlock';
+import { LessonIndexSheet } from '@/components/lesson/LessonIndexSheet';
 import { LessonOutline } from '@/components/lesson/LessonOutline';
 import { LessonError, LessonSkeleton } from '@/components/lesson/LessonStatus';
 import {
@@ -37,6 +38,7 @@ export function LessonStudy({
   onPrefill,
   onGo,
   staged,
+  barSlot,
 }: {
   lesson: Lesson;
   active: boolean;
@@ -51,7 +53,12 @@ export function LessonStudy({
   onGo: (phase: StandardPhase) => void;
   /** Inside the five phases: the way on to "Rielabora" is offered. A sprint lesson has no next phase yet. */
   staged: boolean;
+  /** Phone: the fixed bar of the lesson (see `LessonBlock`). Also swaps the index column for a sheet. */
+  barSlot?: HTMLElement | null | undefined;
 }) {
+  const mobile = barSlot !== undefined;
+  const [indexOpen, setIndexOpen] = useState(false);
+  const indexButton = useRef<HTMLButtonElement>(null);
   const [results, setResults] = useState<Record<number, CheckLessonBlockResponse>>({});
   const blocks = lesson.data?.blocks ?? [];
   const blockCount = lesson.data?.blockCount ?? null;
@@ -157,6 +164,23 @@ export function LessonStudy({
           onInterrupt={interrupt}
           onCheck={check}
           onNext={() => onSelect(block.orderIndex + 1, true)}
+          {...(mobile
+            ? {
+                barSlot,
+                onFinish: staged ? () => onGo('rework') : undefined,
+                headerAction: (
+                  <button
+                    ref={indexButton}
+                    type="button"
+                    aria-haspopup="dialog"
+                    onClick={() => setIndexOpen(true)}
+                    className="min-h-11 px-2 text-[13px] text-fg-secondary outline-none hover:text-fg-primary focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+                  >
+                    Indice
+                  </button>
+                ),
+              }
+            : {})}
           onRegenerate={() => lesson.regenerate.mutate({ index: block.orderIndex })}
         />
         {lesson.regenerate.isError && (
@@ -170,13 +194,26 @@ export function LessonStudy({
 
   return (
     <div className="grid gap-4 lg:grid-cols-[14rem_minmax(0,1fr)]">
-      <LessonOutline
-        blocks={blocks}
-        blockCount={blockCount}
-        currentIndex={current}
-        pendingIndex={pendingIndex}
-        onSelect={(i) => onSelect(i, true)}
-      />
+      {mobile ? (
+        <LessonIndexSheet
+          open={indexOpen}
+          onOpenChange={setIndexOpen}
+          blocks={blocks}
+          blockCount={blockCount}
+          currentIndex={current}
+          pendingIndex={pendingIndex}
+          onSelect={onSelect}
+          returnFocusRef={indexButton}
+        />
+      ) : (
+        <LessonOutline
+          blocks={blocks}
+          blockCount={blockCount}
+          currentIndex={current}
+          pendingIndex={pendingIndex}
+          onSelect={(i) => onSelect(i, true)}
+        />
+      )}
 
       <section aria-label="Lezione" className="min-w-0 space-y-3">
         {main}
@@ -198,7 +235,7 @@ export function LessonStudy({
                 </li>
               ))}
             </ul>
-            {staged && (
+            {staged && !mobile && (
               <Button
                 type="button"
                 size="lg"

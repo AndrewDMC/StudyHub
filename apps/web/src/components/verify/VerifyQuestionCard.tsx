@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { createPortal } from 'react-dom';
 import type { VerifyCitation } from '@/lib/verifyClient';
 import type { VerifyItemDto } from '@studyhub/contracts';
 import { Markdown } from '@/components/SessionBriefing';
@@ -41,6 +42,7 @@ export function VerifyQuestionCard({
   onUnknown,
   onNext,
   onOpenCitation,
+  barSlot,
 }: {
   sessionId: string;
   item: VerifyItemDto;
@@ -58,7 +60,13 @@ export function VerifyQuestionCard({
   onUnknown: () => void;
   onNext: () => void;
   onOpenCitation: (citation: VerifyCitation) => void;
+  /**
+   * Phone: the fixed bar of the page. When given (even while still `null`), the buttons are drawn
+   * in it instead of under the answer; the desktop leaves it out.
+   */
+  barSlot?: HTMLElement | null | undefined;
 }) {
+  const inBar = barSlot !== undefined;
   const [draft, setDraft] = useState('');
   const answered = item.state !== 'open';
   const outcomeRef = useRef<HTMLDivElement>(null);
@@ -113,7 +121,7 @@ export function VerifyQuestionCard({
     <section
       aria-labelledby={`vq-${item.id}`}
       aria-busy={busy}
-      className="flex flex-col gap-4 rounded-[var(--radius-card)] border border-border bg-bg-surface p-6 max-md:p-4"
+      className="flex flex-col gap-4 rounded-[var(--radius-card)] border border-border bg-bg-surface p-6 max-md:border-0 max-md:bg-transparent max-md:p-0"
     >
       <span className="text-xs uppercase tracking-wider text-fg-secondary">
         {questionTypeLabel(item.kind)}
@@ -176,23 +184,65 @@ export function VerifyQuestionCard({
         />
       )}
 
+      {inBar &&
+        barSlot &&
+        !ended &&
+        createPortal(
+          answered ? (
+            nextLabel ? (
+              <Button
+                type="button"
+                onClick={onNext}
+                className="h-[52px] w-full text-base font-semibold"
+              >
+                {nextLabel}
+              </Button>
+            ) : null
+          ) : (
+            <>
+              <Button
+                type="button"
+                disabled={!canGrade}
+                aria-busy={grading}
+                aria-describedby={!canGrade && !busy ? `va-hint-${item.id}` : undefined}
+                onClick={() => onGrade(trimmed)}
+                className="h-[52px] min-w-0 flex-1 text-base font-semibold"
+              >
+                {grading ? 'Correggo…' : 'Correggi'}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={busy}
+                onClick={onUnknown}
+                className="h-[52px] flex-none px-4"
+              >
+                Non me lo ricordo
+              </Button>
+            </>
+          ),
+          barSlot,
+        )}
+
       {!ended && !answered && (
         <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap gap-2.5 max-md:flex-col">
-            <Button
-              type="button"
-              size="lg"
-              disabled={!canGrade}
-              aria-busy={grading}
-              aria-describedby={!canGrade && !busy ? `va-hint-${item.id}` : undefined}
-              onClick={() => onGrade(trimmed)}
-            >
-              {grading ? 'Correggo…' : 'Correggi'}
-            </Button>
-            <Button type="button" size="lg" variant="ghost" disabled={busy} onClick={onUnknown}>
-              Non me lo ricordo
-            </Button>
-          </div>
+          {!inBar && (
+            <div className="flex flex-wrap gap-2.5 max-md:flex-col">
+              <Button
+                type="button"
+                size="lg"
+                disabled={!canGrade}
+                aria-busy={grading}
+                aria-describedby={!canGrade && !busy ? `va-hint-${item.id}` : undefined}
+                onClick={() => onGrade(trimmed)}
+              >
+                {grading ? 'Correggo…' : 'Correggi'}
+              </Button>
+              <Button type="button" size="lg" variant="ghost" disabled={busy} onClick={onUnknown}>
+                Non me lo ricordo
+              </Button>
+            </div>
+          )}
           {!canGrade && !busy && (
             <p id={`va-hint-${item.id}`} className="text-xs text-fg-muted">
               Scrivi prima una risposta, oppure scegli «Non me lo ricordo».
@@ -201,7 +251,7 @@ export function VerifyQuestionCard({
         </div>
       )}
 
-      {answered && nextLabel && (
+      {answered && nextLabel && !inBar && (
         <div className="flex flex-wrap gap-2.5 max-md:flex-col">
           <Button type="button" size="lg" onClick={onNext}>
             {nextLabel}

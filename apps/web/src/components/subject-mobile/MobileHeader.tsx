@@ -11,6 +11,7 @@ const iconButton =
 
 export function MobileHeader({
   subject,
+  subtitle,
   searchOpen,
   searchRegionId,
   onToggleSearch,
@@ -19,6 +20,8 @@ export function MobileHeader({
   actionsButtonRef,
 }: {
   subject: SubjectDto;
+  /** Optional second line under the name (e.g. the next exam). */
+  subtitle?: string | undefined;
   searchOpen: boolean;
   searchRegionId: string;
   onToggleSearch: () => void;
@@ -27,7 +30,7 @@ export function MobileHeader({
   actionsButtonRef: Ref<HTMLButtonElement>;
 }) {
   return (
-    <div className="flex h-[52px] items-center gap-1 px-1">
+    <div className={`flex items-center gap-1 px-1 ${subtitle ? 'min-h-[60px]' : 'h-[52px]'}`}>
       <Link href="/materie" aria-label="Torna a Materie" className={iconButton}>
         <ArrowLeft className="h-5 w-5" aria-hidden="true" />
       </Link>
@@ -36,9 +39,10 @@ export function MobileHeader({
         className="h-[9px] w-[9px] shrink-0 rounded-full"
         style={{ backgroundColor: SUBJECT_COLOR_HEX[subject.color] }}
       />
-      <h1 className="ml-1 min-w-0 flex-1 truncate text-base font-semibold tracking-[-0.02em]">
-        {subject.name}
-      </h1>
+      <div className="ml-1 min-w-0 flex-1">
+        <h1 className="truncate text-base font-semibold tracking-[-0.02em]">{subject.name}</h1>
+        {subtitle && <p className="truncate text-[13px] text-fg-secondary">{subtitle}</p>}
+      </div>
       {subject.archivedAt && (
         <span className="shrink-0 rounded-full border border-warn px-2 py-0.5 text-[11px] text-warn">
           Archiviata

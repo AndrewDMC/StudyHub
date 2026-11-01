@@ -58,7 +58,7 @@ export function ExplainStepView({
   return (
     <section
       aria-labelledby="explain-title"
-      className="space-y-4 rounded-[var(--radius-card)] border border-border bg-bg-surface p-5 md:p-6"
+      className="space-y-4 rounded-[var(--radius-card)] border border-border bg-bg-surface p-5 max-md:border-0 max-md:bg-transparent max-md:px-0 md:p-6"
     >
       <div className="flex flex-wrap items-start justify-between gap-3 max-md:flex-col">
         <div className="min-w-0 space-y-1">

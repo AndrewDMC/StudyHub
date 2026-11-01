@@ -80,6 +80,7 @@ export function LessonOutline({
   currentIndex,
   onSelect,
   pendingIndex,
+  vertical = false,
 }: {
   blocks: LessonBlockDto[];
   blockCount: number | null;
@@ -87,6 +88,8 @@ export function LessonOutline({
   onSelect: (index: number) => void;
   /** The block being generated, if any. */
   pendingIndex?: number | null;
+  /** One row under the other at any width (the index inside a sheet on a phone). */
+  vertical?: boolean;
 }) {
   const total = Math.max(blockCount ?? 0, blocks.length, 1);
   const byIndex = new Map(blocks.map((b) => [b.orderIndex, b]));
@@ -97,7 +100,12 @@ export function LessonOutline({
       <p className="mb-2 text-xs font-medium uppercase tracking-wide text-fg-secondary">
         La lezione · {blockCount ?? '…'} blocchi
       </p>
-      <ol className="flex gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">
+      <ol
+        className={cn(
+          'flex gap-1',
+          vertical ? 'flex-col' : 'overflow-x-auto lg:flex-col lg:overflow-visible',
+        )}
+      >
         {rows.map((i) => {
           const block = byIndex.get(i);
           const state = block?.state ?? 'locked';
@@ -113,7 +121,7 @@ export function LessonOutline({
                   ? 'In preparazione…'
                   : `Si sblocca dopo il blocco ${i}`;
           return (
-            <li key={i} className="min-w-[10rem] lg:min-w-0">
+            <li key={i} className={vertical ? 'min-w-0' : 'min-w-[10rem] lg:min-w-0'}>
               <OutlineRow
                 number={i + 1}
                 title={block ? block.title : `Blocco ${i + 1}`}

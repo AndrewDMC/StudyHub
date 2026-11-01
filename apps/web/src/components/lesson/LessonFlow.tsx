@@ -11,15 +11,20 @@ import type {
   UpdateSessionItemRequest,
 } from '@studyhub/contracts';
 import { Button } from '@/components/ui/button';
+import { useIsMobile } from '@/lib/useIsMobile';
 import { formatClock, usePomodoro } from '@/components/PomodoroTimer';
 import { SessionChat } from '@/components/SessionChat';
 import { fetchBriefing } from '@/components/SessionBriefing';
 import { ApplyStep } from '@/components/lesson/ApplyStep';
 import { ExplainStep } from '@/components/lesson/ExplainStep';
 import { ExploreStep } from '@/components/lesson/ExploreStep';
+import { LessonActionBar } from '@/components/lesson/LessonActionBar';
+import { LessonMobileHeader } from '@/components/lesson/LessonMobileHeader';
+import { LessonSheet } from '@/components/lesson/LessonSheet';
 import { LessonStudy } from '@/components/lesson/LessonStudy';
 import { PhaseNav } from '@/components/lesson/PhaseNav';
 import { PhaseStepper } from '@/components/lesson/PhaseStepper';
+import { PhaseStepperCompact } from '@/components/lesson/PhaseStepperCompact';
 import { RecallStep } from '@/components/lesson/RecallStep';
 import { SessionClosing } from '@/components/SessionClosing';
 import { SprintExercisesStep } from '@/components/lesson/SprintExercisesStep';
@@ -32,6 +37,9 @@ import {
   SPRINT_NEXT_ACTION,
   SPRINT_PHASES,
   STANDARD_PHASES,
+  barBackFor,
+  barHasSlot,
+  barPrimaryFor,
   initialBlockIndex,
   initialSprintViewPhase,
   initialViewPhase,
@@ -41,6 +49,7 @@ import {
   sprintPhaseDone,
   sprintRecallSummary,
   sprintStepStatus,
+  stepStatus,
   useExplanation,
   useLesson,
   useLessonPhase,
@@ -134,6 +143,12 @@ export function LessonFlow({
   const [target, setTarget] = useState<{ docId: string; page: number; nonce: number } | null>(null);
   const persistTimer = useRef<number | undefined>(undefined);
   const mainRef = useRef<HTMLDivElement>(null);
+  // Below 768 px: fixed action bar, Materiale e tutor in a sheet (`null` before hydration: not mobile).
+  const mobile = useIsMobile() === true;
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [barSlot, setBarSlot] = useState<HTMLElement | null>(null);
+  const sideButton = useRef<HTMLButtonElement>(null);
+  const sheetTrigger = useRef<HTMLElement | null>(null);
 
   // A sprint lesson from before the sprint phases only has "Studia": no stepper, no way on.
   const staged = flow !== 'legacy';
@@ -230,27 +245,42 @@ export function LessonFlow({
     docs.find((d) => d.id === docId) ?? docs.find((d) => d.highlighted) ?? docs[0] ?? null;
   const documentNames = new Map(docs.map((d) => [d.id, d.name]));
 
+  /** Show Material | Tutor: the sheet on a phone, the panel under the step otherwise. */
+  function showSide() {
+    if (!mobile) {
+      revealSidePanel();
+      return;
+    }
+    if (!sheetOpen) {
+      sheetTrigger.current =
+        document.activeElement instanceof HTMLElement && document.activeElement !== document.body
+          ? document.activeElement
+          : sideButton.current;
+    }
+    setSheetOpen(true);
+  }
+
   function openCitation(citation: CitationLike) {
     setDocId(citation.docId);
     setTarget({ docId: citation.docId, page: citation.page, nonce: Date.now() });
     setTab('material');
-    revealSidePanel();
+    showSide();
   }
   function openDocument(id: string, page?: number) {
     setDocId(id);
     setTarget(page ? { docId: id, page, nonce: Date.now() } : null);
     setTab('material');
-    revealSidePanel();
+    showSide();
   }
   function onAsk(next: SessionFocus) {
     setFocus(next);
     setTab('tutor');
-    revealSidePanel();
+    showSide();
   }
   function prefillTutor(text: string) {
     setPrefill({ text, nonce: Date.now() });
     setTab('tutor');
-    revealSidePanel();
+    showSide();
   }
 
   if (!session) {
@@ -327,6 +357,27 @@ export function LessonFlow({
     </p>
   );
 
+  const tutorPanel = (
+    <SessionChat
+      slug={slug}
+      sessionId={sessionId}
+      active={!!active}
+      documentNames={documentNames}
+      focus={focus}
+      onClearFocus={() => setFocus(null)}
+      onOpenCitation={openCitation}
+      prefill={prefill}
+    />
+  );
+  const primary = barPrimaryFor({
+    flow,
+    phase,
+    active: !!active,
+    sprintDone: !!sprintView && sprintPhaseDone('exercises', { ...sprintProgress, furthest: 0 }),
+  });
+  // The block draws into the bar only when the bar has a slot for it; otherwise its buttons stay in the page.
+  const slotFor = mobile && barHasSlot(primary) ? barSlot : undefined;
+
   let step: ReactNode;
   switch (sprintFlow ? `sprint:${phase}` : phase) {
     case 'sprint:exercises':
@@ -386,6 +437,7 @@ export function LessonFlow({
           onOpenCitation={openCitation}
           onPrefill={prefillTutor}
           onGo={goTo}
+          barSlot={slotFor}
         />
       );
       break;
@@ -453,6 +505,7 @@ export function LessonFlow({
           onPrefill={prefillTutor}
           onGo={goTo}
           staged={staged}
+          barSlot={slotFor}
         />
       );
       break;
@@ -496,6 +549,143 @@ export function LessonFlow({
         />
       );
       break;
+  }
+
+  const banners = (
+    <>
+      {!active && staged && phase !== 'recall' && (
+        <div
+          role="status"
+          className="flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] border border-ok/40 bg-ok/5 p-3 text-sm text-fg-primary"
+        >
+          <span className="min-w-0 flex-1">
+            {sprintFlow
+              ? 'La lezione è terminata. Il drill è in Ricorda.'
+              : 'La lezione è terminata. Flashcard e drill sono in Ricorda.'}
+          </span>
+          {!mobile && (
+            <Button type="button" size="sm" variant="secondary" onClick={() => goTo('recall')}>
+              Vai a Ricorda
+            </Button>
+          )}
+        </div>
+      )}
+      {endMutation.isError && (!staged || phase !== 'recall') && (
+        <p role="alert" className="text-sm text-danger">
+          {(endMutation.error as Error).message}
+        </p>
+      )}
+      {staged && savePhase.isError && (
+        <p role="alert" className="text-xs text-danger">
+          Non sono riuscito a salvare la fase: riaprendo la lezione ripartirai dall&apos;ultima
+          salvata.
+        </p>
+      )}
+    </>
+  );
+
+  if (mobile) {
+    const back = barBackFor({ flow, phase, current });
+    const studying = phase === (sprintFlow ? 'theory' : 'understand');
+    const progressLabel =
+      studying && blockCount
+        ? `blocco ${Math.min(current + 1, blockCount)} di ${blockCount}`
+        : staged
+          ? phaseLabel
+          : 'Studia';
+    const canTerminate = !!active && phase !== 'recall';
+    return (
+      <div className="flex min-h-dvh flex-col bg-bg-base pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
+        <div
+          aria-hidden="true"
+          className="fixed inset-x-0 top-0 z-40 h-[env(safe-area-inset-top)] bg-bg-base"
+        />
+        <LessonMobileHeader
+          slug={slug}
+          title={session.taskTitle ?? (session.topics.map((t) => t.name).join(', ') || 'Lezione')}
+          method={session.method === 'sprint' ? 'sprint' : 'standard'}
+          minutes={session.taskMinutes ?? null}
+          active={!!active}
+          closesSession={!staged}
+          shownMs={shownMs}
+          progressLabel={progressLabel}
+          running={timer.running}
+          onToggleRun={() => timer.setRunning(!timer.running)}
+          onTerminate={canTerminate ? () => (staged ? goTo('recall') : endMutation.mutate()) : null}
+          terminatedChip={
+            active
+              ? null
+              : `Terminata · ${session.pomodoros} ${session.pomodoros === 1 ? 'pomodoro' : 'pomodori'}${session.taskId ? ' · task completata' : ''}`
+          }
+        />
+        {!active && !staged && (
+          <div className="px-4 pt-3">
+            <SessionClosing
+              slug={slug}
+              sessionId={sessionId}
+              session={session}
+              sessionKey={sessionKey}
+            />
+          </div>
+        )}
+        {staged &&
+          (sprintFlow ? (
+            <PhaseStepperCompact
+              current={phase as SprintPhase}
+              phases={SPRINT_LESSON_PHASES}
+              statusOf={(id) => sprintStepStatus(id, phase as SprintPhase, sprintProgress)}
+              ariaLabel="Fasi della lezione sprint"
+              onSelect={goTo}
+            />
+          ) : (
+            <PhaseStepperCompact
+              current={phase as StandardPhase}
+              phases={LESSON_PHASES}
+              statusOf={(id) => stepStatus(id, phase as StandardPhase, progress)}
+              onSelect={goTo}
+            />
+          ))}
+        <p role="status" className="sr-only">
+          {announce}
+        </p>
+        <div className="flex flex-col gap-3 px-4 pt-2 empty:hidden">{banners}</div>
+        <div
+          id="lesson-phase"
+          role="region"
+          aria-label="Fase della lezione"
+          ref={mainRef}
+          tabIndex={-1}
+          className="min-w-0 scroll-mt-20 space-y-4 p-4 outline-none"
+        >
+          {step}
+        </div>
+        <LessonActionBar
+          back={back}
+          primary={primary}
+          onBack={() => {
+            if (!back) return;
+            if (back.kind === 'block') selectBlock(Math.max(current - 1, 0), true);
+            else goTo(back.to);
+          }}
+          onPhase={goTo}
+          onOpenSide={() => {
+            sheetTrigger.current = sideButton.current;
+            setSheetOpen(true);
+          }}
+          sideRef={sideButton}
+          setSlot={setBarSlot}
+        />
+        <LessonSheet
+          open={sheetOpen}
+          onOpenChange={setSheetOpen}
+          tab={tab}
+          onTabChange={setTab}
+          material={material}
+          tutor={tutorPanel}
+          returnFocusRef={sheetTrigger}
+        />
+      </div>
+    );
   }
 
   return (
@@ -558,32 +748,7 @@ export function LessonFlow({
           sessionKey={sessionKey}
         />
       )}
-      {!active && staged && phase !== 'recall' && (
-        <div
-          role="status"
-          className="flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] border border-ok/40 bg-ok/5 p-3 text-sm text-fg-primary"
-        >
-          <span className="min-w-0 flex-1">
-            {sprintFlow
-              ? 'La lezione è terminata. Il drill è in Ricorda.'
-              : 'La lezione è terminata. Flashcard e drill sono in Ricorda.'}
-          </span>
-          <Button type="button" size="sm" variant="secondary" onClick={() => goTo('recall')}>
-            Vai a Ricorda
-          </Button>
-        </div>
-      )}
-      {endMutation.isError && (!staged || phase !== 'recall') && (
-        <p role="alert" className="text-sm text-danger">
-          {(endMutation.error as Error).message}
-        </p>
-      )}
-      {staged && savePhase.isError && (
-        <p role="alert" className="text-xs text-danger">
-          Non sono riuscito a salvare la fase: riaprendo la lezione ripartirai dall&apos;ultima
-          salvata.
-        </p>
-      )}
+      {banners}
 
       {staged && (
         <>
@@ -643,18 +808,7 @@ export function LessonFlow({
           onTabChange={setTab}
           className="h-[75dvh] lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)]"
           material={material}
-          tutor={
-            <SessionChat
-              slug={slug}
-              sessionId={sessionId}
-              active={!!active}
-              documentNames={documentNames}
-              focus={focus}
-              onClearFocus={() => setFocus(null)}
-              onOpenCitation={openCitation}
-              prefill={prefill}
-            />
-          }
+          tutor={tutorPanel}
         />
       </div>
     </div>

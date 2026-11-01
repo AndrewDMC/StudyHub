@@ -20,29 +20,6 @@ export const INTENSITY_LABELS: Record<Intensity, string> = {
 
 export const INTENSITY_ORDER: readonly Intensity[] = ['sprint', 'standard', 'sostenibile'];
 
-export type KindColor = 'accent' | 'subject' | 'warn' | 'danger' | 'info' | 'muted';
-
-/** Colour family of a task kind; `subject` is the subject's identity colour (not a global token). */
-export function kindColor(kind: TaskDto['kind']): KindColor {
-  switch (kind) {
-    case 'read':
-    case 'lesson':
-    case 'schema':
-      return 'accent';
-    case 'flashcards':
-      return 'subject';
-    case 'drill':
-      return 'warn';
-    case 'simulation':
-      return 'danger';
-    case 'review':
-    case 'verify':
-      return 'info';
-    case 'rest':
-      return 'muted';
-  }
-}
-
 /** Tasks that count towards the progress: everything but rest days and moved leftovers. */
 export function planProgress(tasks: TaskDto[]): { total: number; done: number } {
   const counted = tasks.filter((t) => t.kind !== 'rest' && t.status !== 'moved');

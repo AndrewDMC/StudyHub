@@ -5,15 +5,18 @@ import { useRouter } from 'next/navigation';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { SessionDocumentDto, StudySessionDto, VerifyStateDto } from '@studyhub/contracts';
 import { Button } from '@/components/ui/button';
+import { useIsMobile } from '@/lib/useIsMobile';
 import { usePomodoro } from '@/components/PomodoroTimer';
 import { patchSession, postEnd } from '@/lib/sessionApi';
 import { verifyKey } from '@/lib/verifyClient';
 import { LessonError, LessonSkeleton } from '@/components/lesson/LessonStatus';
+import { VerifyActionBar } from '@/components/verify/VerifyActionBar';
 import { VerifyHeader } from '@/components/verify/VerifyHeader';
 import {
   VerifyMaterialPanel,
   type VerifyMaterialTarget,
 } from '@/components/verify/VerifyMaterialPanel';
+import { VerifyMaterialSheet } from '@/components/verify/VerifyMaterialSheet';
 import { VerifyProgress } from '@/components/verify/VerifyProgress';
 import { VerifyQuestionCard } from '@/components/verify/VerifyQuestionCard';
 import { VerifySummary } from '@/components/verify/VerifySummary';
@@ -23,6 +26,7 @@ import {
   jobInFlight,
   showSummary,
   useVerify,
+  verifyBarState,
   verifyMode,
   type VerifyCitation,
 } from '@/lib/verifyClient';
@@ -163,6 +167,9 @@ function VerifyPage({
   const [material, setMaterial] = useState<VerifyMaterialTarget | null>(null);
   const [announce, setAnnounce] = useState('');
   const trigger = useRef<HTMLElement | null>(null);
+  // Below 768 px: fixed action bar and the material in a sheet (`null` before hydration: not mobile).
+  const mobile = useIsMobile() === true;
+  const [barSlot, setBarSlot] = useState<HTMLElement | null>(null);
   const mounted = useRef(false);
 
   const index = Math.min(viewIndex, items.length);
@@ -188,7 +195,7 @@ function VerifyPage({
     trigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setMaterial({ docId: citation.docId, page: citation.page, nonce: Date.now() });
     setAnnounce(`Materiale aperto: ${citation.documentName}, pagina ${citation.page}.`);
-    if (window.matchMedia?.('(max-width: 1023.98px)').matches) {
+    if (!mobile && window.matchMedia?.('(max-width: 1023.98px)').matches) {
       const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       window.setTimeout(
         () =>
@@ -275,7 +282,13 @@ function VerifyPage({
   const busy = grading || markUnknown.isPending;
   const generating = jobInFlight(data);
   const failedWithItems = data.job?.status === 'failed';
-  const bodyWidth = material ? 'max-w-[1200px]' : 'max-w-[760px]';
+  const inlineMaterial = material && !mobile ? material : null;
+  const barState = verifyBarState({
+    hasItem: !!item,
+    ended,
+    answered: item ? item.state !== 'open' : false,
+  });
+  const bodyWidth = inlineMaterial ? 'max-w-[1200px]' : 'max-w-[760px]';
 
   return (
     <Shell header={header}>
@@ -283,9 +296,11 @@ function VerifyPage({
         {announce}
       </p>
       <div
-        className={`mx-auto w-full ${bodyWidth} px-6 pb-[calc(4rem+env(safe-area-inset-bottom))] pt-8 max-md:px-4 max-md:pb-[calc(2rem+env(safe-area-inset-bottom))] ${
-          material ? 'lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:gap-6' : ''
-        }`}
+        className={`mx-auto w-full ${bodyWidth} px-6 pb-[calc(4rem+env(safe-area-inset-bottom))] pt-8 max-md:px-4 ${
+          mobile && barState !== 'none'
+            ? 'max-md:pb-[calc(6rem+env(safe-area-inset-bottom))]'
+            : 'max-md:pb-[calc(2rem+env(safe-area-inset-bottom))]'
+        } ${inlineMaterial ? 'lg:grid lg:grid-cols-[minmax(0,1fr)_24rem] lg:gap-6' : ''}`}
       >
         <main aria-label="Verifica" className="flex min-w-0 flex-col gap-5">
           {failedWithItems && (
@@ -326,8 +341,9 @@ function VerifyPage({
                 onUnknown={() => markUnknown.mutate({ id: item.id })}
                 onNext={goNext}
                 onOpenCitation={openCitation}
+                barSlot={mobile ? barSlot : undefined}
               />
-              {ended && (
+              {ended && !mobile && (
                 <div className="flex justify-between gap-2.5">
                   <Button
                     type="button"
@@ -394,20 +410,55 @@ function VerifyPage({
           <p className="text-[13px] text-fg-secondary">{NOTE}</p>
         </main>
 
-        {material && (
+        {inlineMaterial && (
           <div
             id="verify-material"
             className="mt-4 max-lg:h-[75dvh] lg:sticky lg:top-4 lg:mt-0 lg:h-[calc(100vh-2rem)]"
           >
             <VerifyMaterialPanel
               docs={session.documents}
-              target={material}
+              target={inlineMaterial}
               onClose={closeMaterial}
               renderDocument={renderDocument}
             />
           </div>
         )}
       </div>
+      {mobile && (
+        <VerifyMaterialSheet
+          docs={session.documents}
+          target={material}
+          onClose={closeMaterial}
+          returnFocusRef={trigger}
+          renderDocument={renderDocument}
+        />
+      )}
+      {mobile && (barState === 'open' || barState === 'next') && (
+        <VerifyActionBar setSlot={setBarSlot} />
+      )}
+      {mobile && barState === 'review' && (
+        <VerifyActionBar>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={index === 0}
+            aria-label={`Precedente: domanda ${index} di ${items.length}`}
+            onClick={() => setViewIndex(index - 1)}
+            className="h-[52px] flex-1 px-2"
+          >
+            ← Precedente
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            aria-label={`Successiva: domanda ${index + 2} di ${items.length}`}
+            onClick={() => setViewIndex(index + 1)}
+            className="h-[52px] flex-1 px-2"
+          >
+            Successiva →
+          </Button>
+        </VerifyActionBar>
+      )}
     </Shell>
   );
 }

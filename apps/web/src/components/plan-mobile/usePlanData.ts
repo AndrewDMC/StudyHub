@@ -11,7 +11,9 @@ import type {
   PlanPreviewDto,
   SubjectDto,
   TaskDto,
+  TopicDto,
 } from '@studyhub/contracts';
+import { fetchDocuments } from '../subject-mobile/queries';
 
 // Same helpers as `PlanClient.tsx` (not exported from there on purpose: the desktop stays untouched).
 async function getJson<T>(url: string, key: string): Promise<T> {
@@ -66,7 +68,16 @@ export function usePlanQueries(
     queryFn: () => getJson<DriftReportDto | null>(`/api/subjects/${slug}/plan/drift`, 'drift'),
     enabled: selected?.status === 'active',
   });
-  return { plans, exams, subject, diff, drift };
+  // Same keys as the subject page: names of the topics and documents for "Cosa entra" and the order.
+  const topics = useQuery({
+    queryKey: ['topics', slug],
+    queryFn: () => getJson<TopicDto[]>(`/api/subjects/${slug}/topics`, 'topics'),
+  });
+  const documents = useQuery({
+    queryKey: ['documents', slug],
+    queryFn: () => fetchDocuments(slug),
+  });
+  return { plans, exams, subject, diff, drift, topics, documents };
 }
 
 export function usePlanPreview(slug: string, settledKey: string, enabled: boolean) {

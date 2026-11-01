@@ -889,3 +889,90 @@ export function useSprint({
     inFlight,
   };
 }
+
+// ---- mobile shell (below 768 px): stepper labels and the fixed action bar ----
+
+const STEP_STATUS_LABEL: Record<StepStatus, string> = {
+  done: 'fatta',
+  current: 'fase corrente',
+  todo: 'da fare',
+};
+
+/** The status of a phase as the compact stepper says it: "fatta", "fase corrente", "da fare". */
+export function phaseStatusLabel(status: StepStatus): string {
+  return STEP_STATUS_LABEL[status];
+}
+
+/** What fills the main slot of the mobile action bar. */
+export type BarPrimary =
+  /** Nothing: the step carries its own button (Ricorda closes the lesson in the page). */
+  | { kind: 'none' }
+  /** The block being studied fills the slot (Controlla, then the way on). */
+  | { kind: 'block' }
+  | { kind: 'phase'; label: string; to: LessonPhase; quiet: boolean };
+
+/**
+ * The primary button of the mobile bar for the current phase. The labels are the ones of the buttons
+ * in the page (`NEXT_ACTION`, `SPRINT_NEXT_ACTION`): the bar replaces them, it does not rename them.
+ */
+export function barPrimaryFor(input: {
+  flow: LessonFlowKind;
+  phase: LessonPhase;
+  active: boolean;
+  /** Sprint "Esercizi": every exercise is rated, so forward is the loud kind. */
+  sprintDone?: boolean;
+}): BarPrimary {
+  const { flow, phase, active } = input;
+  if (!active) {
+    if (flow === 'legacy' || phase === 'recall') return { kind: 'none' };
+    return { kind: 'phase', label: 'Vai a Ricorda', to: 'recall', quiet: false };
+  }
+  if (flow === 'legacy') return { kind: 'block' };
+  if (phase === 'recall') return { kind: 'none' };
+  if (flow === 'sprint') {
+    if (!isSprintPhase(phase)) return { kind: 'none' };
+    if (phase === 'theory') return { kind: 'block' };
+    const next = SPRINT_NEXT_ACTION[phase];
+    if (!next) return { kind: 'none' };
+    return {
+      kind: 'phase',
+      label: next.label,
+      to: next.to,
+      quiet: phase === 'exercises' && !input.sprintDone,
+    };
+  }
+  if (!isStandardPhase(phase)) return { kind: 'none' };
+  if (phase === 'understand') return { kind: 'block' };
+  const next = NEXT_ACTION[phase];
+  return next ? { kind: 'phase', label: next.label, to: next.to, quiet: false } : { kind: 'none' };
+}
+
+/** Where the back button of the mobile bar goes: the previous block while studying, else the previous phase. */
+export type BarBack =
+  { kind: 'block'; label: string } | { kind: 'phase'; label: string; to: LessonPhase };
+
+export function barBackFor(input: {
+  flow: LessonFlowKind;
+  phase: LessonPhase;
+  /** Index of the block shown. */
+  current: number;
+}): BarBack | null {
+  const { flow, phase } = input;
+  if (flow === 'legacy') return null;
+  const studying = flow === 'sprint' ? phase === 'theory' : phase === 'understand';
+  if (studying && input.current > 0) return { kind: 'block', label: 'Blocco precedente' };
+  const prev =
+    flow === 'sprint'
+      ? isSprintPhase(phase)
+        ? previousSprintPhase(phase)
+        : null
+      : isStandardPhase(phase)
+        ? previousPhase(phase)
+        : null;
+  return prev ? { kind: 'phase', label: `Fase precedente: ${prev.label}`, to: prev.id } : null;
+}
+
+/** The bar only has a slot for the block while it is the block's turn: elsewhere the buttons stay in the page. */
+export function barHasSlot(primary: BarPrimary): boolean {
+  return primary.kind === 'block';
+}

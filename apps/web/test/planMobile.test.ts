@@ -9,7 +9,6 @@ import {
   formatDayTitle,
   formatDuration,
   formatUntil,
-  kindColor,
   overdueTasks,
   planProgress,
   scaleAvailability,
@@ -49,12 +48,6 @@ describe('planMobile', () => {
       task({ status: 'moved' }),
     ]);
     expect(p).toEqual({ total: 2, done: 1 });
-  });
-
-  it('maps kinds to colours', () => {
-    expect(kindColor('read')).toBe('accent');
-    expect(kindColor('flashcards')).toBe('subject');
-    expect(kindColor('rest')).toBe('muted');
   });
 
   it('finds the overdue tasks of an active plan, oldest first', () => {

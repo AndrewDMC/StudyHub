@@ -191,9 +191,6 @@ function SubjectDetailClientInner({ slug }: { slug: string }) {
           subject={subject}
           documents={documents}
           topics={topics}
-          topicsLoaded={topicsQuery.isSuccess}
-          stats={statsQuery.data}
-          flashcardTotal={flashcardTotal}
           nextExam={nextExam}
           tab={mobileTab.tab}
           filter={mobileTab.filter}

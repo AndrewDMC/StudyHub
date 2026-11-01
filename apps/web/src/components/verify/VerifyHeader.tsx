@@ -15,7 +15,7 @@ export function VerifyHeader({
   daysOffset: 3 | 7 | null;
 }) {
   return (
-    <header className="flex flex-wrap items-center gap-x-5 gap-y-3 border-b border-border bg-bg-inset px-6 py-3 max-md:px-4">
+    <header className="flex flex-wrap items-center gap-x-5 gap-y-3 border-b border-border bg-bg-inset px-6 py-3 max-md:px-4 max-md:pt-[calc(0.75rem+env(safe-area-inset-top))]">
       <Link
         href={subjectHref}
         aria-label={`Torna alla materia ${subjectName}`}
@@ -34,7 +34,7 @@ export function VerifyHeader({
         >
           <path d="M10 3 5 8l5 5" />
         </svg>
-        {subjectName}
+        <span className="max-md:max-w-[9rem] max-md:truncate">{subjectName}</span>
       </Link>
       <div className="flex min-w-0 items-center gap-2.5">
         <h1 className="min-w-0 break-words text-base font-semibold">

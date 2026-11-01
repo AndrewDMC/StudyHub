@@ -166,7 +166,7 @@ export function DailyTasksPanel({
                   {task.date} · {task.minutes} min
                 </p>
                 <p className="text-sm text-fg-primary">{task.title}</p>
-                <div className="mt-1 flex flex-wrap gap-1.5">
+                <div className="mt-1 flex flex-wrap gap-1.5 max-md:gap-2 max-md:[&>button]:min-h-11 max-md:[&>button]:px-3">
                   <button
                     type="button"
                     onClick={() => postponeMutation.mutate(task.id)}
