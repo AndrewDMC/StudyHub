@@ -69,5 +69,7 @@ export const SubjectOverviewDtoSchema = z.object({
   suggestedActions: z.array(SuggestedActionDtoSchema).max(3),
   recentActivity: z.array(RecentActivityItemDtoSchema),
   gaps: z.array(GapDtoSchema),
+  /** Documenti `parsed` della materia senza alcun argomento assegnato. */
+  untaggedDocumentCount: z.number().int().min(0).default(0),
 });
 export type SubjectOverviewDto = z.infer<typeof SubjectOverviewDtoSchema>;

@@ -14,9 +14,8 @@ import { ExamsPanel } from './ExamsPanel';
 import { SubjectActions } from './SubjectActions';
 import { AiPanel } from './AiPanel';
 import { ExamPrepPanel } from './ExamPrepPanel';
-import { DailyTasksPanel } from './DailyTasksPanel';
 import { SearchPanel } from './SearchPanel';
-import { GapsPanel, RecentActivityPanel, SuggestedActionsPanel } from './OverviewPanel';
+import { OverviewTab } from './overview/OverviewTab';
 import { CoveragePanel } from './CoveragePanel';
 import { SubjectMobile } from './subject-mobile/SubjectMobile';
 import { fetchDocuments } from './subject-mobile/queries';
@@ -290,12 +289,12 @@ function SubjectDetailClientInner({ slug }: { slug: string }) {
             <main className="min-w-0">
               {activeTab === 'panoramica' && (
                 <div className="space-y-4">
-                  <SuggestedActionsPanel subjectSlug={slug} />
-                  <DailyTasksPanel subjectSlug={slug} />
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <GapsPanel subjectSlug={slug} />
-                    <RecentActivityPanel subjectSlug={slug} />
-                  </div>
+                  <OverviewTab
+                    slug={slug}
+                    topics={topics}
+                    documents={documents}
+                    nextExam={nextExam}
+                  />
                   {aiProviderQuery.data === 'fake' && (
                     <div className="rounded-[var(--radius-card)] border border-dashed border-border bg-bg-surface p-3 text-xs text-fg-muted">
                       Generazione simulata (nessun provider AI configurato): le flashcard/riassunti

@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   BulkPlanActionRequest,
+  DocumentDto,
   ExamDto,
   GeneratePlanRequest,
   Intensity,
@@ -15,20 +16,14 @@ import type {
   TopicDto,
 } from '@studyhub/contracts';
 import { useIsMobile } from '@/lib/useIsMobile';
-import {
-  canSwitchMethod,
-  lessonMetaLabel,
-  runMethodSwitch,
-  otherMethod,
-  switchMethodLabel,
-  taskMethod,
-  type LessonMethodChoice,
-} from '@/lib/taskMethod';
+import type { LessonMethodChoice } from '@/lib/taskMethod';
+import { FitCard } from './plan/FitCard';
+import { IntensityCard } from './plan/IntensityCard';
+import { PlanSchedule } from './plan/PlanSchedule';
+import { PlanTopicsList } from './plan/PlanTopicsList';
+import { todayIso, topicName } from './plan/planModel';
 import { PlanChangeBox } from './PlanChangeBox';
 import { PlanMobile } from './plan-mobile/PlanMobile';
-import { TaskFlashcardsPanel } from './task-flashcards/TaskFlashcardsSection';
-import { cardCountLabel } from './task-flashcards/taskFlashcardsModel';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 
 async function getJson<T>(url: string, key: string): Promise<T> {
   const res = await fetch(url);
@@ -50,40 +45,27 @@ async function send(url: string, method: string, payload?: unknown) {
   return body;
 }
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 // perWeekday index 0 = Sunday … 6 = Saturday (packages/core/src/planner/dates.ts convention).
 const WEEKDAY_LABELS = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
 
-const KIND_LABELS: Record<TaskDto['kind'], string> = {
-  read: 'Lettura',
-  lesson: 'Lezione',
-  verify: 'Verifica',
-  flashcards: 'Flashcard',
-  schema: 'Schema',
-  simulation: 'Simulazione',
-  drill: 'Drill',
-  rest: 'Riposo',
-  review: 'Ripasso',
-};
-
-function WizardForm({
+export function WizardForm({
   slug,
   exams,
   onGenerated,
+  defaultIntensity = 'standard',
 }: {
   slug: string;
   exams: ExamDto[];
   onGenerated: () => void;
+  /** Intensity preselected when the form opens (e.g. from the plan's intensity card). */
+  defaultIntensity?: Intensity | undefined;
 }) {
   const [startDate, setStartDate] = useState(todayIso());
   const [targetDate, setTargetDate] = useState('');
   const [examId, setExamId] = useState('');
   const [perWeekday, setPerWeekday] = useState<number[]>([0, 90, 90, 90, 90, 90, 60]);
   const [sessionLength, setSessionLength] = useState(50);
-  const [intensity, setIntensity] = useState<Intensity>('standard');
+  const [intensity, setIntensity] = useState<Intensity>(defaultIntensity);
   const [simulationCount, setSimulationCount] = useState('auto');
   const [blackoutText, setBlackoutText] = useState('');
   // A partial covers only some topics; `scoped` off = the whole subject.
@@ -152,6 +134,7 @@ function WizardForm({
 
   return (
     <form
+      id="piano-wizard"
       onSubmit={(e) => {
         e.preventDefault();
         generate.mutate();
@@ -533,189 +516,6 @@ function BulkBar({ slug, plan, onDone }: { slug: string; plan: PlanDto; onDone: 
   );
 }
 
-function FeasibilityBanner({ plan }: { plan: PlanDto }) {
-  if (plan.feasibility.feasible) return null;
-  return (
-    <div className="rounded-[var(--radius-card)] border border-warn bg-bg-surface p-3 text-sm">
-      <p className="font-medium text-warn">
-        Tempo insufficiente: mancano ~{plan.feasibility.shortfallMinutes} min su{' '}
-        {plan.feasibility.requiredMinutes} richiesti.
-      </p>
-      <ul className="mt-2 space-y-1 text-xs text-fg-secondary">
-        {plan.feasibility.strategies.map((s) => (
-          <li key={s.id}>
-            <span className="font-medium text-fg-primary">{s.label}:</span> {s.description}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function TaskRow({
-  slug,
-  task,
-  isDraft,
-  onPin,
-  onDelete,
-  onStatus,
-  onMethod,
-}: {
-  slug: string;
-  task: TaskDto;
-  isDraft: boolean;
-  onPin: (id: string, pinned: boolean) => void;
-  onDelete: (id: string) => void;
-  onStatus: (id: string, status: 'done' | 'skipped' | 'todo') => void;
-  /** Switches a lesson between standard and sprint; resolves with the updated task. */
-  onMethod: (id: string, method: LessonMethodChoice) => Promise<TaskDto>;
-}) {
-  const [cardsOpen, setCardsOpen] = useState(false);
-  const [switching, setSwitching] = useState(false);
-  const [methodError, setMethodError] = useState<string | null>(null);
-  const [methodNote, setMethodNote] = useState('');
-  const method = taskMethod(task);
-  const switchable = canSwitchMethod(task);
-  async function switchMethod() {
-    const next = otherMethod(method);
-    setSwitching(true);
-    setMethodError(null);
-    const result = await runMethodSwitch(() => onMethod(task.id, next), next);
-    setMethodNote(result.note);
-    setMethodError(result.error);
-    setSwitching(false);
-  }
-  const hasCards = task.kind !== 'rest';
-  const pill =
-    'rounded-full border border-border px-2 py-0.5 text-xs text-fg-secondary hover:text-fg-primary max-md:min-h-11';
-  return (
-    <li className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 rounded-[var(--radius-control)] border border-border bg-bg-surface px-3 py-2">
-      <div className="min-w-0 flex-1 basis-56">
-        <div className="flex items-center gap-2">
-          <p className="text-xs uppercase tracking-wide text-fg-muted">
-            {task.kind === 'lesson'
-              ? lessonMetaLabel(task)
-              : `${KIND_LABELS[task.kind]} · ${task.minutes} min`}
-            {task.pinned ? ' · fissata' : ''}
-          </p>
-          {hasCards && task.flashcardCount > 0 && (
-            <button
-              type="button"
-              aria-haspopup="dialog"
-              aria-label={`${task.flashcardCount} flashcard attaccate a ${task.title}: apri`}
-              onClick={() => setCardsOpen(true)}
-              className={pill}
-            >
-              <span data-testid="task-card-badge">{cardCountLabel(task.flashcardCount)}</span>
-            </button>
-          )}
-        </div>
-        <p className="text-sm font-medium text-fg-primary md:truncate">{task.title}</p>
-        {task.description && (
-          <p className="text-xs text-fg-secondary md:truncate">{task.description}</p>
-        )}
-      </div>
-      <div className="flex shrink-0 gap-1.5 max-md:[&>button]:min-h-11 max-md:[&>button]:px-3">
-        {hasCards && (
-          <button
-            type="button"
-            aria-haspopup="dialog"
-            data-testid="task-flashcards-open"
-            onClick={() => setCardsOpen(true)}
-            className="rounded-[var(--radius-control)] border border-border px-2 py-1 text-[11px] text-fg-secondary hover:text-fg-primary"
-          >
-            Flashcard{task.flashcardCount > 0 ? ` (${task.flashcardCount})` : ''}
-          </button>
-        )}
-        {switchable && (
-          <button
-            type="button"
-            disabled={switching}
-            aria-busy={switching}
-            aria-label={`${switchMethodLabel(method)}: ${task.title}`}
-            onClick={() => void switchMethod()}
-            className="rounded-[var(--radius-control)] border border-border px-2 py-1 text-[11px] text-fg-secondary hover:text-fg-primary"
-          >
-            {switching ? 'Cambio…' : switchMethodLabel(method)}
-          </button>
-        )}
-        {isDraft ? (
-          <>
-            <button
-              type="button"
-              onClick={() => onPin(task.id, !task.pinned)}
-              className="rounded-[var(--radius-control)] border border-border px-2 py-1 text-[11px] text-fg-secondary hover:text-fg-primary"
-            >
-              {task.pinned ? 'Sblocca' : 'Fissa'}
-            </button>
-            <button
-              type="button"
-              onClick={() => onDelete(task.id)}
-              className="rounded-[var(--radius-control)] border border-danger px-2 py-1 text-[11px] text-danger"
-            >
-              Elimina
-            </button>
-          </>
-        ) : task.status === 'done' || task.status === 'skipped' ? (
-          <>
-            <span className="self-center text-[11px] text-fg-muted">
-              {task.status === 'done' ? 'Fatta' : 'Saltata'}
-            </span>
-            {/* Back to "da fare" (e.g. marked done by mistake). */}
-            <button
-              type="button"
-              onClick={() => onStatus(task.id, 'todo')}
-              className="rounded-[var(--radius-control)] border border-border px-2 py-1 text-[11px] text-fg-secondary hover:text-fg-primary"
-            >
-              Riapri
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              onClick={() => onStatus(task.id, 'done')}
-              className="rounded-[var(--radius-control)] border border-ok px-2 py-1 text-[11px] text-ok"
-            >
-              Fatta
-            </button>
-            <button
-              type="button"
-              onClick={() => onStatus(task.id, 'skipped')}
-              className="rounded-[var(--radius-control)] border border-border px-2 py-1 text-[11px] text-fg-muted"
-            >
-              Salta
-            </button>
-          </>
-        )}
-      </div>
-      {task.kind === 'lesson' && (
-        <p role="status" aria-live="polite" className="sr-only">
-          {methodNote}
-        </p>
-      )}
-      {methodError && (
-        <p role="alert" className="basis-full text-xs text-danger">
-          {methodError}
-        </p>
-      )}
-      {hasCards && (
-        <Dialog open={cardsOpen} onOpenChange={setCardsOpen}>
-          <DialogContent className="max-w-xl">
-            <DialogHeader>
-              <DialogTitle>{task.title}</DialogTitle>
-              <DialogDescription>
-                {KIND_LABELS[task.kind]} · {task.minutes} min · {task.date}
-              </DialogDescription>
-            </DialogHeader>
-            {cardsOpen && <TaskFlashcardsPanel slug={slug} task={task} variant="desktop" />}
-          </DialogContent>
-        </Dialog>
-      )}
-    </li>
-  );
-}
-
 function DiffPanel({ diff }: { diff: PlanDiffDto }) {
   if (diff.rows.length === 0) return null;
   return (
@@ -740,6 +540,8 @@ function DiffPanel({ diff }: { diff: PlanDiffDto }) {
 function PlanDesktop({ slug }: { slug: string }) {
   const queryClient = useQueryClient();
   const [wizardOpen, setWizardOpen] = useState(false);
+  // Set when the wizard is opened from the intensity card: the form starts on that intensity.
+  const [wizardIntensity, setWizardIntensity] = useState<Intensity | null>(null);
   // Only poll while we're actively waiting on a just-submitted generate_plan
   // job — otherwise a subject with no plan yet (or a broken backend) would
   // hammer the endpoint every 2s forever (no dedicated job-status endpoint
@@ -768,6 +570,14 @@ function PlanDesktop({ slug }: { slug: string }) {
   const examsQuery = useQuery({
     queryKey: ['exams', slug],
     queryFn: () => getJson<ExamDto[]>(`/api/subjects/${slug}/exams`, 'exams'),
+  });
+  const topicsQuery = useQuery({
+    queryKey: ['topics', slug],
+    queryFn: () => getJson<TopicDto[]>(`/api/subjects/${slug}/topics`, 'topics'),
+  });
+  const documentsQuery = useQuery({
+    queryKey: ['documents', slug],
+    queryFn: () => getJson<DocumentDto[]>(`/api/subjects/${slug}/documents`, 'documents'),
   });
   const diffQuery = useQuery({
     queryKey: ['plan-diff', slug],
@@ -831,13 +641,27 @@ function PlanDesktop({ slug }: { slug: string }) {
     const exam = p.examId ? (examsQuery.data ?? []).find((x) => x.id === p.examId) : null;
     return `${exam ? exam.title : 'Generale'}${p.status === 'draft' ? ' (bozza)' : ''}`;
   };
-  const byDay = new Map<string, TaskDto[]>();
-  for (const t of plan?.tasks ?? []) byDay.set(t.date, [...(byDay.get(t.date) ?? []), t]);
-  const days = [...byDay.keys()].sort();
-  const loadByDate = new Map((plan?.loadPerDay ?? []).map((d) => [d.date, d]));
+  const today = todayIso();
+  const nameOf = (key: string) => topicName(key, topicsQuery.data ?? [], documentsQuery.data ?? []);
+
+  // Opens the wizard (a new draft) and moves the focus to its first field.
+  const openWizard = (intensity: Intensity | null) => {
+    setWizardIntensity(intensity);
+    setWizardOpen(true);
+    setTimeout(() => {
+      const form = document.getElementById('piano-wizard');
+      form?.scrollIntoView?.({ block: 'start' });
+      form?.querySelector<HTMLInputElement>('input')?.focus();
+    }, 0);
+  };
+  const focusExclude = () => {
+    document
+      .querySelector<HTMLSelectElement>('select[aria-label="Argomento da escludere"]')
+      ?.focus();
+  };
 
   return (
-    <div className="mx-auto max-w-3xl p-4 md:p-6">
+    <div className="mx-auto max-w-[1120px] p-4 md:p-6">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <Link
@@ -851,7 +675,10 @@ function PlanDesktop({ slug }: { slug: string }) {
         {plan && (
           <button
             type="button"
-            onClick={() => setWizardOpen((v) => !v)}
+            onClick={() => {
+              setWizardIntensity(null);
+              setWizardOpen((v) => !v);
+            }}
             className="rounded-[var(--radius-control)] border border-border px-2.5 py-1 text-xs text-fg-secondary hover:text-fg-primary"
           >
             {wizardOpen
@@ -870,13 +697,27 @@ function PlanDesktop({ slug }: { slug: string }) {
         </p>
       )}
 
+      {awaitingDraft && (
+        <p role="status" className="mb-4 text-sm text-fg-secondary">
+          Sto preparando la bozza…
+        </p>
+      )}
+
       {(!plan || wizardOpen) && (
         <div className="mb-6">
+          {wizardIntensity && (
+            <p role="status" className="mb-2 text-xs text-fg-muted">
+              Per cambiare intensità si prepara una nuova bozza: scegli le date e conferma.
+            </p>
+          )}
           <WizardForm
+            key={wizardIntensity ?? 'default'}
             slug={slug}
             exams={examsQuery.data ?? []}
+            defaultIntensity={wizardIntensity ?? undefined}
             onGenerated={() => {
               setWizardOpen(false);
+              setWizardIntensity(null);
               setSelectedId(null);
               setAwaitingDraft(true);
               invalidatePlan();
@@ -911,7 +752,7 @@ function PlanDesktop({ slug }: { slug: string }) {
       )}
 
       {plan && !wizardOpen && (
-        <div className="space-y-4">
+        <div className="space-y-5">
           <PlanChangeBox
             key={plan.id}
             slug={slug}
@@ -935,7 +776,23 @@ function PlanDesktop({ slug }: { slug: string }) {
             </span>
           </div>
 
-          <FeasibilityBanner plan={plan} />
+          <IntensityCard
+            intensity={plan.prefs.intensity}
+            hasPlannerSprint={plan.feasibility.sprintLessonKeys.length > 0}
+            onChange={(next) => openWizard(next)}
+          />
+          <FitCard
+            plan={plan}
+            nameOf={nameOf}
+            onAddAvailability={() => openWizard(null)}
+            onExcludeMore={
+              // Same candidates as the BulkBar select: hidden when it has none.
+              plan.status === 'draft' &&
+              plan.tasks.some((t) => t.topicKey && (t.kind === 'read' || t.kind === 'lesson'))
+                ? focusExclude
+                : undefined
+            }
+          />
           {diffQuery.data && <DiffPanel diff={diffQuery.data} />}
 
           {plan.status === 'draft' && (
@@ -990,39 +847,27 @@ function PlanDesktop({ slug }: { slug: string }) {
             </p>
           )}
 
-          {days.length === 0 && (
+          {plan.tasks.length === 0 && (
             <div className="rounded-[var(--radius-card)] border border-dashed border-border bg-bg-surface p-8 text-center text-sm text-fg-muted">
               Nessuna task pianificata — carica materiale nella materia, poi rigenera il piano.
             </div>
           )}
 
-          <div className="space-y-3">
-            {days.map((date) => {
-              const load = loadByDate.get(date);
-              return (
-                <div key={date}>
-                  <p className="mb-1.5 font-mono text-xs tabular-nums text-fg-muted">
-                    {date}
-                    {load ? ` · ${load.planned}/${load.available} min` : ''}
-                  </p>
-                  <ul className="space-y-1.5">
-                    {byDay.get(date)!.map((task) => (
-                      <TaskRow
-                        key={task.id}
-                        slug={slug}
-                        task={task}
-                        isDraft={plan.status === 'draft'}
-                        onPin={(id, pinned) => pin.mutate({ id, pinned })}
-                        onDelete={(id) => removeTask.mutate(id)}
-                        onStatus={(id, status) => setStatus.mutate({ id, status })}
-                        onMethod={(id, method) => setMethod.mutateAsync({ id, method })}
-                      />
-                    ))}
-                  </ul>
-                </div>
-              );
-            })}
-          </div>
+          {plan.tasks.length > 0 && (
+            <>
+              <PlanSchedule
+                key={plan.id}
+                slug={slug}
+                plan={plan}
+                today={today}
+                onPin={(id, pinned) => pin.mutate({ id, pinned })}
+                onDelete={(id) => removeTask.mutate(id)}
+                onStatus={(id, status) => setStatus.mutate({ id, status })}
+                onMethod={(id, method) => setMethod.mutateAsync({ id, method })}
+              />
+              <PlanTopicsList plan={plan} today={today} nameOf={nameOf} />
+            </>
+          )}
         </div>
       )}
     </div>

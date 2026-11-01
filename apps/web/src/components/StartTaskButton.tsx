@@ -37,12 +37,14 @@ export function StartTaskButton({
   kind,
   className,
   label = 'Inizia',
+  'aria-label': ariaLabel,
 }: {
   subjectSlug: string;
   taskId: string;
   kind: TaskKind;
   className?: string;
   label?: string;
+  'aria-label'?: string;
 }) {
   const cls = className ?? CLASSNAME;
   const router = useRouter();
@@ -53,7 +55,7 @@ export function StartTaskButton({
 
   if (!SESSION_KINDS.has(kind)) {
     return (
-      <Link href={`/materie/${subjectSlug}/piano`} className={cls}>
+      <Link href={`/materie/${subjectSlug}/piano`} className={cls} aria-label={ariaLabel}>
         {label}
       </Link>
     );
@@ -64,6 +66,7 @@ export function StartTaskButton({
       <button
         type="button"
         disabled={start.isPending}
+        aria-label={ariaLabel}
         onClick={() => start.mutate()}
         className={cls}
       >

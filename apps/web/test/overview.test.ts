@@ -55,7 +55,12 @@ describe('getSubjectOverview', () => {
   it('reports an empty-but-valid overview for a fresh subject', async () => {
     const subject = await createSubject(db, dataRoot, { name: 'Fisica 1', color: 'blue' });
     const overview = await getSubjectOverview(db, subject.slug);
-    expect(overview).toEqual({ suggestedActions: [], recentActivity: [], gaps: [] });
+    expect(overview).toEqual({
+      suggestedActions: [],
+      recentActivity: [],
+      gaps: [],
+      untaggedDocumentCount: 0,
+    });
   });
 
   describe('suggestedActions', () => {
@@ -429,6 +434,44 @@ describe('getSubjectOverview', () => {
         kind: 'job',
         jobType: 'generate_flashcards',
       });
+    });
+  });
+
+  describe('untaggedDocumentCount', () => {
+    const doc = (subjectId: string, status: 'parsed' | 'uploaded' | 'failed', name: string) => ({
+      id: randomUUID(),
+      subjectId,
+      type: 'appunti' as const,
+      originalName: name,
+      storedPath: `/${name}`,
+      mime: 'application/pdf',
+      bytes: 1,
+      sha256: name.padEnd(64, 'a').slice(0, 64),
+      status,
+    });
+
+    it('is 0 when the subject has no documents', async () => {
+      const subject = await createSubject(db, dataRoot, { name: 'Fisica 1', color: 'blue' });
+      expect((await getSubjectOverview(db, subject.slug)).untaggedDocumentCount).toBe(0);
+    });
+
+    it('counts only parsed documents without a topic, excluding non-parsed and tagged ones', async () => {
+      const subject = await createSubject(db, dataRoot, { name: 'Fisica 1', color: 'blue' });
+      const topicId = randomUUID();
+      await db
+        .insert(topics)
+        .values({ id: topicId, subjectId: subject.id, name: 'Cinematica', slug: 'cinematica' });
+      const tagged = doc(subject.id, 'parsed', 'tagged');
+      const rows = [
+        tagged,
+        doc(subject.id, 'parsed', 'u1'),
+        doc(subject.id, 'parsed', 'u2'),
+        doc(subject.id, 'uploaded', 'p1'),
+        doc(subject.id, 'failed', 'f1'),
+      ];
+      await db.insert(documents).values(rows);
+      await db.insert(documentTopics).values({ documentId: tagged.id, topicId });
+      expect((await getSubjectOverview(db, subject.slug)).untaggedDocumentCount).toBe(2);
     });
   });
 });
