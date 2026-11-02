@@ -78,6 +78,7 @@ questo repo. I link qui sotto funzionano in locale.
 | [Filesystem & Dati](../docs/02-filesystem-e-dati.md)                     | Layout su disco, schema DB, FSRS, formula di mastery                                |
 | [AI & Worker](../docs/03-ai-e-worker.md)                                 | Pipeline di ingest, funzioni AI, model routing, CLI, disciplina dei prompt          |
 | [Planner](../docs/04-planner.md)                                         | Motore ibrido AI + scheduler, vincoli, adattività, **revisione e commit del piano** |
+| [Piano a lezioni](../docs/10-planner-lezioni.md)                         | Il piano programma lezioni (standard e sprint), lezione guidata a fasi, verifiche   |
 | [Design System](../docs/05-design-system.md)                             | "Calm Futurism": token, componenti, densità, a11y                                   |
 | [Markdown Layer & Schemi](../docs/07-markdown-layer.md)                  | Formato canonico Markdown, trascrizione schemi a mano, grafo nodi/archi, verifica   |
 | [Miglioramenti proposti](../docs/06-miglioramenti.md)                    | Estensioni ordinate per valore/costo + anti-obiettivi                               |
