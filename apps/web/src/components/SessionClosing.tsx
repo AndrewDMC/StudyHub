@@ -30,6 +30,20 @@ async function fetchBriefing(slug: string, sessionId: string): Promise<SessionBr
 export const minutes = (ms: number) => (ms <= 0 ? 0 : Math.max(1, Math.round(ms / 60_000)));
 
 /** Briefing totals and the free deck / drill creation of a finished session; shared with the mobile closing. */
+/**
+ * What the closing counts. "Not done" exercises (the drill) are the wrong ones and, in a sprint
+ * lesson, the ones marked "non so da dove partire"; "answered" is every exercise no longer open.
+ */
+export function closingGroups<T extends { kind: string; state: string }>(items: T[]) {
+  const keyPointItems = items.filter((i) => i.kind === 'key_point');
+  const wrongItems = items.filter(
+    (i) => i.kind === 'exercise' && (i.state === 'wrong' || i.state === 'unknown'),
+  );
+  const answered = items.filter((i) => i.kind === 'exercise' && i.state !== 'open');
+  const right = answered.filter((i) => i.state === 'correct').length;
+  return { keyPointItems, wrongItems, answered, right };
+}
+
 export function useSessionClosing(
   slug: string,
   sessionId: string,
@@ -42,10 +56,7 @@ export function useSessionClosing(
     queryFn: () => fetchBriefing(slug, sessionId),
   });
   const items = briefing.data?.items ?? [];
-  const keyPointItems = items.filter((i) => i.kind === 'key_point');
-  const wrongItems = items.filter((i) => i.kind === 'exercise' && i.state === 'wrong');
-  const answered = items.filter((i) => i.kind === 'exercise' && i.state !== 'open');
-  const right = answered.filter((i) => i.state === 'correct').length;
+  const { keyPointItems, wrongItems, answered, right } = closingGroups(items);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: sessionKey });
   // `itemIds` undefined = no body = every key point (desktop); mobile sends the selected ones.
@@ -105,11 +116,14 @@ export function SessionClosing({
   sessionId,
   session,
   sessionKey,
+  hideFlashcards = false,
 }: {
   slug: string;
   sessionId: string;
   session: StudySessionDto;
   sessionKey: readonly unknown[];
+  /** A sprint lesson has no key points: only the drill is offered. */
+  hideFlashcards?: boolean;
 }) {
   const {
     briefing,
@@ -142,42 +156,44 @@ export function SessionClosing({
       {briefing.isLoading ? (
         <p className="text-sm text-fg-muted">Caricamento…</p>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-2 rounded-[var(--radius-control)] border border-border bg-bg-inset p-3">
-            <p className="text-sm font-medium text-fg-primary">Flashcard dai punti chiave</p>
-            {deckId ? (
-              <Link
-                className="text-sm text-accent underline-offset-2 hover:underline"
-                href={`/materie/${slug}/artifacts/${deckId}`}
-              >
-                Apri il mazzo →
-              </Link>
-            ) : keyPoints === 0 ? (
-              <p className="text-xs text-fg-muted">
-                Non hai generato punti chiave in questa sessione.
-              </p>
-            ) : (
-              <>
-                <p className="text-xs text-fg-muted">
-                  {keyPoints} {keyPoints === 1 ? 'carta' : 'carte'}, ciascuna con la sua fonte.
-                  Gratis. Il mazzo resta in bozza finché non lo approvi.
-                </p>
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={deck.isPending}
-                  onClick={() => deck.mutate()}
+        <div className={hideFlashcards ? 'grid gap-3' : 'grid gap-3 sm:grid-cols-2'}>
+          {!hideFlashcards && (
+            <div className="space-y-2 rounded-[var(--radius-control)] border border-border bg-bg-inset p-3">
+              <p className="text-sm font-medium text-fg-primary">Flashcard dai punti chiave</p>
+              {deckId ? (
+                <Link
+                  className="text-sm text-accent underline-offset-2 hover:underline"
+                  href={`/materie/${slug}/artifacts/${deckId}`}
                 >
-                  {deck.isPending ? 'Creo il mazzo…' : 'Crea flashcard'}
-                </Button>
-              </>
-            )}
-            {deck.isError && (
-              <p role="alert" className="text-xs text-danger">
-                {(deck.error as Error).message}
-              </p>
-            )}
-          </div>
+                  Apri il mazzo →
+                </Link>
+              ) : keyPoints === 0 ? (
+                <p className="text-xs text-fg-muted">
+                  Non hai generato punti chiave in questa sessione.
+                </p>
+              ) : (
+                <>
+                  <p className="text-xs text-fg-muted">
+                    {keyPoints} {keyPoints === 1 ? 'carta' : 'carte'}, ciascuna con la sua fonte.
+                    Gratis. Il mazzo resta in bozza finché non lo approvi.
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={deck.isPending}
+                    onClick={() => deck.mutate()}
+                  >
+                    {deck.isPending ? 'Creo il mazzo…' : 'Crea flashcard'}
+                  </Button>
+                </>
+              )}
+              {deck.isError && (
+                <p role="alert" className="text-xs text-danger">
+                  {(deck.error as Error).message}
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="space-y-2 rounded-[var(--radius-control)] border border-border bg-bg-inset p-3">
             <p className="text-sm font-medium text-fg-primary">Esercizi sbagliati nei drill</p>

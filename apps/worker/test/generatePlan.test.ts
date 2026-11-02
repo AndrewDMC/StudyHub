@@ -93,9 +93,69 @@ describe('processGeneratePlan', () => {
     const taskRows = await db.select().from(tasks).where(eq(tasks.planId, result.planId));
     expect(taskRows.length).toBe(result.taskCount);
     expect(taskRows.every((t) => t.status === 'proposed')).toBe(true);
-    // Reading tasks cite the actual document, not a placeholder.
-    const readTask = taskRows.find((t) => t.kind === 'read');
+    // Lesson tasks cite the actual document, not a placeholder.
+    const readTask = taskRows.find((t) => t.kind === 'lesson');
     expect(readTask?.payload.material?.[0]?.docId).toBe(docId);
+  });
+
+  it('turns the AI lessons into lesson tasks with validated page ranges, and ignores out-of-range pages', async () => {
+    const docId = await addParsedDocument(20);
+    class LessonProvider extends FakeProvider {
+      override async estimateTopics(
+        ...args: Parameters<FakeProvider['estimateTopics']>
+      ): ReturnType<FakeProvider['estimateTopics']> {
+        const res = await super.estimateTopics(...args);
+        for (const t of res.data.topics)
+          t.lessons = [
+            {
+              title: 'Prima parte',
+              pageFrom: 1,
+              pageTo: 8,
+              docId: t.key,
+              standardMinutes: 60,
+              sprintMinutes: 40,
+            },
+            // out of the document: not trusted, takes its even share of the pages instead
+            {
+              title: 'Seconda parte',
+              pageFrom: 5,
+              pageTo: 999,
+              standardMinutes: 60,
+              sprintMinutes: 40,
+            },
+          ];
+        return res;
+      }
+    }
+    const result = await processGeneratePlan(db, baseInput(), new LessonProvider());
+    const lessonTasks = (await db.select().from(tasks).where(eq(tasks.planId, result.planId)))
+      .filter((t) => t.kind === 'lesson')
+      .sort((a, b) => a.taskKey.localeCompare(b.taskKey));
+    expect(lessonTasks).toHaveLength(2);
+    expect(lessonTasks[0]?.payload.material).toEqual([{ docId, pageFrom: 1, pageTo: 8 }]);
+    expect(lessonTasks[1]?.payload.material).toEqual([{ docId, pageFrom: 11, pageTo: 20 }]);
+    expect(lessonTasks.every((t) => t.minutes >= 60)).toBe(true);
+  });
+
+  it('splits a topic by pages when the AI gives no lessons', async () => {
+    const docId = await addParsedDocument(40);
+    class NoLessonProvider extends FakeProvider {
+      override async estimateTopics(
+        ...args: Parameters<FakeProvider['estimateTopics']>
+      ): ReturnType<FakeProvider['estimateTopics']> {
+        const res = await super.estimateTopics(...args);
+        for (const t of res.data.topics) t.lessons = [];
+        return res;
+      }
+    }
+    const result = await processGeneratePlan(db, baseInput(), new NoLessonProvider());
+    const lessonTasks = (
+      await db.select().from(tasks).where(eq(tasks.planId, result.planId))
+    ).filter((t) => t.kind === 'lesson');
+    expect(lessonTasks.length).toBeGreaterThan(1);
+    expect(lessonTasks.every((t) => t.payload.material?.every((m) => m.docId === docId))).toBe(
+      true,
+    );
   });
 
   it('plans on the student’s own pace once enough real sessions say they take longer', async () => {
@@ -103,7 +163,7 @@ describe('processGeneratePlan', () => {
     const before = await processGeneratePlan(db, baseInput(), new FakeProvider());
     const readMinutes = async (planId: string) =>
       (await db.select().from(tasks).where(eq(tasks.planId, planId)))
-        .filter((t) => t.kind === 'read')
+        .filter((t) => t.kind === 'lesson')
         .reduce((sum, t) => sum + t.minutes, 0);
     const baseline = await readMinutes(before.planId);
     const [first] = await db.select().from(studyPlans).where(eq(studyPlans.id, before.planId));
@@ -143,12 +203,12 @@ describe('processGeneratePlan', () => {
     expect(await readMinutes(after.planId)).toBeGreaterThan(baseline);
   });
 
-  it('is a no-op AI call (zero cost, no reading tasks) when the subject has no parsed documents', async () => {
+  it('is a no-op AI call (zero cost, no lesson tasks) when the subject has no parsed documents', async () => {
     const result = await processGeneratePlan(db, baseInput(), new FakeProvider());
     // Fase B still schedules simulations independently of material; only the
-    // AI-estimated, material-backed tasks (read/flashcards/review) are absent.
+    // AI-estimated, material-backed tasks (lesson/flashcards/review) are absent.
     const taskRows = await db.select().from(tasks).where(eq(tasks.planId, result.planId));
-    expect(taskRows.some((t) => t.kind === 'read')).toBe(false);
+    expect(taskRows.some((t) => t.kind === 'lesson')).toBe(false);
     expect(result.costEur).toBe(0);
     expect(result.feasible).toBe(true); // nothing to schedule = trivially feasible
     const [plan] = await db.select().from(studyPlans).where(eq(studyPlans.id, result.planId));
@@ -314,7 +374,7 @@ describe('processGeneratePlan', () => {
     const [plan] = await db.select().from(studyPlans).where(eq(studyPlans.id, result.planId));
     expect(plan?.examId).toBe(examId);
     const taskRows = await db.select().from(tasks).where(eq(tasks.planId, result.planId));
-    const readTasks = taskRows.filter((t) => t.kind === 'read');
+    const readTasks = taskRows.filter((t) => t.kind === 'lesson');
     expect(readTasks.length).toBeGreaterThan(0);
     expect(readTasks.every((t) => t.topicId === topicIn)).toBe(true);
 
@@ -516,6 +576,67 @@ describe('processGeneratePlan', () => {
     expect(draft.filter((t) => t.pinned)).toHaveLength(3);
   });
 
+  it('maps an AI lesson of a two-document unit onto the right document, and falls back when the docId is foreign', async () => {
+    const docA = await addParsedDocument(20);
+    const docB = await addParsedDocument(30);
+    const topicId = randomUUID();
+    await db
+      .insert(topics)
+      .values({ id: topicId, subjectId, name: 'Termodinamica', slug: 'termodinamica' });
+    await db.insert(documentTopics).values([
+      { documentId: docA, topicId },
+      { documentId: docB, topicId },
+    ]);
+    const seenDocs: { docId: string; pages: number }[][] = [];
+    class TwoDocProvider extends FakeProvider {
+      override async estimateTopics(
+        ...args: Parameters<FakeProvider['estimateTopics']>
+      ): ReturnType<FakeProvider['estimateTopics']> {
+        seenDocs.push(
+          args[0].units
+            .flatMap((u) => u.documents ?? [])
+            .map((d) => ({ docId: d.docId, pages: d.pages })),
+        );
+        const res = await super.estimateTopics(...args);
+        for (const t of res.data.topics)
+          t.lessons = [
+            {
+              title: 'Dal secondo',
+              pageFrom: 3,
+              pageTo: 12,
+              docId: docB,
+              standardMinutes: 60,
+              sprintMinutes: 40,
+            },
+            // page 25 does not exist in the first document: fallback to the even share of the unit
+            {
+              title: 'Sbagliata',
+              pageFrom: 1,
+              pageTo: 25,
+              docId: docA,
+              standardMinutes: 60,
+              sprintMinutes: 40,
+            },
+          ];
+        return res;
+      }
+    }
+    const result = await processGeneratePlan(db, baseInput(), new TwoDocProvider());
+    expect(seenDocs[0]).toEqual(
+      expect.arrayContaining([
+        { docId: docA, pages: 20 },
+        { docId: docB, pages: 30 },
+      ]),
+    );
+    const lessonTasks = (await db.select().from(tasks).where(eq(tasks.planId, result.planId)))
+      .filter((t) => t.kind === 'lesson')
+      .sort((a, b) => a.taskKey.localeCompare(b.taskKey));
+    expect(lessonTasks).toHaveLength(2);
+    expect(lessonTasks[0]?.payload.material).toEqual([{ docId: docB, pageFrom: 3, pageTo: 12 }]);
+    // even share of the 50 concatenated pages: the second half (26-50) lies in the second document
+    expect(lessonTasks[1]?.payload.material).toEqual([{ docId: docB, pageFrom: 6, pageTo: 30 }]);
+  });
+
   it('groups documents tagged to the same topic into one planning unit, and persists the real topic id on tasks', async () => {
     const docA = await addParsedDocument(20);
     const docB = await addParsedDocument(20);
@@ -531,7 +652,7 @@ describe('processGeneratePlan', () => {
     const result = await processGeneratePlan(db, baseInput(), new FakeProvider());
     const taskRows = await db.select().from(tasks).where(eq(tasks.planId, result.planId));
 
-    const readTasks = taskRows.filter((t) => t.kind === 'read');
+    const readTasks = taskRows.filter((t) => t.kind === 'lesson');
     expect(readTasks.length).toBeGreaterThan(0);
     expect(readTasks.every((t) => t.topicId === topicId)).toBe(true);
 
@@ -593,7 +714,7 @@ describe('processGeneratePlan', () => {
 
     const minutesFor = (topicId: string) =>
       taskRows
-        .filter((t) => t.kind === 'read' && t.topicId === topicId)
+        .filter((t) => t.kind === 'lesson' && t.topicId === topicId)
         .reduce((s, t) => s + t.minutes, 0);
     expect(minutesFor(masteredTopicId)).toBeLessThan(minutesFor(freshTopicId));
   });

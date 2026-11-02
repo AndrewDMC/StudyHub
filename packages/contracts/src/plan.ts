@@ -68,8 +68,11 @@ export const GeneratePlanRequestSchema = GeneratePlanJobInputSchema.omit({
 });
 export type GeneratePlanRequest = z.infer<typeof GeneratePlanRequestSchema>;
 
+/** `lesson`/`verify`: le unità del piano a lezioni (docs/10-planner-lezioni.md); `read` resta per i piani vecchi. */
 export const TaskKindSchema = z.enum([
   'read',
+  'lesson',
+  'verify',
   'flashcards',
   'schema',
   'simulation',
@@ -80,14 +83,34 @@ export const TaskKindSchema = z.enum([
 export const TaskStatusSchema = z.enum(['proposed', 'todo', 'doing', 'done', 'skipped', 'moved']);
 export const TaskOriginSchema = z.enum(['planner', 'manual']);
 
+/** Come si studia una lezione: le cinque fasi (`standard`) o prima gli esercizi d'esame (`sprint`). */
+export const LessonMethodSchema = z.enum(['standard', 'sprint']);
+export type LessonMethod = z.infer<typeof LessonMethodSchema>;
+
 export const TaskPayloadSchema = z.object({
-  action: z.enum(['read', 'generate_flashcards', 'review_session', 'simulation', 'manual']),
+  action: z.enum([
+    'read',
+    'lesson',
+    'verify',
+    'generate_flashcards',
+    'review_session',
+    'simulation',
+    'manual',
+  ]),
   material: z
     .array(
       z.object({ docId: z.string().uuid(), pageFrom: z.number().int(), pageTo: z.number().int() }),
     )
     .optional(),
   topicId: z.string().uuid().nullable().optional(),
+  /** Solo lezioni. */
+  method: LessonMethodSchema.optional(),
+  /** Solo lezioni: i minuti della lezione con ciascun metodo (padronanza già applicata), per cambiare metodo. */
+  minutesByMethod: z
+    .object({ standard: z.number().int().positive(), sprint: z.number().int().positive() })
+    .optional(),
+  /** Solo lezioni: parte `n` di `of` quando un argomento è diviso per contenuto. */
+  part: z.object({ n: z.number().int().positive(), of: z.number().int().positive() }).optional(),
 });
 
 export const TaskDtoSchema = z.object({
@@ -161,6 +184,10 @@ export const FeasibilityDtoSchema = z.object({
   availableMinutes: z.number(),
   shortfallMinutes: z.number(),
   unscheduledTopicKeys: z.array(z.string()),
+  /** Lezioni passate a sprint perché il piano entri. Assente nei piani vecchi. */
+  sprintLessonKeys: z.array(z.string()).default([]),
+  /** Argomenti lasciati fuori dal piano. Assente nei piani vecchi. */
+  excludedTopicKeys: z.array(z.string()).default([]),
   strategies: z.array(StrategySchema),
 });
 
@@ -203,6 +230,8 @@ export const UpdateTaskRequestSchema = z.object({
   description: z.string().max(2000).optional(),
   minutes: z.number().int().min(5).max(600).optional(),
   pinned: z.boolean().optional(),
+  /** Cambia il metodo di una sola lezione (standard ↔ sprint). */
+  method: LessonMethodSchema.optional(),
 });
 export type UpdateTaskRequest = z.infer<typeof UpdateTaskRequestSchema>;
 

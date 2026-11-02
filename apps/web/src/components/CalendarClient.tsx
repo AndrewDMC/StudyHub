@@ -44,6 +44,8 @@ const MONTH_LABELS = [
 ];
 const KIND_LABELS: Record<CalendarRangeDto['tasks'][number]['kind'], string> = {
   read: 'Lettura',
+  lesson: 'Lezione',
+  verify: 'Verifica',
   flashcards: 'Flashcard',
   schema: 'Schema',
   simulation: 'Simulazione',

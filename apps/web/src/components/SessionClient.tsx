@@ -20,7 +20,10 @@ import { formatClock, PomodoroPanel, usePomodoro } from '@/components/PomodoroTi
 import { SessionBriefing } from '@/components/SessionBriefing';
 import { SessionClosing } from '@/components/SessionClosing';
 import { SessionChat } from '@/components/SessionChat';
+import { LessonFlow } from '@/components/lesson/LessonFlow';
+import { VerifyClient } from '@/components/verify/VerifyClient';
 import { SessionMobile } from '@/components/session-mobile/SessionMobile';
+import { usesLessonFlow } from '@/lib/lessonClient';
 import { useIsMobile } from '@/lib/useIsMobile';
 import { fetchSession, fetchTopics, patchSession, postEnd, readJson } from '@/lib/sessionApi';
 
@@ -558,19 +561,66 @@ function SessionDesktop({ slug, sessionId }: { slug: string; sessionId: string }
   );
 }
 
-/** Below `md` the session is a dedicated full-screen mobile flow; from `md` up the desktop page. */
+/**
+ * A guided lesson with its phases (Esplora … Ricorda) has its own responsive page; below `md` the session is a
+ * dedicated full-screen mobile flow, from `md` up the desktop page.
+ */
 export function SessionClient({ slug, sessionId }: { slug: string; sessionId: string }) {
   const isMobile = useIsMobile();
-  if (isMobile === null) {
+  // Same key as the pages below: one request, shared through the cache.
+  const sessionQuery = useQuery({
+    queryKey: ['studySession', slug, sessionId],
+    queryFn: () => fetchSession(slug, sessionId),
+  });
+  const loaded = sessionQuery.data;
+  if (loaded && usesLessonFlow(loaded)) {
     return (
+      <LessonFlow
+        slug={slug}
+        sessionId={sessionId}
+        renderDocument={({ doc, canAsk, onAsk, target }) => (
+          <DocumentViewer
+            key={doc.id}
+            slug={slug}
+            doc={doc}
+            canAsk={canAsk}
+            onAsk={onAsk}
+            target={target}
+          />
+        )}
+      />
+    );
+  }
+  const standard =
+    isMobile === null || sessionQuery.isLoading ? (
       <p role="status" className="p-4 text-sm text-fg-muted">
         Caricamento…
       </p>
+    ) : isMobile ? (
+      <SessionMobile slug={slug} sessionId={sessionId} />
+    ) : (
+      <SessionDesktop slug={slug} sessionId={sessionId} />
+    );
+  // A closed-book check has its own single-column page; one from before it keeps the page of old.
+  if (loaded && loaded.kind === 'verify') {
+    return (
+      <VerifyClient
+        slug={slug}
+        sessionId={sessionId}
+        session={loaded}
+        fallback={standard}
+        renderDocument={({ doc, canAsk, onAsk, target }) => (
+          <DocumentViewer
+            key={doc.id}
+            slug={slug}
+            doc={doc}
+            canAsk={canAsk}
+            onAsk={onAsk}
+            target={target}
+          />
+        )}
+      />
     );
   }
-  return isMobile ? (
-    <SessionMobile slug={slug} sessionId={sessionId} />
-  ) : (
-    <SessionDesktop slug={slug} sessionId={sessionId} />
-  );
+  return standard;
 }

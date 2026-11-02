@@ -2,6 +2,8 @@ import type { Intensity, PlanDto, TaskDto } from '@studyhub/contracts';
 
 export const KIND_LABELS: Record<TaskDto['kind'], string> = {
   read: 'Lettura',
+  lesson: 'Lezione',
+  verify: 'Verifica',
   flashcards: 'Flashcard',
   schema: 'Schema',
   simulation: 'Simulazione',
@@ -17,27 +19,6 @@ export const INTENSITY_LABELS: Record<Intensity, string> = {
 };
 
 export const INTENSITY_ORDER: readonly Intensity[] = ['sprint', 'standard', 'sostenibile'];
-
-export type KindColor = 'accent' | 'subject' | 'warn' | 'danger' | 'info' | 'muted';
-
-/** Colour family of a task kind; `subject` is the subject's identity colour (not a global token). */
-export function kindColor(kind: TaskDto['kind']): KindColor {
-  switch (kind) {
-    case 'read':
-    case 'schema':
-      return 'accent';
-    case 'flashcards':
-      return 'subject';
-    case 'drill':
-      return 'warn';
-    case 'simulation':
-      return 'danger';
-    case 'review':
-      return 'info';
-    case 'rest':
-      return 'muted';
-  }
-}
 
 /** Tasks that count towards the progress: everything but rest days and moved leftovers. */
 export function planProgress(tasks: TaskDto[]): { total: number; done: number } {
@@ -131,10 +112,22 @@ export function excludableTopics(
     counts.set(t.topicKey, (counts.get(t.topicKey) ?? 0) + (touched ? 1 : 0));
   }
   const map = new Map<string, string>();
+  // The topic's own name: "Studia <name> — pp. …" (reading), "Verifica · <name>" (checks); a lesson's
+  // title is the AI's lesson name, so it is only the fallback for a topic with neither.
+  const fallback = new Map<string, string>();
   for (const t of plan.tasks) {
-    if (t.kind !== 'read' || !t.topicKey) continue;
-    if (!map.has(t.topicKey)) map.set(t.topicKey, t.title.replace(/^Studia /, '').split(' — ')[0]!);
+    if (!t.topicKey) continue;
+    if (t.kind === 'read') {
+      if (!map.has(t.topicKey))
+        map.set(t.topicKey, t.title.replace(/^Studia /, '').split(' — ')[0]!);
+    } else if (t.kind === 'verify') {
+      if (!map.has(t.topicKey)) map.set(t.topicKey, t.title.replace(/^Verifica · /, ''));
+    } else if (t.kind === 'lesson') {
+      if (!fallback.has(t.topicKey))
+        fallback.set(t.topicKey, t.title.replace(/ · parte \d+ di \d+$/, ''));
+    }
   }
+  for (const [key, label] of fallback) if (!map.has(key)) map.set(key, label);
   return [...map]
     .map(([key, label]) => ({ key, label, openCount: counts.get(key) ?? 0 }))
     .filter((t) => !active || t.openCount > 0);

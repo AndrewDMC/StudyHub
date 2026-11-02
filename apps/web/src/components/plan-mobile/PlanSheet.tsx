@@ -36,6 +36,7 @@ export function PlanSheet({
   pending,
   error,
   hasDraft,
+  defaultIntensity,
   onSubmit,
 }: {
   open: boolean;
@@ -47,6 +48,8 @@ export function PlanSheet({
   pending: boolean;
   error: string | null;
   hasDraft: boolean;
+  /** Intensity preselected on open (wins over the one of the current plan). */
+  defaultIntensity?: Intensity | undefined;
   onSubmit: (req: GeneratePlanRequest) => void;
 }) {
   const [targetDate, setTargetDate] = useState('');
@@ -62,7 +65,7 @@ export function PlanSheet({
     if (!open) return;
     setTargetDate(plan?.targetDate ?? '');
     setExamId('');
-    setIntensity(plan?.prefs.intensity ?? 'standard');
+    setIntensity(defaultIntensity ?? plan?.prefs.intensity ?? 'standard');
     setMinutes(baseMinutes);
   }, [open]);
 

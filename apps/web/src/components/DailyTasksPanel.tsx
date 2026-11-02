@@ -65,7 +65,14 @@ async function reabsorb(slug: string, taskId: string) {
  * their own triage — rimanda (oggi) / riassorbi nel piano / archivia — instead
  * of accumulating silently in the flat list.
  */
-export function DailyTasksPanel({ subjectSlug }: { subjectSlug: string }) {
+export function DailyTasksPanel({
+  subjectSlug,
+  only,
+}: {
+  subjectSlug: string;
+  /** `debt`: just the overdue-task triage (the Panoramica shows the rest in its own cards). */
+  only?: 'debt';
+}) {
   const queryClient = useQueryClient();
   const today = todayIso();
   const query = useQuery({
@@ -96,19 +103,28 @@ export function DailyTasksPanel({ subjectSlug }: { subjectSlug: string }) {
   const debtTasks = query.data?.filter((t) => t.date < today) ?? [];
   const todayTasks = query.data?.filter((t) => t.date >= today) ?? [];
 
-  return (
-    <div className="rounded-[var(--radius-card)] border border-border bg-bg-surface p-3">
-      <div className="mb-2 flex items-center justify-between px-1">
-        <h2 className="text-xs font-medium uppercase tracking-wide text-fg-muted">Oggi</h2>
-        <Link
-          href={`/materie/${subjectSlug}/piano`}
-          className="text-[11px] text-fg-muted underline-offset-2 hover:text-fg-secondary hover:underline"
-        >
-          Piano →
-        </Link>
-      </div>
+  if (only === 'debt' && debtTasks.length === 0) return null;
+  const debtOnly = only === 'debt';
 
-      {driftQuery.data?.shouldRecalculate && (
+  return (
+    <div
+      className={
+        debtOnly ? '' : 'rounded-[var(--radius-card)] border border-border bg-bg-surface p-3'
+      }
+    >
+      {!debtOnly && (
+        <div className="mb-2 flex items-center justify-between px-1">
+          <h2 className="text-xs font-medium uppercase tracking-wide text-fg-muted">Oggi</h2>
+          <Link
+            href={`/materie/${subjectSlug}/piano`}
+            className="text-[11px] text-fg-muted underline-offset-2 hover:text-fg-secondary hover:underline"
+          >
+            Piano →
+          </Link>
+        </div>
+      )}
+
+      {!debtOnly && driftQuery.data?.shouldRecalculate && (
         <div className="mx-1 mb-2 rounded-[var(--radius-control)] border border-warn/40 bg-bg-inset px-2.5 py-1.5 text-xs text-warn">
           Il piano è indietro ({driftQuery.data.reason}).{' '}
           <Link
@@ -121,17 +137,19 @@ export function DailyTasksPanel({ subjectSlug }: { subjectSlug: string }) {
         </div>
       )}
 
-      <div className="space-y-2 px-1 text-xs">
-        {query.isLoading && <p className="text-fg-muted">Caricamento…</p>}
-        {query.isError && (
-          <p role="alert" className="text-danger">
-            {(query.error as Error).message}
-          </p>
-        )}
-        {query.isSuccess && query.data.length === 0 && (
-          <p className="text-fg-muted">Nessuna task per oggi — genera o rigenera un piano.</p>
-        )}
-      </div>
+      {!debtOnly && (
+        <div className="space-y-2 px-1 text-xs">
+          {query.isLoading && <p className="text-fg-muted">Caricamento…</p>}
+          {query.isError && (
+            <p role="alert" className="text-danger">
+              {(query.error as Error).message}
+            </p>
+          )}
+          {query.isSuccess && query.data.length === 0 && (
+            <p className="text-fg-muted">Nessuna task per oggi — genera o rigenera un piano.</p>
+          )}
+        </div>
+      )}
 
       {debtTasks.length > 0 && (
         <div className="mt-1 px-1">
@@ -148,7 +166,7 @@ export function DailyTasksPanel({ subjectSlug }: { subjectSlug: string }) {
                   {task.date} · {task.minutes} min
                 </p>
                 <p className="text-sm text-fg-primary">{task.title}</p>
-                <div className="mt-1 flex flex-wrap gap-1.5">
+                <div className="mt-1 flex flex-wrap gap-1.5 max-md:gap-2 max-md:[&>button]:min-h-11 max-md:[&>button]:px-3">
                   <button
                     type="button"
                     onClick={() => postponeMutation.mutate(task.id)}
@@ -185,7 +203,7 @@ export function DailyTasksPanel({ subjectSlug }: { subjectSlug: string }) {
         </div>
       )}
 
-      {todayTasks.length > 0 && (
+      {!debtOnly && todayTasks.length > 0 && (
         <ul className="mt-1 space-y-1.5">
           {todayTasks.map((task) => (
             <li

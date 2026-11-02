@@ -306,6 +306,7 @@ export function SessionChat({
   focus,
   onClearFocus,
   onOpenCitation,
+  prefill,
 }: {
   slug: string;
   sessionId: string;
@@ -315,6 +316,8 @@ export function SessionChat({
   focus: SessionFocus | null;
   onClearFocus: () => void;
   onOpenCitation: (citation: SessionCitationDto) => void;
+  /** A ready-made question for the input box: filled in and focused, never sent by itself. */
+  prefill?: { text: string; nonce: number } | null;
 }) {
   const {
     chat,
@@ -352,6 +355,18 @@ export function SessionChat({
   useEffect(() => {
     if (focus) inputRef.current?.focus();
   }, [focus]);
+  useEffect(() => {
+    if (!prefill) return;
+    setInput(prefill.text);
+    // The tab holding the chat may have just been revealed: focus after it is painted.
+    const t = window.setTimeout(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [prefill?.nonce]);
 
   const header = (
     <header className="flex items-center gap-2 border-b border-border px-3 py-2">

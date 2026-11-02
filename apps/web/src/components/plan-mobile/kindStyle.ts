@@ -1,24 +1,28 @@
-import type { CSSProperties } from 'react';
 import type { TaskDto } from '@studyhub/contracts';
-import { kindColor, type KindColor } from '@/lib/planMobile';
+import { taskTone, type TypeTone } from '../plan/planModel';
 
-const BAR_CLASS: Record<KindColor, string> = {
+const TONE_BAR: Record<TypeTone, string> = {
   accent: 'bg-accent',
-  subject: '',
-  warn: 'bg-warn',
-  danger: 'bg-danger',
   info: 'bg-info',
-  muted: 'bg-border-strong',
+  ok: 'bg-ok',
+  warn: 'bg-warn',
+  neutral: 'bg-border-strong',
 };
 
-/** Background of the colour bar / dot of a task kind; `flashcards` takes the subject colour inline. */
-export function kindBar(
-  kind: TaskDto['kind'],
-  subjectHex: string | undefined,
-): { className: string; style: CSSProperties | undefined } {
-  const color = kindColor(kind);
-  return {
-    className: BAR_CLASS[color],
-    style: color === 'subject' && subjectHex ? { backgroundColor: subjectHex } : undefined,
-  };
+const TONE_TEXT: Record<TypeTone, string> = {
+  accent: 'text-accent-hover',
+  info: 'text-info',
+  ok: 'text-ok',
+  warn: 'text-warn',
+  neutral: 'text-fg-muted',
+};
+
+/** Bar / dot colour of a task by its type tone (standard lesson, sprint, verify/flashcards, simulation). */
+export function toneBar(task: Pick<TaskDto, 'kind' | 'payload'>): string {
+  return TONE_BAR[taskTone(task)];
+}
+
+/** Colour of the type caption above a task title. */
+export function toneText(task: Pick<TaskDto, 'kind' | 'payload'>): string {
+  return TONE_TEXT[taskTone(task)];
 }

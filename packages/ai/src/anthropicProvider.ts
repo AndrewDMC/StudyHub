@@ -18,6 +18,9 @@ import type {
   SchemaPromptInput,
   SchemaTranscriptionPromptInput,
   SessionBriefingPromptInput,
+  ExplainFeedbackPromptInput,
+  SessionLessonPromptInput,
+  SprintExercisesPromptInput,
   SessionChatPromptInput,
   PlanChangePromptInput,
   SubjectAskPromptInput,
@@ -38,6 +41,9 @@ import {
   SchemaGraphOutputSchema,
   SchemaOutputSchema,
   SessionBriefingOutputSchema,
+  ExplainFeedbackOutputSchema,
+  SessionLessonOutputSchema,
+  SprintExercisesOutputSchema,
   SimulationOutputSchema,
   SortFlashcardsAiOutputSchema,
   SummaryOutputSchema,
@@ -53,6 +59,9 @@ import {
   type SchemaGraphOutput,
   type SchemaOutput,
   type SessionBriefingOutput,
+  type ExplainFeedbackOutput,
+  type SessionLessonOutput,
+  type SprintExercisesOutput,
   type SimulationOutput,
   type SortFlashcardsAiOutput,
   type SummaryOutput,
@@ -70,6 +79,9 @@ import {
   renderPlanChangeUserPrompt,
   renderSubjectAskUserPrompt,
   renderSessionBriefingUserPrompt,
+  renderExplainFeedbackUserPrompt,
+  renderSessionLessonUserPrompt,
+  renderSprintExercisesUserPrompt,
   renderSimulationUserPrompt,
   renderSortFlashcardsUserPrompt,
   renderSummaryUserPrompt,
@@ -154,6 +166,54 @@ export class AnthropicProvider implements AiProvider {
       system,
       renderSessionBriefingUserPrompt(input),
       SessionBriefingOutputSchema,
+      model,
+      4096,
+    );
+    return { data, usage, model, promptVersion };
+  }
+
+  async generateLessonBlock(
+    input: SessionLessonPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<SessionLessonOutput>> {
+    const { text: system, promptVersion } = loadPrompt('session_lesson', 2);
+    const { data, usage } = await this.callWithTool(
+      'emit_session_lesson',
+      system,
+      renderSessionLessonUserPrompt(input),
+      SessionLessonOutputSchema,
+      model,
+      4096,
+    );
+    return { data, usage, model, promptVersion };
+  }
+
+  async generateSprintExercises(
+    input: SprintExercisesPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<SprintExercisesOutput>> {
+    const { text: system, promptVersion } = loadPrompt('sprint_exercises', 1);
+    const { data, usage } = await this.callWithTool(
+      'emit_sprint_exercises',
+      system,
+      renderSprintExercisesUserPrompt(input),
+      SprintExercisesOutputSchema,
+      model,
+      8192,
+    );
+    return { data, usage, model, promptVersion };
+  }
+
+  async gradeExplanation(
+    input: ExplainFeedbackPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<ExplainFeedbackOutput>> {
+    const { text: system, promptVersion } = loadPrompt('explain_feedback', 1);
+    const { data, usage } = await this.callWithTool(
+      'emit_explain_feedback',
+      system,
+      renderExplainFeedbackUserPrompt(input),
+      ExplainFeedbackOutputSchema,
       model,
       4096,
     );
@@ -323,7 +383,7 @@ export class AnthropicProvider implements AiProvider {
     input: EstimateTopicsPromptInput,
     model: string,
   ): Promise<GeneratedWithMeta<EstimateTopicsOutput>> {
-    const { text: system, promptVersion } = loadPrompt('estimate_topics', 2);
+    const { text: system, promptVersion } = loadPrompt('estimate_topics', 3);
     const { data, usage } = await this.callWithTool(
       'emit_topic_estimates',
       system,

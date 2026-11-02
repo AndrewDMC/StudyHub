@@ -12,6 +12,9 @@ import type {
   SchemaGraphOutput,
   SchemaOutput,
   SessionBriefingOutput,
+  ExplainFeedbackOutput,
+  SessionLessonOutput,
+  SprintExercisesOutput,
   SimulationItem,
   SimulationOutput,
   SortFlashcardsAiOutput,
@@ -164,6 +167,12 @@ export interface TopicEstimateUnit {
   /** A sample of the unit's content — not the whole document, to keep the call cheap. */
   excerpt: string;
   pages: number;
+  /**
+   * The real documents the unit is made of (id + page count). When present, each lesson's `docId`
+   * must be one of these ids and its pages are relative to that document. When absent, the unit is
+   * a single document whose id is `key`.
+   */
+  documents?: { docId: string; name?: string | undefined; pages: number }[] | undefined;
 }
 
 export interface EstimateTopicsPromptInput {
@@ -200,6 +209,81 @@ export interface SessionBriefingPromptInput {
   existingExercises: string[];
   /** One-line summary of how the course's exams are written, when an exam profile exists. */
   examStyle?: string | undefined;
+}
+
+/** One chunk of the lesson's material, with the id the model cites in `citations[].chunkId`. */
+export interface LessonChunk {
+  id: string;
+  docId: string;
+  /** Display name of the document, for orientation only. */
+  documentName?: string | undefined;
+  page: number;
+  text: string;
+}
+
+/** How to re-explain a block: simpler, with another worked example, or explaining the "why". */
+export type LessonBlockHint = 'simpler' | 'another_example' | 'why';
+
+/** `session_lesson` (docs/10-planner-lezioni.md §3.2): generates block `blockIndex` of a guided lesson. */
+export interface SessionLessonPromptInput {
+  subjectName: string;
+  topicNames: string[];
+  chunks: LessonChunk[];
+  /** 0-based index of the block to generate. */
+  blockIndex: number;
+  /** Titles of the blocks already done, in order (so the new block continues the thread). */
+  previousBlockTitles: string[];
+  hint?: LessonBlockHint | undefined;
+  /** The body being regenerated, when `hint` or a plain regeneration is requested. */
+  previousBody?: string | undefined;
+  /**
+   * Sprint lesson (prompt v2): the block covers only `concept`, as needed by `exercise`, the one the
+   * student got wrong. The block is shorter; `blockCount` and `guideQuestions` are ignored.
+   */
+  focus?: SessionLessonFocus | undefined;
+}
+
+/** The concept to explain and the exercise (its text) it serves, for a focused `session_lesson` block. */
+export interface SessionLessonFocus {
+  concept: string;
+  exercise: string;
+}
+
+/** A past-exam excerpt, given to `sprint_exercises` as style reference only. */
+export interface SprintExamExcerpt {
+  /** Display name of the exam document, for orientation only. */
+  name?: string | undefined;
+  text: string;
+}
+
+/** `sprint_exercises` (docs/10-planner-lezioni.md §3.3): the 3 exam-style exercises of a sprint lesson. */
+export interface SprintExercisesPromptInput {
+  subjectName: string;
+  topicNames: string[];
+  /** Material chunks (id, document, page): the only valid targets for `citations[].chunkId`. */
+  chunks: LessonChunk[];
+  /** One-line summary of how the course's exams are written (`describeExamStyle`), when known. */
+  examStyle?: string | undefined;
+  /** Excerpts of uploaded past exams, as style reference only. */
+  examExcerpts?: SprintExamExcerpt[] | undefined;
+}
+
+/** A block of the lesson the student studied, given to `explain_feedback` as context. */
+export interface ExplainFeedbackLessonBlock {
+  title: string;
+  body: string;
+}
+
+/** `explain_feedback`: grades the student's own explanation of a lesson against the material. */
+export interface ExplainFeedbackPromptInput {
+  subjectName: string;
+  topicNames: string[];
+  /** The student's explanation, in their own words. */
+  studentText: string;
+  /** Material chunks (id, document, page): the only valid targets for `chunkId`. */
+  chunks: LessonChunk[];
+  /** Titles and bodies of the lesson blocks, as context on what was studied. */
+  lessonBlocks: ExplainFeedbackLessonBlock[];
 }
 
 /** One numbered source block of the study-session chat; the model cites it as `[n]`. */
@@ -315,6 +399,21 @@ export interface AiProvider {
     input: SessionBriefingPromptInput,
     model: string,
   ): Promise<GeneratedWithMeta<SessionBriefingOutput>>;
+  /** One block of the guided lesson (`session_lesson`); citations are checked verbatim by the caller. */
+  generateLessonBlock(
+    input: SessionLessonPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<SessionLessonOutput>>;
+  /** The 3 exam-style exercises of a sprint lesson (`sprint_exercises`); citations are checked verbatim by the caller. */
+  generateSprintExercises(
+    input: SprintExercisesPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<SprintExercisesOutput>>;
+  /** Feedback on the student's explanation (`explain_feedback`); quotes are checked verbatim by the caller. */
+  gradeExplanation(
+    input: ExplainFeedbackPromptInput,
+    model: string,
+  ): Promise<GeneratedWithMeta<ExplainFeedbackOutput>>;
   /** Files existing flashcards under the subject's existing topics (`sort_flashcards`). */
   sortFlashcards(
     input: SortFlashcardsPromptInput,

@@ -8,7 +8,13 @@ import type { StudySessionDto, TaskDto } from '@studyhub/contracts';
 type TaskKind = TaskDto['kind'];
 
 /** Task kinds that open a study session; the others keep their own screen (review, simulations…). */
-const SESSION_KINDS: ReadonlySet<TaskKind> = new Set(['read', 'schema', 'drill']);
+const SESSION_KINDS: ReadonlySet<TaskKind> = new Set([
+  'read',
+  'schema',
+  'drill',
+  'lesson',
+  'verify',
+]);
 
 const CLASSNAME =
   'rounded-[var(--radius-control)] bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-60 max-md:inline-flex max-md:min-h-11 max-md:items-center';
@@ -31,12 +37,14 @@ export function StartTaskButton({
   kind,
   className,
   label = 'Inizia',
+  'aria-label': ariaLabel,
 }: {
   subjectSlug: string;
   taskId: string;
   kind: TaskKind;
   className?: string;
   label?: string;
+  'aria-label'?: string;
 }) {
   const cls = className ?? CLASSNAME;
   const router = useRouter();
@@ -47,7 +55,7 @@ export function StartTaskButton({
 
   if (!SESSION_KINDS.has(kind)) {
     return (
-      <Link href={`/materie/${subjectSlug}/piano`} className={cls}>
+      <Link href={`/materie/${subjectSlug}/piano`} className={cls} aria-label={ariaLabel}>
         {label}
       </Link>
     );
@@ -58,6 +66,7 @@ export function StartTaskButton({
       <button
         type="button"
         disabled={start.isPending}
+        aria-label={ariaLabel}
         onClick={() => start.mutate()}
         className={cls}
       >

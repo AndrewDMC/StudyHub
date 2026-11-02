@@ -1,8 +1,28 @@
 import type { IsoDate } from './dates.js';
 
-/** docs/02-filesystem-e-dati.md §3 `tasks.kind`. */
+/**
+ * docs/02-filesystem-e-dati.md §3 `tasks.kind`. `lesson` and `verify` are the lesson-plan units
+ * (docs/10-planner-lezioni.md §3); `read` stays for plans made before them.
+ */
 export type TaskKind =
-  'read' | 'flashcards' | 'schema' | 'simulation' | 'drill' | 'rest' | 'review';
+  | 'read'
+  | 'lesson'
+  | 'verify'
+  | 'flashcards'
+  | 'schema'
+  | 'simulation'
+  | 'drill'
+  | 'rest'
+  | 'review';
+
+/** How a lesson is studied: the five phases, or exam exercises first (docs/10 §3.2–3.3). */
+export type LessonMethod = 'standard' | 'sprint';
+
+/** Part `n` of `of` when a big topic is split by content into several lessons. */
+export interface LessonPart {
+  n: number;
+  of: number;
+}
 
 export interface MaterialRef {
   docId: string;
@@ -16,9 +36,36 @@ export interface MaterialRef {
  * material* it is done is never created (docs/fasi/F6 "Decisioni").
  */
 export interface TaskPayload {
-  action: 'read' | 'generate_flashcards' | 'review_session' | 'simulation' | 'manual';
+  action:
+    | 'read'
+    | 'lesson'
+    | 'verify'
+    | 'generate_flashcards'
+    | 'review_session'
+    | 'simulation'
+    | 'manual';
   material?: MaterialRef[];
   topicId?: string | null;
+  /** Lessons only. */
+  method?: LessonMethod;
+  /** Lessons only: the minutes of the lesson with each method (mastery already applied). */
+  minutesByMethod?: { standard: number; sprint: number };
+  /** Lessons only, when the topic is split into several. */
+  part?: LessonPart;
+}
+
+/**
+ * One atomic lesson of a topic, split by content (never by minutes). The scheduler adds
+ * "parte n di m" to the title when a topic has several.
+ */
+export interface PlannerLesson {
+  /** E.g. "Integrali impropri". */
+  title: string;
+  material: MaterialRef[];
+  /** Full lesson with the five phases. */
+  standardMinutes: number;
+  /** Exercises → theory → retry → recall. */
+  sprintMinutes: number;
 }
 
 /**
@@ -37,6 +84,11 @@ export interface PlannerTopic {
   prerequisites: string[]; // other PlannerTopic keys
   mastery: number | null; // 0..1
   material: MaterialRef[];
+  /**
+   * Lessons the topic is split into. Absent: a single lesson with standardMinutes = estimatedMinutes,
+   * sprintMinutes = round(0.7 × estimatedMinutes) and the topic's material.
+   */
+  lessons?: PlannerLesson[];
 }
 
 export interface Availability {
@@ -104,6 +156,10 @@ export interface Feasibility {
   availableMinutes: number;
   shortfallMinutes: number;
   unscheduledTopicKeys: string[];
+  /** Lessons switched to sprint so the plan fits (docs/10 §4.2). */
+  sprintLessonKeys?: string[];
+  /** Topics left out of the plan, lowest exam weight first. */
+  excludedTopicKeys?: string[];
   strategies: Strategy[];
 }
 

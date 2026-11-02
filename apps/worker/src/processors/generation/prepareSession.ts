@@ -60,12 +60,16 @@ export async function processPrepareSession(
     .where(and(eq(studySessions.id, input.sessionId), eq(studySessions.subjectId, subject.id)));
   if (!session) throw new Error(`Sessione non trovata: ${input.sessionId}`);
   if (session.status === 'ended') throw new Error('La sessione è già terminata.');
+  if (session.method === 'sprint' && session.phase !== 'understand') {
+    throw new Error('In una lezione sprint gli esercizi si generano dalla lezione.');
+  }
   if (session.documentIds.length === 0) {
     throw new Error(
       'La sessione non ha documenti: scegli un argomento o collega i documenti agli argomenti.',
     );
   }
 
+  // Guide questions and the student's explanations live in the same table but are not part of the briefing.
   const existing: { kind: 'key_point' | 'exercise'; orderIndex: number; title: string }[] = await db
     .select({
       kind: sessionItems.kind,
@@ -73,7 +77,12 @@ export async function processPrepareSession(
       title: sessionItems.title,
     })
     .from(sessionItems)
-    .where(eq(sessionItems.sessionId, session.id));
+    .where(
+      and(
+        eq(sessionItems.sessionId, session.id),
+        inArray(sessionItems.kind, ['key_point', 'exercise']),
+      ),
+    );
   if (input.mode === 'all' && existing.length > 0) {
     throw new Error('Punti chiave ed esercizi sono già stati generati: chiedi "altri esercizi".');
   }
@@ -104,7 +113,8 @@ export async function processPrepareSession(
     .from(examProfiles)
     .where(eq(examProfiles.subjectId, input.subjectId));
 
-  const exerciseCount = input.mode === 'all' ? BRIEFING_EXERCISES : BRIEFING_MORE_EXERCISES;
+  const exerciseCount =
+    input.exerciseCount ?? (input.mode === 'all' ? BRIEFING_EXERCISES : BRIEFING_MORE_EXERCISES);
   const model = input.model ?? resolveModel(MODEL_ROUTING_SESSION_BRIEFING);
   const result = await provider.generateSessionBriefing(
     {
@@ -126,10 +136,17 @@ export async function processPrepareSession(
   );
   await checkBudget(db, costEur, input.force);
 
-  const { keyPoints, exercises, discardedCount } = validateBriefing(result.data, chunks, {
+  const {
+    keyPoints,
+    exercises: validated,
+    discardedCount,
+  } = validateBriefing(result.data, chunks, {
     wantKeyPoints: input.mode === 'all',
     existingExercises: new Set(existing.filter((e) => e.kind === 'exercise').map((e) => e.title)),
   });
+  // Never more than asked for (a verification asks only for what it lacks).
+  const exercises =
+    input.exerciseCount !== undefined ? validated.slice(0, input.exerciseCount) : validated;
   if (keyPoints.length === 0 && exercises.length === 0) {
     throw new Error(
       discardedCount === 0 && input.mode === 'exercises'
@@ -152,8 +169,20 @@ export async function processPrepareSession(
     : [];
   const topicOfDoc = (docId: string) => links.find((l) => l.documentId === docId)?.topicId ?? null;
 
+  // A verification numbers all its questions in one sequence (copied guide questions and retries included).
+  const allIndexes: { orderIndex: number }[] =
+    session.kind === 'verify'
+      ? await db
+          .select({ orderIndex: sessionItems.orderIndex })
+          .from(sessionItems)
+          .where(eq(sessionItems.sessionId, session.id))
+      : [];
   const nextIndex = (kind: 'key_point' | 'exercise') =>
-    existing.filter((e) => e.kind === kind).reduce((max, e) => Math.max(max, e.orderIndex + 1), 0);
+    session.kind === 'verify'
+      ? allIndexes.reduce((max, e) => Math.max(max, e.orderIndex + 1), 0)
+      : existing
+          .filter((e) => e.kind === kind)
+          .reduce((max, e) => Math.max(max, e.orderIndex + 1), 0);
   const rows: NewSessionItem[] = [
     ...keyPoints.map((k, i) => ({
       id: randomUUID(),

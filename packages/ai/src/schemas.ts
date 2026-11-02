@@ -127,6 +127,101 @@ export const SessionBriefingOutputSchema = z.object({
 });
 export type SessionBriefingOutput = z.infer<typeof SessionBriefingOutputSchema>;
 
+/**
+ * `session_lesson` v1/v2 (docs/10-planner-lezioni.md §3.2): one block of the guided lesson.
+ * `citations[].quote` is validated verbatim against the cited chunk by the worker, never trusted.
+ */
+export const LessonBlockCitationSchema = z.object({
+  chunkId: z.string().min(1),
+  quote: z.string().min(1),
+});
+export type LessonBlockCitation = z.infer<typeof LessonBlockCitationSchema>;
+
+export const LessonExampleStepSchema = z.object({
+  text: z.string().min(1),
+  /** LaTeX, without `$` delimiters. */
+  formula: z.string().min(1).optional(),
+});
+export type LessonExampleStep = z.infer<typeof LessonExampleStepSchema>;
+
+export const LessonBlockContentSchema = z.object({
+  title: z.string().min(1),
+  /** Discursive markdown that starts from the intuition, not the definition. */
+  body: z.string().min(1),
+  /** LaTeX, without `$` delimiters. */
+  formula: z.string().min(1).nullable(),
+  exampleSteps: z.array(LessonExampleStepSchema).min(2).max(6),
+  /** Typical exam mistake on this concept. */
+  trap: z.string().min(1).nullable(),
+  /** Answered with one sentence. */
+  checkQuestion: z.string().min(1),
+  checkAnswer: z.string().min(1),
+  citations: z.array(LessonBlockCitationSchema).min(1).max(5),
+});
+export type LessonBlockContent = z.infer<typeof LessonBlockContentSchema>;
+
+export const SessionLessonOutputSchema = z.object({
+  /** 2-6; meaningful on block 0, echoed afterwards. */
+  blockCount: z.number().int().min(2).max(6),
+  /** 3-5 on block 0, `[]` on every other block. */
+  guideQuestions: z.array(z.string().min(1)).max(5),
+  block: LessonBlockContentSchema,
+});
+export type SessionLessonOutput = z.infer<typeof SessionLessonOutputSchema>;
+
+/**
+ * `sprint_exercises` v1 (docs/10-planner-lezioni.md §3.3): the 3 exam-style exercises of a sprint lesson,
+ * each with the theory concepts it needs and a similar retry exercise.
+ * `citations[].quote` is validated verbatim against the cited chunk by the worker, never trusted.
+ */
+export const SprintSolutionStepSchema = z.object({
+  text: z.string().min(1),
+  /** LaTeX, without `$` delimiters. */
+  formula: z.string().min(1).optional(),
+});
+export type SprintSolutionStep = z.infer<typeof SprintSolutionStepSchema>;
+
+export const SprintRetrySchema = z.object({
+  question: z.string().min(1),
+  solutionSteps: z.array(SprintSolutionStepSchema).min(2).max(8),
+});
+export type SprintRetry = z.infer<typeof SprintRetrySchema>;
+
+export const SprintExerciseSchema = z.object({
+  title: z.string().min(1),
+  question: z.string().min(1),
+  solutionSteps: z.array(SprintSolutionStepSchema).min(2).max(8),
+  /** 1-3 short theory concept titles the exercise needs (the blocks the student reviews when wrong). */
+  concepts: z.array(z.string().min(1)).min(1).max(3),
+  /** Similar exercise with the same critical steps. */
+  retry: SprintRetrySchema,
+  citations: z.array(LessonBlockCitationSchema).min(1).max(3),
+});
+export type SprintExercise = z.infer<typeof SprintExerciseSchema>;
+
+export const SprintExercisesOutputSchema = z.object({
+  /** Exactly 3. */
+  exercises: z.array(SprintExerciseSchema).length(3),
+});
+export type SprintExercisesOutput = z.infer<typeof SprintExercisesOutputSchema>;
+
+/** One feedback point on a student's explanation: what to say, plus the chunk quote that backs it. */
+export const ExplainFeedbackPointSchema = z.object({
+  text: z.string().min(1),
+  chunkId: z.string().min(1),
+  /** Verbatim from the cited chunk; the caller drops the citation when it is not. */
+  quote: z.string().min(1),
+});
+export type ExplainFeedbackPoint = z.infer<typeof ExplainFeedbackPointSchema>;
+
+/** `explain_feedback`: what the student got right, what is missing, what is wrong. */
+export const ExplainFeedbackOutputSchema = z.object({
+  correct: z.array(ExplainFeedbackPointSchema).max(6),
+  missing: z.array(ExplainFeedbackPointSchema).max(6),
+  wrong: z.array(ExplainFeedbackPointSchema).max(6),
+});
+export type ExplainFeedbackOutput = z.infer<typeof ExplainFeedbackOutputSchema>;
+
 /** docs/03-ai-e-worker.md §2 "esami" + §3.4: `kind` is a closed taxonomy. */
 export const SimulationItemKindSchema = z.enum(['open', 'mcq', 'numeric', 'proof']);
 export type SimulationItemKind = z.infer<typeof SimulationItemKindSchema>;
@@ -211,12 +306,25 @@ export type SimulationOutput = z.infer<typeof SimulationOutputSchema>;
  * this slice — see docs/fasi/F6 "Stato") so the response can be matched
  * without relying on array order.
  */
+export const TopicLessonEstimateSchema = z.object({
+  title: z.string().min(1),
+  pageFrom: z.number().int().positive().optional(),
+  pageTo: z.number().int().positive().optional(),
+  docId: z.string().min(1).optional(),
+  /** A real lesson (understand, re-elaborate, exercises), not a plain read-through. */
+  standardMinutes: z.number().int().positive(),
+  sprintMinutes: z.number().int().positive(),
+});
+export type TopicLessonEstimate = z.infer<typeof TopicLessonEstimateSchema>;
+
 export const TopicEstimateSchema = z.object({
   key: z.string().min(1),
   estimatedMinutes: z.number().int().positive(),
   difficulty: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
   examWeight: z.number().min(0).max(1),
   prerequisites: z.array(z.string()),
+  /** v3: the unit split by content into lessons; `[]` (v2-style output) = one lesson, the planner decides. */
+  lessons: z.array(TopicLessonEstimateSchema).default([]),
 });
 export type TopicEstimate = z.infer<typeof TopicEstimateSchema>;
 

@@ -1,15 +1,22 @@
-import { and, eq, inArray, ne } from 'drizzle-orm';
-import { computeMastery, retrievability } from '@studyhub/core';
+import { and, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
+import { computeMastery, retrievability, verifyAccuracy } from '@studyhub/core';
 import { resolvePrimaryTopics } from './documentTopics.js';
 import {
   attemptItemResults,
   documents,
   flashcards,
+  sessionItems,
   simulationItems,
+  studySessions,
   tasks,
   topics,
   type Flashcard,
+  type SessionItem,
+  type SessionItemState,
 } from './schema.js';
+
+/** Material counts as covered once a `read` task or a `lesson` of the plan citing it is done. */
+const COVERAGE_TASK_KINDS: ('read' | 'lesson')[] = ['read', 'lesson'];
 
 function clamp01(n: number): number {
   return Math.min(1, Math.max(0, n));
@@ -54,7 +61,13 @@ async function computeTopicCoverage(
   }[] = await db
     .select({ payload: tasks.payload })
     .from(tasks)
-    .where(and(eq(tasks.topicId, topicId), eq(tasks.kind, 'read'), eq(tasks.status, 'done')));
+    .where(
+      and(
+        eq(tasks.topicId, topicId),
+        inArray(tasks.kind, COVERAGE_TASK_KINDS),
+        eq(tasks.status, 'done'),
+      ),
+    );
 
   const readPagesByDoc = new Map<string, number>();
   for (const t of readTasks) {
@@ -121,7 +134,7 @@ export async function computeSubjectCoverage(
                 tasks.topicId,
                 topicIds.map((t) => t.id),
               ),
-              eq(tasks.kind, 'read'),
+              inArray(tasks.kind, COVERAGE_TASK_KINDS),
               eq(tasks.status, 'done'),
             ),
           );
@@ -143,10 +156,62 @@ export async function computeSubjectCoverage(
 }
 
 /**
+ * Accuracy of the questions the student answered in the verifications of a topic (closed-material
+ * checks, docs/10-planner-lezioni.md §3.5): right 1, partial 0.5, wrong and "non so" 0, the item's
+ * current outcome only. Verifications from before the questions were picked have none.
+ */
+async function computeVerifyAccuracies(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  topicId: string,
+): Promise<number[]> {
+  // A verification is about the topic of its task (payload first); only a session with no task falls back to its scope.
+  const viaTask: { id: string }[] = await db
+    .select({ id: studySessions.id })
+    .from(studySessions)
+    .innerJoin(tasks, eq(tasks.id, studySessions.taskId))
+    .where(
+      and(
+        eq(studySessions.kind, 'verify'),
+        isNotNull(studySessions.verifyPreparedAt),
+        sql`coalesce(${tasks.payload}->>'topicId', ${tasks.topicId}::text) = ${topicId}`,
+      ),
+    );
+  const sessionRows: { id: string }[] = await db
+    .select({ id: studySessions.id })
+    .from(studySessions)
+    .where(
+      and(
+        eq(studySessions.kind, 'verify'),
+        isNotNull(studySessions.verifyPreparedAt),
+        isNull(studySessions.taskId),
+        sql`${studySessions.topicIds}->>0 = ${topicId}`,
+      ),
+    );
+  const ids = [...new Set([...sessionRows, ...viaTask].map((r) => r.id))];
+  if (ids.length === 0) return [];
+  const items: { state: SessionItemState; feedback: SessionItem['feedback'] }[] = await db
+    .select({ state: sessionItems.state, feedback: sessionItems.feedback })
+    .from(sessionItems)
+    .where(
+      and(
+        inArray(sessionItems.sessionId, ids),
+        inArray(sessionItems.kind, ['exercise', 'retry_exercise', 'guide_question']),
+        inArray(sessionItems.state, ['correct', 'wrong', 'unknown']),
+      ),
+    );
+  return items.flatMap((i) => {
+    const score = i.feedback && 'score' in i.feedback ? i.feedback.score : null;
+    const accuracy = verifyAccuracy(i.state, score);
+    return accuracy === null ? [] : [accuracy];
+  });
+}
+
+/**
  * Recomputes `topics.mastery` from its inputs (docs/02-filesystem-e-dati.md
  * §5, formula in `packages/core/src/mastery.ts`): average current
  * retrievability of the topic's reviewed flashcards + average accuracy of
- * every graded simulation item on the topic + fraction of its assigned
+ * every graded simulation item on the topic and every answered verification question + fraction of its assigned
  * material actually read.
  *
  * Lives in `@studyhub/db` (not `apps/worker`) because both `apps/worker`
@@ -208,11 +273,16 @@ export async function recomputeTopicMastery(
             ),
           );
 
+  const verifyAccuracies = await computeVerifyAccuracies(db, topicId);
+
   const mean = (xs: number[]) =>
     xs.length === 0 ? null : xs.reduce((a, b) => a + b, 0) / xs.length;
   const { value } = computeMastery({
     retrievability: mean(retrievabilities),
-    simulationAccuracy: mean(results.map((r) => (r.max > 0 ? r.awarded / r.max : 0))),
+    simulationAccuracy: mean([
+      ...results.map((r) => (r.max > 0 ? r.awarded / r.max : 0)),
+      ...verifyAccuracies,
+    ]),
     coverage,
   });
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -17,6 +17,7 @@ import type {
 } from '@studyhub/contracts';
 import { Button } from '@/components/ui/button';
 import { MODEL_OPTIONS, ModelPicker } from '@/components/ModelPicker';
+import { toInlineMath } from '@/lib/lessonClient';
 
 export const DIFFICULTY_LABELS: Record<number, string> = {
   1: 'Facile',
@@ -32,7 +33,7 @@ async function readJson<T>(res: Response, fallback: string): Promise<T> {
 
 const base = (slug: string, sessionId: string) => `/api/subjects/${slug}/sessions/${sessionId}`;
 
-async function fetchBriefing(slug: string, sessionId: string): Promise<SessionBriefingDto> {
+export async function fetchBriefing(slug: string, sessionId: string): Promise<SessionBriefingDto> {
   return readJson(
     await fetch(`${base(slug, sessionId)}/briefing`),
     'Impossibile caricare punti chiave ed esercizi',
@@ -118,7 +119,7 @@ export function Markdown({ source }: { source: string }) {
   );
 }
 
-function CitationChips({
+export function CitationChips({
   citations,
   onOpen,
 }: {
@@ -193,18 +194,28 @@ function KeyPointRow({
   );
 }
 
-function ExerciseCard({
+/**
+ * An exercise, or (`variant="guide"`) a guide question: same answer box and AI correction, but no
+ * difficulty, no solution to reveal and no self-assessment (a guide question has no model answer).
+ * `variant="retry"` is the similar exercise of a sprint lesson: the AI correction decides, the
+ * solution shows after it (or when the student gives up), and the theory can be reviewed.
+ */
+export function ExerciseCard({
   item,
   index,
+  variant = 'exercise',
   active,
   grading,
   gradeError,
   onPatch,
   onGrade,
   onOpenCitation,
+  similarTo,
+  onReviewTheory,
 }: {
   item: SessionItemDto;
   index: number;
+  variant?: 'exercise' | 'guide' | 'retry';
   active: boolean;
   grading: boolean;
   gradeError: string | null;
@@ -212,19 +223,42 @@ function ExerciseCard({
   /** Receives the answer as typed, so it is saved before it is graded. */
   onGrade: (answer: string) => void;
   onOpenCitation: (citation: SessionItemCitationDto) => void;
+  /** Retry: the number of the exercise it is similar to. */
+  similarTo?: number | undefined;
+  /** Retry: open the theory of the original exercise (omitted when it has none). */
+  onReviewTheory?: (() => void) | undefined;
 }) {
   const [answer, setAnswer] = useState(item.answer ?? '');
   const [showSolution, setShowSolution] = useState(item.state !== 'open');
   const assess = (state: 'correct' | 'wrong') =>
     onPatch({ state: item.state === state ? 'open' : state });
+  const guide = variant === 'guide';
+  const retry = variant === 'retry';
 
   return (
     <li className="space-y-2 rounded-[var(--radius-card)] border border-border bg-bg-surface p-3">
       <div className="flex items-center gap-2 text-xs text-fg-muted">
-        <span className="font-medium text-fg-primary">Esercizio {index + 1}</span>
-        {item.difficulty && <span>· {DIFFICULTY_LABELS[item.difficulty]}</span>}
-        {item.state === 'correct' && <span className="ml-auto text-ok">Giusto</span>}
-        {item.state === 'wrong' && <span className="ml-auto text-danger">Da rivedere</span>}
+        <span className="font-medium text-fg-primary">
+          {retry ? 'Riprova' : guide ? 'Domanda guida' : 'Esercizio'} {index + 1}
+        </span>
+        {retry && similarTo !== undefined && <span>· simile all&apos;esercizio {similarTo}</span>}
+        {!guide && !retry && item.difficulty && <span>· {DIFFICULTY_LABELS[item.difficulty]}</span>}
+        {!guide && !retry && item.state === 'correct' && (
+          <span className="ml-auto text-ok">Giusto</span>
+        )}
+        {!guide && !retry && item.state === 'wrong' && (
+          <span className="ml-auto text-danger">Da rivedere</span>
+        )}
+        {retry && item.state === 'correct' && (
+          <span className="ml-auto text-ok">
+            <span aria-hidden="true">✓ </span>Rifatto giusto.
+          </span>
+        )}
+        {retry && item.state === 'wrong' && (
+          <span className="ml-auto text-danger">
+            <span aria-hidden="true">! </span>Da rivedere.
+          </span>
+        )}
       </div>
       <Markdown source={item.title} />
 
@@ -235,23 +269,51 @@ function ExerciseCard({
         onBlur={() => {
           if (answer !== (item.answer ?? '')) onPatch({ answer });
         }}
-        rows={3}
-        placeholder="Scrivi qui il tuo svolgimento…"
-        aria-label={`Risposta all'esercizio ${index + 1}`}
+        rows={retry ? 5 : 3}
+        placeholder={
+          retry
+            ? 'Scrivi i passaggi…'
+            : guide
+              ? 'Rispondi con parole tue…'
+              : 'Scrivi qui il tuo svolgimento…'
+        }
+        aria-label={
+          retry
+            ? `La tua risposta, riprova ${index + 1}`
+            : guide
+              ? `Risposta alla domanda guida ${index + 1}`
+              : `Risposta all'esercizio ${index + 1}`
+        }
         className="w-full resize-y rounded-[var(--radius-control)] border border-border bg-bg-inset px-2 py-1.5 text-sm text-fg-primary outline-none focus:border-accent disabled:opacity-60"
       />
 
-      {active && !showSolution && (
-        <div className="flex flex-wrap items-center gap-2">
+      {active && (guide || retry || !showSolution) && (
+        <div className="flex flex-wrap items-center gap-2 max-md:[&>button]:flex-1">
           <Button
             type="button"
             size="sm"
-            variant="secondary"
+            variant={retry ? 'primary' : 'secondary'}
+            aria-busy={grading}
             disabled={grading || !answer.trim()}
             onClick={() => onGrade(answer)}
           >
-            {grading ? 'Correggo…' : 'Correggi con l’AI'}
+            {grading ? 'Correggo…' : retry ? 'Correggi' : 'Correggi con l’AI'}
           </Button>
+          {retry && onReviewTheory && (
+            <Button type="button" size="sm" variant="secondary" onClick={onReviewTheory}>
+              Rivedi la teoria
+            </Button>
+          )}
+          {retry && !item.solutionVisible && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => onPatch({ revealSolution: true })}
+            >
+              Mostra la soluzione
+            </Button>
+          )}
           {!answer.trim() && (
             <span className="text-xs text-fg-muted">Scrivi prima una risposta.</span>
           )}
@@ -281,7 +343,26 @@ function ExerciseCard({
         </div>
       )}
 
-      {showSolution || item.feedback ? (
+      {retry ? (
+        item.solutionVisible && (
+          <div className="space-y-2 rounded-[var(--radius-control)] border border-border bg-bg-inset p-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-fg-muted">Soluzione</p>
+            {item.solutionSteps.length > 0 ? (
+              <ol className="list-decimal space-y-2 pl-5 text-fg-secondary">
+                {item.solutionSteps.map((step, i) => (
+                  <li key={i}>
+                    <Markdown source={step.text} />
+                    {step.formula && <Markdown source={toInlineMath(step.formula)} />}
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <Markdown source={item.body} />
+            )}
+            <CitationChips citations={item.citations} onOpen={onOpenCitation} />
+          </div>
+        )
+      ) : guide ? null : showSolution || item.feedback ? (
         <div className="space-y-2 rounded-[var(--radius-control)] border border-border bg-bg-inset p-2">
           <p className="text-xs font-medium uppercase tracking-wide text-fg-muted">Soluzione</p>
           <Markdown source={item.body} />
@@ -348,9 +429,11 @@ export function useSessionBriefing({
   const items = data?.items ?? [];
   const keyPoints = items.filter((i) => i.kind === 'key_point');
   const exercises = items.filter((i) => i.kind === 'exercise');
+  // The guide questions of a lesson share the list: they are answered elsewhere, not generated here.
+  const guideQuestions = items.filter((i) => i.kind === 'guide_question');
   const inFlight = data?.job?.status === 'queued' || data?.job?.status === 'running';
   const failed = data?.job?.status === 'failed' ? data.job : null;
-  const mode: SessionBriefingMode = items.length === 0 ? 'all' : 'exercises';
+  const mode: SessionBriefingMode = keyPoints.length + exercises.length === 0 ? 'all' : 'exercises';
 
   const estimate = useQuery({
     queryKey: ['sessionBriefingEstimate', slug, sessionId, mode, model],
@@ -395,6 +478,7 @@ export function useSessionBriefing({
     items,
     keyPoints,
     exercises,
+    guideQuestions,
     inFlight,
     failed,
     mode,
@@ -420,6 +504,8 @@ export function SessionBriefing({
   hasDocuments,
   onOpenCitation,
   onAsk,
+  only,
+  footer,
 }: {
   slug: string;
   sessionId: string;
@@ -427,12 +513,16 @@ export function SessionBriefing({
   hasDocuments: boolean;
   onOpenCitation: (citation: SessionItemCitationDto) => void;
   onAsk: (focus: SessionFocus) => void;
+  /** `exercise`: show the exercises only (no "Punti chiave / Esercizi" tabs). Generation is unchanged. */
+  only?: 'exercise';
+  /** Rendered under the list and under the empty state (the lesson puts its guide questions there). */
+  footer?: (api: ReturnType<typeof useSessionBriefing>) => ReactNode;
 }) {
   const [view, setView] = useState<'key_point' | 'exercise'>('key_point');
+  const api = useSessionBriefing({ slug, sessionId, active, hasDocuments });
   const {
     query,
     data,
-    items,
     keyPoints,
     exercises,
     inFlight,
@@ -445,7 +535,8 @@ export function SessionBriefing({
     patch,
     grade,
     costLabel,
-  } = useSessionBriefing({ slug, sessionId, active, hasDocuments });
+  } = api;
+  const shownView = only ?? view;
 
   if (query.isLoading) return <p className="text-sm text-fg-muted">Caricamento…</p>;
   if (query.isError) {
@@ -482,8 +573,8 @@ export function SessionBriefing({
     </div>
   );
 
-  if (items.length === 0) {
-    return (
+  if (keyPoints.length + exercises.length === 0) {
+    const empty = (
       <div className="mx-auto max-w-md space-y-4 rounded-[var(--radius-card)] border border-dashed border-border p-6 text-center">
         {inFlight ? (
           <div role="status" aria-live="polite" className="space-y-3">
@@ -512,7 +603,9 @@ export function SessionBriefing({
             )}
             {!hasDocuments ? (
               <p className="text-sm text-fg-muted">
-                Nessun documento in questa sessione: scegli un argomento nella colonna a sinistra.
+                {only
+                  ? 'Nessun documento in questa sessione.'
+                  : 'Nessun documento in questa sessione: scegli un argomento nella colonna a sinistra.'}
               </p>
             ) : (
               <div className="text-left">{generateControls}</div>
@@ -522,35 +615,46 @@ export function SessionBriefing({
         )}
       </div>
     );
+    if (!footer) return empty;
+    return (
+      <div className="space-y-6">
+        {empty}
+        {footer(api)}
+      </div>
+    );
   }
 
   const doneCount = keyPoints.filter((k) => k.state === 'done').length;
-  const visible = view === 'key_point' ? keyPoints : exercises;
+  const visible = shownView === 'key_point' ? keyPoints : exercises;
 
   return (
     <div className="space-y-4">
-      <div role="tablist" aria-label="Studio" className="flex flex-wrap items-center gap-1">
-        {(
-          [
-            ['key_point', `Punti chiave ${doneCount}/${keyPoints.length}`],
-            ['exercise', `Esercizi (${exercises.length})`],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={view === id}
-            onClick={() => setView(id)}
-            className={`rounded-[var(--radius-control)] border px-3 py-1 text-sm ${
-              view === id
-                ? 'border-accent bg-bg-raised text-fg-primary'
-                : 'border-border text-fg-secondary'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+      <div
+        {...(only ? {} : { role: 'tablist', 'aria-label': 'Studio' })}
+        className="flex flex-wrap items-center gap-1"
+      >
+        {!only &&
+          (
+            [
+              ['key_point', `Punti chiave ${doneCount}/${keyPoints.length}`],
+              ['exercise', `Esercizi (${exercises.length})`],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={view === id}
+              onClick={() => setView(id)}
+              className={`rounded-[var(--radius-control)] border px-3 py-1 text-sm ${
+                view === id
+                  ? 'border-accent bg-bg-raised text-fg-primary'
+                  : 'border-border text-fg-secondary'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         {data && data.costEur > 0 && (
           <span className="ml-auto text-xs text-fg-muted">
             Costo AI: €{data.costEur.toFixed(4)}
@@ -568,7 +672,7 @@ export function SessionBriefing({
 
       {visible.length === 0 ? (
         <p className="text-sm text-fg-muted">
-          {view === 'key_point' ? 'Nessun punto chiave.' : 'Nessun esercizio.'}
+          {shownView === 'key_point' ? 'Nessun punto chiave.' : 'Nessun esercizio.'}
         </p>
       ) : (
         <ul className="space-y-3">
@@ -603,7 +707,7 @@ export function SessionBriefing({
         </ul>
       )}
 
-      {view === 'exercise' && active && (
+      {shownView === 'exercise' && active && (
         <div className="space-y-2 border-t border-border pt-3">
           {inFlight ? (
             <p role="status" className="text-sm text-fg-secondary">
@@ -614,6 +718,7 @@ export function SessionBriefing({
           )}
         </div>
       )}
+      {footer?.(api)}
     </div>
   );
 }

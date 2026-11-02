@@ -2,7 +2,10 @@
 
 import { useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Upload } from 'lucide-react';
 import { DOCUMENT_TYPES, type DocumentType } from '@studyhub/core/browser';
+import { BTN_PRIMARY, BTN_SECONDARY, FOCUS } from '@/components/subject-tabs/styles';
+import { DOC_TYPE_LABELS } from '@/components/subject-tabs/documentMeta';
 
 async function uploadOne(subjectSlug: string, type: DocumentType, file: File) {
   const form = new FormData();
@@ -13,14 +16,6 @@ async function uploadOne(subjectSlug: string, type: DocumentType, file: File) {
   if (!res.ok) throw new Error(body.error?.message ?? `Upload fallito: ${file.name}`);
   return body as { duplicate: boolean };
 }
-
-const TYPE_LABELS: Record<DocumentType, string> = {
-  appunti: 'Appunti',
-  schemi: 'Schemi',
-  esami: 'Esami',
-  slide: 'Slide',
-  altro: 'Altro',
-};
 
 /** Upload mutation shared by the desktop form and the mobile "Aggiungi materiale" card. */
 export function useDocumentUpload(subjectSlug: string) {
@@ -56,38 +51,53 @@ export function useDocumentUpload(subjectSlug: string) {
 export function DocumentUploadForm({
   subjectSlug,
   defaultType = 'appunti',
+  label = 'Carica',
+  variant = 'primary',
 }: {
   subjectSlug: string;
   defaultType?: DocumentType;
+  label?: string;
+  variant?: 'primary' | 'secondary';
 }) {
   const [type, setType] = useState<DocumentType>(defaultType);
   const inputRef = useRef<HTMLInputElement>(null);
   const mutation = useDocumentUpload(subjectSlug);
 
   return (
-    <div className="rounded-[var(--radius-card)] border border-dashed border-border bg-bg-surface p-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <label className="flex items-center gap-2 text-xs text-fg-secondary">
+    <div className="flex flex-col gap-1.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2 text-[13px] text-fg-secondary">
           Tipo
           <select
             value={type}
             onChange={(e) => setType(e.target.value as DocumentType)}
-            className="rounded-[var(--radius-control)] border border-border bg-bg-inset px-2 py-1 text-sm text-fg-primary"
+            className={`h-10 rounded-[var(--radius-control)] border border-border-strong bg-bg-inset px-2 text-[13px] text-fg-primary ${FOCUS}`}
           >
             {DOCUMENT_TYPES.map((t) => (
               <option key={t} value={t}>
-                {TYPE_LABELS[t]}
+                {DOC_TYPE_LABELS[t]}
               </option>
             ))}
           </select>
         </label>
 
+        <button
+          type="button"
+          disabled={mutation.isPending}
+          onClick={() => inputRef.current?.click()}
+          className={variant === 'primary' ? BTN_PRIMARY : BTN_SECONDARY}
+        >
+          <Upload aria-hidden="true" className="size-4" />
+          {label}
+        </button>
         <input
           ref={inputRef}
           type="file"
           multiple
           accept="application/pdf,image/jpeg,image/png,image/webp,text/markdown,.md,.markdown"
           disabled={mutation.isPending}
+          aria-label="File da caricare"
+          tabIndex={-1}
           onChange={(e) => {
             if (e.target.files && e.target.files.length > 0) {
               mutation.upload(e.target.files, type, {
@@ -97,14 +107,18 @@ export function DocumentUploadForm({
               });
             }
           }}
-          className="text-sm text-fg-secondary file:mr-3 file:rounded-[var(--radius-control)] file:border-0 file:bg-accent file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-accent-hover"
+          className="sr-only"
         />
 
-        {mutation.isPending && <span className="text-xs text-fg-muted">Caricamento…</span>}
+        {mutation.isPending && (
+          <span role="status" className="text-xs text-fg-secondary">
+            Caricamento…
+          </span>
+        )}
       </div>
 
       {mutation.isError && (
-        <p role="alert" className="mt-2 text-xs text-danger">
+        <p role="alert" className="text-xs text-danger">
           {mutation.error?.message}
         </p>
       )}

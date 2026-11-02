@@ -21,6 +21,7 @@ export * from './session.js';
 export * from './pomodoro.js';
 export * from './sessionChat.js';
 export * from './sessionBriefing.js';
+export * from './verify.js';
 export * from './timeFactor.js';
 export * from './scoring.js';
 export * from './attemptPhotos.js';

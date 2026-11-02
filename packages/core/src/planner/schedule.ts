@@ -1,30 +1,35 @@
 import { addDays, diffDays, eachDay, weekday, type IsoDate } from './dates.js';
+import { sliceMaterial } from './split.js';
 import type {
   DayLoad,
   Feasibility,
   Intensity,
+  LessonMethod,
   MaterialRef,
   PlanResult,
   PlannedTask,
   PlannerInput,
+  PlannerLesson,
   PlannerTopic,
   Strategy,
 } from './types.js';
 
 /**
- * Fase B — deterministic scheduling (docs/04-planner.md §4). Pure: no I/O,
- * no clock, no AI — rerunning it after the user moves a task is instant and
- * free (docs/fasi/F6 "Decisioni": "il re-schedule non chiama l'LLM").
+ * Fase B — deterministic scheduling (docs/04-planner.md §4, docs/10-planner-lezioni.md §4.2).
+ * Pure: no I/O, no clock, no AI — rerunning it after the user moves a task is instant and free
+ * (docs/fasi/F6 "Decisioni": "il re-schedule non chiama l'LLM").
  *
  * Greedy, day by day, in this order of precedence:
  *   1. pinned tasks (the user's decisions)        — consumed first
  *   2. FSRS reviews due that day                  — "precedenza assoluta"
  *   3. simulations at ~60/85/95% of the timeline  — can't be split
- *   4. spaced revisits (+1, +3, +7 days)          — due first, then carried over
- *   5. new content, in prerequisite order, hard/easy interleaved,
+ *   4. spaced revisits (+1 flashcards, +3 and +7 verify), due first, then carried over
+ *   5. new lessons, in prerequisite order, hard/easy interleaved,
  *      ≤2 new topics per day (lifted when time is short), never in the last 2 days
- * Hard constraints hold by construction: every placement checks the day's
- * remaining minutes, so no day is ever overbooked by the planner itself.
+ * A lesson is atomic and never shortened: when the time is short the method changes (sprint) or
+ * the topic is left out, never the duration. Every placement checks the day's remaining minutes,
+ * so a day is never overbooked by the planner. A lesson longer than any day is split by content into
+ * parts that fit; only an indivisible one goes on the roomiest day, with a warning.
  */
 
 /** Share of the stated availability actually planned, by intensity (docs/04 §2 prefs). */
@@ -33,12 +38,16 @@ export const INTENSITY_FACTOR: Record<Intensity, number> = {
   standard: 0.9,
   sprint: 1,
 };
-/** Smallest study block worth scheduling — below this a session is noise. */
+/** Smallest study block worth scheduling — also the floor of a lesson estimate. */
 export const MIN_CHUNK_MINUTES = 15;
 const MAX_NEW_TOPICS_PER_DAY = 2;
 const REVISIT_OFFSETS_DAYS = [1, 3, 7];
 const SIMULATION_POSITIONS = [0.6, 0.85, 0.95];
 const FINAL_REVIEW_MINUTES = 60;
+/** Fixed length of the +3 / +7 day verifications. */
+export const VERIFY_MINUTES = 15;
+/** Sprint length of a topic that doesn't say its own, relative to the standard one. */
+const DEFAULT_SPRINT_RATIO = 0.7;
 
 export function buildCapacity(input: PlannerInput): Map<IsoDate, number> {
   const factor = INTENSITY_FACTOR[input.prefs.intensity];
@@ -52,15 +61,31 @@ export function buildCapacity(input: PlannerInput): Map<IsoDate, number> {
   return capacity;
 }
 
-export function learningMinutes(topic: PlannerTopic): number {
-  // Material already partly mastered needs a lighter first pass (never below one block).
-  const factor = 1 - 0.5 * Math.min(1, Math.max(0, topic.mastery ?? 0));
-  return Math.max(MIN_CHUNK_MINUTES, Math.round(topic.estimatedMinutes * factor));
+/** The lessons of a topic: its own, or a single one standing for the whole topic. */
+export function topicLessons(topic: PlannerTopic): PlannerLesson[] {
+  if (topic.lessons && topic.lessons.length > 0) return topic.lessons;
+  return [
+    {
+      title: topic.name,
+      material: topic.material,
+      standardMinutes: topic.estimatedMinutes,
+      sprintMinutes: Math.round(DEFAULT_SPRINT_RATIO * topic.estimatedMinutes),
+    },
+  ];
 }
 
-function scaledLearningMinutes(topic: PlannerTopic, scale: number): number {
-  const full = learningMinutes(topic);
-  return scale >= 1 ? full : Math.max(MIN_CHUNK_MINUTES, Math.round(full * scale));
+/**
+ * Estimated length of a lesson with the given method: already partly mastered material needs a
+ * lighter pass. It is the estimate of the lesson, not a compression — rounded to 5, never below 15.
+ */
+export function lessonMinutes(
+  lesson: PlannerLesson,
+  method: LessonMethod,
+  mastery: number | null,
+): number {
+  const base = method === 'sprint' ? lesson.sprintMinutes : lesson.standardMinutes;
+  const factor = 1 - 0.5 * Math.min(1, Math.max(0, mastery ?? 0));
+  return Math.max(MIN_CHUNK_MINUTES, Math.round((base * factor) / 5) * 5);
 }
 
 function revisitMinutes(learn: number, sessionLength: number): number {
@@ -73,31 +98,6 @@ function pad(n: number): string {
 
 export function totalPages(material: MaterialRef[]): number {
   return material.reduce((s, m) => s + (m.pageTo - m.pageFrom + 1), 0);
-}
-
-/**
- * Pages [startPage, endPage) of the topic's material (0-based over the
- * concatenated ranges), mapped back to real page numbers. The caller walks
- * a cumulative cursor, so consecutive sessions are contiguous by
- * construction — recomputing both ends from shares with different rounding
- * repeated a page (p. 43 twice) before.
- */
-function sliceMaterial(material: MaterialRef[], startPage: number, endPage: number): MaterialRef[] {
-  const out: MaterialRef[] = [];
-  let offset = 0;
-  for (const m of material) {
-    const len = m.pageTo - m.pageFrom + 1;
-    const lo = Math.max(startPage, offset);
-    const hi = Math.min(endPage, offset + len);
-    if (hi > lo)
-      out.push({
-        docId: m.docId,
-        pageFrom: m.pageFrom + (lo - offset),
-        pageTo: m.pageFrom + (hi - offset) - 1,
-      });
-    offset += len;
-  }
-  return out;
 }
 
 function describePages(material: MaterialRef[]): string {
@@ -170,44 +170,144 @@ interface PendingRevisit {
   minutes: number;
 }
 
-/** Lowest share of the planned study time a compressed plan will shrink to. */
-const MIN_COMPRESSION = 0.1;
-const COMPRESSION_SEARCH_STEPS = 10;
-
-/**
- * Always returns a plan. When the time is short, first the cap on new topics per day is lifted
- * (cramming: the days fill up instead of staying half empty); if the minutes still don't add up,
- * the study time of every topic is shrunk — as little as possible — until everything fits. A
- * compressed result is flagged infeasible, with the strategies, so the student knows.
- */
-export function schedulePlan(input: PlannerInput): PlanResult {
-  const full = schedulePlanAt(input, 1, false);
-  if (full.feasibility.feasible || full.feasibility.availableMinutes <= 0) return full;
-
-  const crammed = schedulePlanAt(input, 1, true);
-  if (crammed.feasibility.feasible) return crammed;
-
-  // Largest scale that still schedules every topic (binary search): the cap on new topics is
-  // gone, so minutes are the only limit and a lower scale never schedules fewer topics.
-  const fits = (r: PlanResult) => r.feasibility.unscheduledTopicKeys.length === 0;
-  let lo = MIN_COMPRESSION;
-  let best = schedulePlanAt(input, lo, true);
-  if (!fits(best)) return best;
-  let hi = 1;
-  for (let i = 0; i < COMPRESSION_SEARCH_STEPS; i++) {
-    const mid = (lo + hi) / 2;
-    const r = schedulePlanAt(input, mid, true);
-    if (fits(r)) {
-      lo = mid;
-      best = r;
-    } else {
-      hi = mid;
-    }
-  }
-  return best;
+/** One atomic lesson, ready to be placed. */
+interface LessonUnit {
+  key: string;
+  title: string;
+  minutes: number;
+  material: MaterialRef[];
+  n: number;
+  of: number;
+  /** Minutes of the same lesson with the other method, when it splits the same way. */
+  otherMinutes?: number;
 }
 
-function schedulePlanAt(input: PlannerInput, scale: number, cram: boolean): PlanResult {
+interface TopicState {
+  units: LessonUnit[];
+  /** Index of the next lesson to place. */
+  next: number;
+  total: number;
+  finishedOn: IsoDate | null;
+}
+
+interface RunConfig {
+  /** Topics whose lessons are all switched to sprint to make the plan fit. */
+  sprintTopics: Set<string>;
+  /** Topics left out of the plan. */
+  excluded: Set<string>;
+  /** Cap of new topics per day: lifted when time is short. */
+  cap: boolean;
+}
+
+interface RunOutput {
+  result: PlanResult;
+  /** Included topics whose lessons did not all find a place. */
+  unscheduled: string[];
+  /** Most free minutes on any day that takes new content: the longest lesson that can be placed. */
+  bestRoom: number;
+}
+
+function methodOf(input: PlannerInput, config: RunConfig, topic: PlannerTopic): LessonMethod {
+  return input.prefs.intensity === 'sprint' || config.sprintTopics.has(topic.key)
+    ? 'sprint'
+    : 'standard';
+}
+
+/**
+ * The lessons of a topic as atomic units. A lesson longer than `maxMinutes` (the roomiest day) is
+ * split by content — page ranges of its material, never by minutes — into the fewest parts that
+ * fit, and the parts of the whole topic are renumbered. A lesson that cannot be split (no pages to
+ * divide) stays whole.
+ */
+function buildUnits(
+  topic: PlannerTopic,
+  method: LessonMethod,
+  maxMinutes = Infinity,
+): LessonUnit[] {
+  const parts: { title: string; minutes: number; material: MaterialRef[] }[] = [];
+  for (const l of topicLessons(topic)) {
+    const minutes = lessonMinutes(l, method, topic.mastery);
+    const material = l.material.length > 0 ? l.material : topic.material;
+    parts.push(...splitLesson(l.title, minutes, material, maxMinutes));
+  }
+  return parts.map((p, i) => ({
+    key: `lesson:${topic.key}:${pad(i + 1)}`,
+    title: parts.length > 1 ? `${p.title} · parte ${i + 1} di ${parts.length}` : p.title,
+    minutes: p.minutes,
+    material: p.material,
+    n: i + 1,
+    of: parts.length,
+  }));
+}
+
+function splitLesson(
+  title: string,
+  minutes: number,
+  material: MaterialRef[],
+  maxMinutes: number,
+): { title: string; minutes: number; material: MaterialRef[] }[] {
+  const whole = [{ title, minutes, material }];
+  if (minutes <= maxMinutes || maxMinutes <= 0) return whole;
+  const pages = totalPages(material);
+  for (let k = Math.max(2, Math.ceil(minutes / maxMinutes)); k <= pages; k += 1) {
+    const parts = Array.from({ length: k }, (_, i) => {
+      // Even split of the pages: parts differ by at most one page.
+      const from = Math.floor((i * pages) / k);
+      const to = Math.floor(((i + 1) * pages) / k);
+      return {
+        title,
+        minutes: Math.max(MIN_CHUNK_MINUTES, Math.round((minutes * (to - from)) / pages / 5) * 5),
+        material: sliceMaterial(material, from, to),
+      };
+    });
+    if (parts.every((p) => p.minutes <= maxMinutes)) return parts;
+  }
+  return whole;
+}
+
+function names(list: string[]): string {
+  return list.map((n) => `"${n}"`).join(', ');
+}
+
+/**
+ * Always returns a plan. A lesson is never shortened. When the time is short, in this order and
+ * stopping as soon as everything fits: the cap on new topics per day is lifted; the topics with
+ * the lowest exam weight switch to sprint, one at a time (all their lessons); the topics with the
+ * lowest exam weight are left out, one at a time. Sprint lessons and left-out topics are named in
+ * the feasibility and the warnings, and a plan with left-out topics is flagged infeasible, with the
+ * strategies, so the student knows.
+ */
+export function schedulePlan(input: PlannerInput): PlanResult {
+  const config: RunConfig = { sprintTopics: new Set(), excluded: new Set(), cap: true };
+  let out = run(input, config);
+  if (out.unscheduled.length === 0) return out.result;
+
+  const availableMinutes = out.result.feasibility.availableMinutes;
+  config.cap = false;
+  out = run(input, config);
+  if (out.unscheduled.length === 0 || availableMinutes <= 0) return out.result;
+
+  const byWeight = input.topics
+    .filter((t) => t.material.length > 0)
+    .sort((a, b) => a.examWeight - b.examWeight || a.key.localeCompare(b.key));
+
+  if (input.prefs.intensity !== 'sprint') {
+    for (const t of byWeight) {
+      if (config.sprintTopics.has(t.key)) continue;
+      config.sprintTopics.add(t.key);
+      out = run(input, config);
+      if (out.unscheduled.length === 0) return out.result;
+    }
+  }
+  for (const t of byWeight) {
+    config.excluded.add(t.key);
+    out = run(input, config);
+    if (out.unscheduled.length === 0) return out.result;
+  }
+  return out.result;
+}
+
+function run(input: PlannerInput, config: RunConfig): RunOutput {
   const warnings: string[] = [];
   const days = eachDay(input.startDate, input.targetDate);
   const capacity = buildCapacity(input);
@@ -304,7 +404,7 @@ function schedulePlanAt(input: PlannerInput, scale: number, cram: boolean): Plan
     });
   }
 
-  // 4 + 5. Revisits and new content, day by day.
+  // 4 + 5. Revisits and new lessons, day by day.
   const eligible: PlannerTopic[] = [];
   for (const t of input.topics) {
     if (t.material.length === 0) {
@@ -318,22 +418,33 @@ function schedulePlanAt(input: PlannerInput, scale: number, cram: boolean): Plan
   if (input.topics.length === 0)
     warnings.push('Nessun materiale da pianificare: carica documenti o crea argomenti.');
 
-  const order = orderTopics(eligible, warnings);
-  const state = new Map(
-    order.map((t) => [
-      t.key,
-      {
-        total: scaledLearningMinutes(t, scale),
-        left: scaledLearningMinutes(t, scale),
-        sessions: 0,
-        finishedOn: null as IsoDate | null,
-        pages: totalPages(t.material),
-        pagesDone: 0,
-      },
-    ]),
-  );
+  const fullOrder = orderTopics(eligible, warnings);
+  const order = fullOrder.filter((t) => !config.excluded.has(t.key));
+  // The roomiest day bounds a lesson: a longer one is split by content, or — if it cannot be — goes on that day anyway.
+  const baseRoom = new Map<IsoDate, number>();
+  for (const d of days) if (!lastTwo.has(d)) baseRoom.set(d, remaining.get(d) ?? 0);
+  const bestRoom = Math.max(0, ...baseRoom.values());
+
+  const state = new Map<string, TopicState>();
+  for (const t of order) {
+    const method = methodOf(input, config, t);
+    const room = bestRoom > 0 ? bestRoom : Infinity;
+    const units = buildUnits(t, method, room);
+    // Switching method later needs the minutes of the other one: only when both split the same way.
+    const other = buildUnits(t, method === 'sprint' ? 'standard' : 'sprint', room);
+    if (other.length === units.length) {
+      units.forEach((u, i) => (u.otherMinutes = other[i]!.minutes));
+    }
+    state.set(t.key, {
+      units,
+      next: 0,
+      total: units.reduce((sum, u) => sum + u.minutes, 0),
+      finishedOn: null,
+    });
+  }
+
   const pending: PendingRevisit[] = [];
-  const maxNewPerDay = cram ? Infinity : MAX_NEW_TOPICS_PER_DAY;
+  const maxNewPerDay = config.cap ? MAX_NEW_TOPICS_PER_DAY : Infinity;
 
   for (const day of days) {
     // 4. Spaced revisits whose date has come (oldest first), carried over if they don't fit.
@@ -348,77 +459,87 @@ function schedulePlanAt(input: PlannerInput, scale: number, cram: boolean): Plan
       place({
         key: `rev:${r.topic.key}:${pad(r.n)}`,
         date: day,
-        kind: first ? 'flashcards' : 'review',
+        kind: first ? 'flashcards' : 'verify',
         topicKey: r.topic.key,
         topicId: r.topic.topicId,
         minutes: r.minutes,
-        title: first ? `Flashcard su ${r.topic.name}` : `Ripasso ${r.n - 1} di ${r.topic.name}`,
+        title: first ? `Flashcard su ${r.topic.name}` : `Verifica · ${r.topic.name}`,
         description: first
           ? `Genera le flashcard dal materiale appena studiato (${describePages(r.topic.material)}) e ripassale.`
-          : 'Ripasso a intervallo crescente: richiama a memoria prima di rileggere.',
+          : 'Verifica a materiale chiuso: richiama a memoria prima di rileggere.',
         payload: first
           ? { action: 'generate_flashcards', material: r.topic.material, topicId: r.topic.topicId }
-          : { action: 'review_session', topicId: r.topic.topicId },
+          : { action: 'verify', topicId: r.topic.topicId, material: r.topic.material },
         pinned: false,
         origin: 'planner',
       });
     }
 
-    // 5. New content — never in the last two days.
+    // 5. New lessons — never in the last two days.
     if (lastTwo.has(day)) continue;
     let startedToday = 0;
     for (;;) {
       const room = remaining.get(day) ?? 0;
-      if (room < MIN_CHUNK_MINUTES) break;
       const next = order.find((t) => {
         const s = state.get(t.key)!;
-        if (s.left <= 0) return false;
-        if (s.sessions === 0 && startedToday >= maxNewPerDay) return false;
-        // Same day is fine: `order` is prerequisite-first, so the prerequisite's last session comes earlier that day.
-        return t.prerequisites.every((p) => {
+        const unit = s.units[s.next];
+        if (!unit) return false;
+        if (s.next === 0 && startedToday >= maxNewPerDay) return false;
+        // Same day is fine: `order` is prerequisite-first, so the prerequisite's last lesson comes earlier that day.
+        const ready = t.prerequisites.every((p) => {
           const ps = state.get(p);
           return !ps || (ps.finishedOn !== null && ps.finishedOn <= day);
         });
+        if (!ready) return false;
+        const oversized = unit.minutes > bestRoom && bestRoom > 0;
+        return unit.minutes <= room || (oversized && baseRoom.get(day) === bestRoom);
       });
       if (!next) break;
       const s = state.get(next.key)!;
-      const chunk = Math.min(s.left, sessionLength, room);
-      if (chunk < MIN_CHUNK_MINUTES && chunk < s.left) break;
-      if (s.sessions === 0) startedToday += 1;
-      s.sessions += 1;
-      const doneAfter = s.total - s.left + chunk;
-      const isLast = chunk >= s.left;
-      // Proportional end, but at least one new page, never past the end, and all remaining pages on the last session.
-      let endPage = isLast
-        ? s.pages
-        : Math.max(s.pagesDone + 1, Math.round((doneAfter / s.total) * s.pages));
-      endPage = Math.min(s.pages, endPage);
-      // More sessions than pages: re-use the last page rather than emit an empty, non-actionable task.
-      const startPage = Math.min(s.pagesDone, Math.max(0, s.pages - 1));
-      const material = sliceMaterial(next.material, startPage, Math.max(endPage, startPage + 1));
-      s.pagesDone = Math.max(s.pagesDone, endPage);
+      const unit = s.units[s.next]!;
+      if (s.next === 0) startedToday += 1;
+      if (unit.minutes > room) {
+        warnings.push(
+          `La lezione "${unit.title}" (${unit.minutes} min) è più lunga di ogni giornata disponibile e non si può dividere: la metto il ${day}, il giorno con più tempo libero, ma supera i minuti previsti.`,
+        );
+      }
+      const method = methodOf(input, config, next);
       place({
-        key: `read:${next.key}:${pad(s.sessions)}`,
+        key: unit.key,
         date: day,
-        kind: 'read',
+        kind: 'lesson',
         topicKey: next.key,
         topicId: next.topicId,
-        minutes: chunk,
-        title: `Studia ${next.name} — ${describePages(material)}`,
-        description: `Sessione ${s.sessions} di ${next.name} (${chunk} min).`,
-        payload: { action: 'read', material, topicId: next.topicId },
+        minutes: unit.minutes,
+        title: unit.title,
+        description: `Lezione ${method} su ${next.name} (${describePages(unit.material)}, ${unit.minutes} min).`,
+        payload: {
+          action: 'lesson',
+          method,
+          ...(unit.otherMinutes !== undefined
+            ? {
+                minutesByMethod:
+                  method === 'sprint'
+                    ? { standard: unit.otherMinutes, sprint: unit.minutes }
+                    : { standard: unit.minutes, sprint: unit.otherMinutes },
+              }
+            : {}),
+          ...(unit.of > 1 ? { part: { n: unit.n, of: unit.of } } : {}),
+          material: unit.material,
+          topicId: next.topicId,
+        },
         pinned: false,
         origin: 'planner',
       });
-      s.left -= chunk;
-      if (s.left <= 0) {
+      s.next += 1;
+      if (s.next >= s.units.length) {
         s.finishedOn = day;
         REVISIT_OFFSETS_DAYS.forEach((offset, i) =>
           pending.push({
             topic: next,
             n: i + 1,
             due: addDays(day, offset),
-            minutes: revisitMinutes(s.total, sessionLength),
+            minutes: i === 0 ? revisitMinutes(s.total, sessionLength) : VERIFY_MINUTES,
           }),
         );
       }
@@ -449,43 +570,77 @@ function schedulePlanAt(input: PlannerInput, scale: number, cram: boolean): Plan
   }
 
   // Feasibility.
-  const learnScaled = order.reduce((s, t) => s + state.get(t.key)!.total, 0);
-  const learnFull = order.reduce((s, t) => s + learningMinutes(t), 0);
-  const learnTotal = learnScaled;
-  // A compressed plan owes the time it cut, so it reads as "not enough time" with an honest shortfall.
-  const learnLeft =
-    order.reduce((s, t) => s + Math.max(0, state.get(t.key)!.left), 0) +
-    Math.max(0, learnFull - learnScaled);
-  const revisitTotal = order.reduce(
-    (s, t) => s + REVISIT_OFFSETS_DAYS.length * revisitMinutes(learningMinutes(t), sessionLength),
+  const unscheduled = order
+    .filter((t) => state.get(t.key)!.next < state.get(t.key)!.units.length)
+    .map((t) => t.key);
+  // Anything that found no place is left out too (e.g. no capacity at all): said, not hidden.
+  const excludedAll = fullOrder
+    .filter((t) => config.excluded.has(t.key) || unscheduled.includes(t.key))
+    .sort((a, b) => a.examWeight - b.examWeight || a.key.localeCompare(b.key));
+  const excludedKeys = excludedAll.map((t) => t.key);
+
+  const sprintLessonKeys =
+    input.prefs.intensity === 'sprint'
+      ? []
+      : fullOrder
+          .filter((t) => config.sprintTopics.has(t.key) && !excludedKeys.includes(t.key))
+          .flatMap((t) => state.get(t.key)!.units.map((u) => u.key));
+  if (sprintLessonKeys.length > 0) {
+    const titles = fullOrder
+      .filter((t) => config.sprintTopics.has(t.key) && !excludedKeys.includes(t.key))
+      .flatMap((t) => state.get(t.key)!.units.map((u) => u.title));
+    warnings.push(
+      `Tempo insufficiente per tutto in versione standard: ${titles.length === 1 ? 'la lezione' : 'le lezioni'} ${names(titles)} ${titles.length === 1 ? 'passa' : 'passano'} a sprint (esercizi, poi la teoria che serve).`,
+    );
+  }
+  if (excludedKeys.length > 0) {
+    warnings.push(
+      `Tempo insufficiente: ${excludedAll.length === 1 ? "l'argomento" : 'gli argomenti'} ${names(excludedAll.map((t) => t.name))} ${excludedAll.length === 1 ? 'resta fuori' : 'restano fuori'} dal piano${excludedAll.every((t) => config.excluded.has(t.key)) ? " (peso d'esame più basso)" : ''}.`,
+    );
+  }
+
+  const sumStandard = (t: PlannerTopic) =>
+    buildUnits(t, 'standard').reduce((s, u) => s + u.minutes, 0);
+  const learnFull = fullOrder.reduce((s, t) => s + sumStandard(t), 0);
+  const revisitTotal = fullOrder.reduce(
+    (s, t) =>
+      s +
+      revisitMinutes(sumStandard(t), sessionLength) +
+      (REVISIT_OFFSETS_DAYS.length - 1) * VERIFY_MINUTES,
     0,
   );
   const availableMinutes = [...capacity.values()].reduce((s, v) => s + v, 0);
   const requiredMinutes =
     learnFull + revisitTotal + simIndexes.length * simMinutes + requiredReview;
-  const unscheduledTopicKeys = order.filter((t) => state.get(t.key)!.left > 0).map((t) => t.key);
-  const feasible =
-    unscheduledTopicKeys.length === 0 && scale >= 1 && (days.length > 0 || learnTotal === 0);
-  if (scale < 1 && order.length > 0) {
-    warnings.push(
-      `Tempo insufficiente: il piano è compresso a circa il ${Math.round(scale * 100)}% del tempo di studio previsto per ogni argomento.`,
-    );
-  }
-  const shortfallMinutes = days.length === 0 ? requiredMinutes : learnLeft;
+  const feasible = excludedKeys.length === 0 && (days.length > 0 || fullOrder.length === 0);
+  const leftOutMinutes = excludedAll.reduce(
+    (s, t) => s + buildUnits(t, 'sprint').reduce((m, u) => m + u.minutes, 0),
+    0,
+  );
+  const shortfallMinutes = feasible
+    ? 0
+    : days.length === 0
+      ? requiredMinutes
+      : Math.max(leftOutMinutes, requiredMinutes - availableMinutes);
 
+  const sprintTotal = fullOrder.reduce(
+    (s, t) => s + buildUnits(t, 'sprint').reduce((m, u) => m + u.minutes, 0),
+    0,
+  );
   const feasibility: Feasibility = {
     feasible,
     requiredMinutes,
     availableMinutes,
     shortfallMinutes,
-    unscheduledTopicKeys,
+    unscheduledTopicKeys: excludedKeys,
+    sprintLessonKeys,
+    excludedTopicKeys: excludedKeys,
     strategies: feasible
       ? []
       : strategies(
           input,
-          order,
-          learnFull,
-          learnLeft,
+          fullOrder,
+          learnFull === 0 ? 0 : sprintTotal / learnFull,
           shortfallMinutes,
           availableMinutes,
           days.length,
@@ -494,7 +649,11 @@ function schedulePlanAt(input: PlannerInput, scale: number, cram: boolean): Plan
 
   tasks.sort((a, b) => a.date.localeCompare(b.date) || a.key.localeCompare(b.key));
   renumberSimulations(tasks);
-  return { tasks, loadPerDay: computeLoadPerDay(capacity, tasks), feasibility, warnings };
+  return {
+    result: { tasks, loadPerDay: computeLoadPerDay(capacity, tasks), feasibility, warnings },
+    unscheduled,
+    bestRoom,
+  };
 }
 
 /**
@@ -531,14 +690,11 @@ export function computeLoadPerDay(
 function strategies(
   input: PlannerInput,
   order: PlannerTopic[],
-  learnTotal: number,
-  learnLeft: number,
+  sprintShare: number,
   shortfall: number,
   availableMinutes: number,
   dayCount: number,
 ): Strategy[] {
-  const coveredShare = learnTotal === 0 ? 0 : Math.max(0, (learnTotal - learnLeft) / learnTotal);
-
   const byWeight = [...order].sort(
     (a, b) => b.examWeight - a.examWeight || a.key.localeCompare(b.key),
   );
@@ -562,7 +718,7 @@ function strategies(
     {
       id: 'copertura_superficiale',
       label: 'Copertura completa, più superficiale',
-      description: `Tutti gli argomenti, con circa il ${Math.round(coveredShare * 100)}% del tempo previsto per ciascuno.`,
+      description: `Tutti gli argomenti in versione sprint (esercizi, poi la teoria che serve), circa il ${Math.round(sprintShare * 100)}% del tempo della lezione standard.`,
     },
     {
       id: 'focus_80',

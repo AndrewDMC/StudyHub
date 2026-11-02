@@ -272,5 +272,9 @@ export async function getSubjectOverview(
     recentActivity(db, subject.id, since),
   ]);
 
-  return { suggestedActions: actions, recentActivity: activity, gaps };
+  const untaggedDocumentCount = docRows.filter(
+    (d) => d.status === 'parsed' && !taggedDocIds.has(d.id),
+  ).length;
+
+  return { suggestedActions: actions, recentActivity: activity, gaps, untaggedDocumentCount };
 }

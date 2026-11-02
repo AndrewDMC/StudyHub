@@ -37,7 +37,7 @@ describe('session closing (flashcards from key points, drill from wrong exercise
     kind: 'key_point' | 'exercise',
     orderIndex: number,
     title: string,
-    state: 'open' | 'done' | 'correct' | 'wrong' = 'open',
+    state: 'open' | 'done' | 'correct' | 'wrong' | 'unknown' = 'open',
     forSession: string = sessionId,
   ) {
     await db.insert(sessionItems).values({
@@ -310,6 +310,21 @@ describe('session closing (flashcards from key points, drill from wrong exercise
       const queue = { add: vi.fn() };
       const attempt = await startOrResumeAttempt(db, queue as never, slug, drill.simulationId);
       expect(attempt.items).toHaveLength(2);
+    });
+
+    it('also takes the exercises marked "non so" (sprint lessons)', async () => {
+      await addItem('exercise', 0, 'Giusto', 'correct');
+      await addItem('exercise', 1, 'Non so', 'unknown');
+      await addItem('exercise', 2, 'Sbagliato', 'wrong');
+      await endSession(db, slug, sessionId);
+      const drill = await createDrillFromWrongExercises(db, dataRoot, slug, sessionId);
+      expect(drill.itemCount).toBe(2);
+      const items = await db
+        .select()
+        .from(simulationItems)
+        .where(eq(simulationItems.simulationId, drill.simulationId))
+        .orderBy(simulationItems.ord);
+      expect(items.map((i) => i.prompt)).toEqual(['Non so', 'Sbagliato']);
     });
 
     it('is idempotent, and needs at least one wrong exercise', async () => {

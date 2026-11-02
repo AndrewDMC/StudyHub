@@ -13,6 +13,9 @@ import type {
   SchemaPromptInput,
   SchemaTranscriptionPromptInput,
   SessionBriefingPromptInput,
+  ExplainFeedbackPromptInput,
+  SessionLessonPromptInput,
+  SprintExercisesPromptInput,
   SessionChatPromptInput,
   PlanChangePromptInput,
   SubjectAskPromptInput,
@@ -36,10 +39,15 @@ import type {
   SchemaNode,
   SchemaOutput,
   SessionBriefingOutput,
+  ExplainFeedbackOutput,
+  ExplainFeedbackPoint,
+  SessionLessonOutput,
+  SprintExercisesOutput,
   SimulationOutput,
   SortFlashcardsAiOutput,
   SummaryOutput,
   TopicEstimate,
+  TopicLessonEstimate,
 } from './schemas.js';
 import { basename } from 'node:path';
 import { estimateTokens } from './pricing.js';
@@ -64,6 +72,9 @@ import {
   SCHEMA_TRANSCRIPTION_PROMPT_VERSION,
   SESSION_BRIEFING_PROMPT_VERSION,
   SESSION_CHAT_PROMPT_VERSION,
+  EXPLAIN_FEEDBACK_PROMPT_VERSION,
+  SESSION_LESSON_PROMPT_VERSION,
+  SPRINT_EXERCISES_PROMPT_VERSION,
   SESSION_CHAT_DEEP_PROMPT_VERSION,
   PLAN_CHANGE_PROMPT_VERSION,
   SUBJECT_ASK_PROMPT_VERSION,
@@ -73,6 +84,49 @@ import {
 } from './versions.js';
 
 const FAKE_MODEL = 'fake-v1';
+
+/** Pages per lesson in the fake split: a unit longer than this is divided in equal page ranges. */
+const FAKE_PAGES_PER_LESSON = 12;
+
+const roundTo5 = (minutes: number) => Math.max(5, Math.round(minutes / 5) * 5);
+
+/**
+ * Deterministic content split: units up to 12 pages are one lesson, longer ones are divided into
+ * equal page ranges (stand-in for a real by-content split). A standard lesson is ~5 min/page
+ * (understand + re-elaborate + exercises), at least 30; sprint is 60% of it.
+ */
+function fakeLessons(unit: {
+  key: string;
+  name: string;
+  pages: number;
+  documents?: { docId: string; name?: string | undefined; pages: number }[] | undefined;
+}): TopicLessonEstimate[] {
+  const docs =
+    unit.documents && unit.documents.length > 0
+      ? unit.documents
+      : [{ docId: unit.key, name: unit.name, pages: unit.pages }];
+  const minutesFor = (p: number) => {
+    const standardMinutes = Math.max(30, roundTo5(p * 5));
+    return { standardMinutes, sprintMinutes: roundTo5(standardMinutes * 0.6) };
+  };
+  // A lesson never spans two documents: each is split on its own, with pages relative to it.
+  return docs.flatMap((doc) => {
+    const pages = Math.max(1, doc.pages);
+    const count = Math.ceil(pages / FAKE_PAGES_PER_LESSON);
+    const base = docs.length > 1 ? `${unit.name} · ${doc.name ?? doc.docId}` : unit.name;
+    return Array.from({ length: count }, (_, i) => {
+      const pageFrom = Math.floor((i * pages) / count) + 1;
+      const pageTo = Math.floor(((i + 1) * pages) / count);
+      return {
+        title: count === 1 ? base : `${base} · pagine ${pageFrom}-${pageTo}`,
+        pageFrom,
+        pageTo,
+        docId: doc.docId,
+        ...minutesFor(pageTo - pageFrom + 1),
+      };
+    });
+  });
+}
 
 /**
  * Deterministic, offline stand-in for a real LLM. It does real extractive
@@ -240,6 +294,230 @@ export class FakeProvider implements AiProvider {
       },
       model: FAKE_MODEL,
       promptVersion: SESSION_BRIEFING_PROMPT_VERSION,
+    };
+  }
+
+  /**
+   * Extractive stand-in for one lesson block: it explains the chunk at index `blockIndex` (wrapping around),
+   * quotes its first sentences verbatim, and asks a cloze-style check question. Deterministic.
+   */
+  async generateLessonBlock(
+    input: SessionLessonPromptInput,
+    _model: string,
+  ): Promise<GeneratedWithMeta<SessionLessonOutput>> {
+    if (input.chunks.length === 0) {
+      throw new Error('generateLessonBlock needs at least one chunk');
+    }
+    const focus = input.focus;
+    const blockCount = focus ? 2 : Math.min(6, Math.max(2, input.chunks.length));
+    const chunk = input.chunks[input.blockIndex % input.chunks.length]!;
+    const own = splitSentences(chunk.text);
+    const all = input.chunks.flatMap((c) => splitSentences(c.text));
+    const sentences = own.length >= 2 ? own : [...own, ...all.filter((s) => !own.includes(s))];
+    const lead = sentences[0] ?? chunk.text.trim();
+    const second = sentences[1] ?? lead;
+    const topic = input.topicNames[0] ?? input.subjectName;
+
+    const keyWord = (text: string) =>
+      text
+        .split(/\s+/)
+        .map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ''))
+        .filter((w) => w.length >= 6)
+        .sort((a, b) => b.length - a.length || a.localeCompare(b))[0];
+    const word = keyWord(second) ?? keyWord(lead);
+
+    const intro =
+      input.hint === 'simpler'
+        ? `Proviamo a dirlo nel modo più semplice possibile, senza formalismi, su ${topic}.`
+        : input.hint === 'another_example'
+          ? `Rivediamo ${topic} con un esempio diverso dal precedente.`
+          : input.hint === 'why'
+            ? `Vediamo perché vale questo risultato su ${topic} e da dove nasce.`
+            : `Partiamo dall'intuizione: che cosa ci serve capire su ${topic}?`;
+    const body = [
+      intro,
+      '',
+      `Il punto è questo: ${lead}`,
+      '',
+      second !== lead ? `In più: ${second}` : 'Rileggilo con calma e prova a ripeterlo a voce.',
+    ].join('\n');
+
+    const formulaMatch = /\$\$?([^$]+?)\$\$?/.exec(chunk.text);
+    const formula = formulaMatch ? formulaMatch[1]!.trim() : null;
+
+    const stepSentences = sentences.slice(0, 4);
+    const steps = stepSentences.map((text, i) => ({
+      text: `Passaggio ${i + 1}: ${text}`,
+    }));
+    while (steps.length < 2) {
+      steps.push({ text: 'Verifica il risultato rileggendo il passaggio precedente.' });
+    }
+    const exampleSteps =
+      formula && steps[0] ? [{ ...steps[0], formula }, ...steps.slice(1)] : steps;
+
+    const checkQuestion = word
+      ? `Con una frase: quale concetto, fra questi, completa l'idea "${second.replace(word, '____')}"?`
+      : `Con una frase: qual è l'idea centrale di "${truncate(lead, 80)}"?`;
+    const checkAnswer = word ?? lead;
+
+    // Quotes come only from the cited chunk itself, so they are verbatim by construction.
+    const quotes = own.length > 0 ? own.slice(0, 2) : [chunk.text.trim().slice(0, 200)];
+    const citations = quotes.map((quote) => ({ chunkId: chunk.id, quote }));
+
+    const data: SessionLessonOutput = {
+      blockCount,
+      guideQuestions:
+        input.blockIndex === 0 && !focus
+          ? [
+              `Che cosa si intende, in sostanza, per ${topic}?`,
+              `Quali sono le idee principali che reggono ${topic}?`,
+              `Come si applica ${topic} in un esercizio tipo?`,
+            ]
+          : [],
+      block: {
+        title: focus ? truncate(focus.concept, 60) : truncate(lead.replace(/[.!?]+$/, ''), 60),
+        body: focus
+          ? [
+              `Per l'esercizio "${truncate(focus.exercise, 80)}" ti serve questo concetto: ${focus.concept}.`,
+              '',
+              `Il punto è questo: ${lead}`,
+            ].join('\n')
+          : body,
+        formula,
+        exampleSteps: focus ? exampleSteps.slice(0, 3) : exampleSteps,
+        trap: `Errore tipico all'esame: dare per scontato il passaggio "${truncate(second, 70)}" senza verificarne le ipotesi.`,
+        checkQuestion,
+        checkAnswer,
+        citations,
+      },
+    };
+    return {
+      data,
+      usage: {
+        inputTokens: input.chunks.reduce((sum, c) => sum + estimateTokens(c.text), 0),
+        outputTokens: estimateTokens(JSON.stringify(data)),
+      },
+      model: FAKE_MODEL,
+      promptVersion: SESSION_LESSON_PROMPT_VERSION,
+    };
+  }
+
+  /**
+   * Extractive stand-in for the sprint exercises: always exactly 3 exercises, the i-th built on chunk
+   * `i` (wrapping around), with stable concept titles `<topic>: concetto N` (one per exercise), a
+   * retry exercise with the same steps, and verbatim citations. Deterministic.
+   */
+  async generateSprintExercises(
+    input: SprintExercisesPromptInput,
+    _model: string,
+  ): Promise<GeneratedWithMeta<SprintExercisesOutput>> {
+    if (input.chunks.length === 0) {
+      throw new Error('generateSprintExercises needs at least one chunk');
+    }
+    const topic = input.topicNames[0] ?? input.subjectName;
+    const all = input.chunks.flatMap((c) => splitSentences(c.text));
+    const exercises = [0, 1, 2].map((i) => {
+      const chunk = input.chunks[i % input.chunks.length]!;
+      const own = splitSentences(chunk.text);
+      const sentences = own.length >= 2 ? own : [...own, ...all.filter((s) => !own.includes(s))];
+      const lead = sentences[0] ?? chunk.text.trim();
+      const second = sentences[1] ?? lead;
+      const formulaMatch = /\$\$?([^$]+?)\$\$?/.exec(chunk.text);
+      const formula = formulaMatch ? formulaMatch[1]!.trim() : undefined;
+      const solutionSteps = [
+        { text: `Passaggio 1: ${lead}`, ...(formula ? { formula } : {}) },
+        { text: `Passaggio 2: ${second}` },
+      ];
+      const quotes = own.length > 0 ? own.slice(0, 2) : [chunk.text.trim().slice(0, 200)];
+      return {
+        title: `Esercizio ${i + 1} su ${topic}`,
+        question: `Esercizio ${i + 1}. Usando il materiale su ${topic}, spiega e applica: "${truncate(lead, 120)}"`,
+        solutionSteps,
+        concepts: [`${topic}: concetto ${i + 1}`],
+        retry: {
+          question: `Riprova ${i + 1}. Svolgi un esercizio simile su ${topic}, con gli stessi passaggi: "${truncate(second, 120)}"`,
+          solutionSteps: solutionSteps.map((step) => ({ ...step })),
+        },
+        citations: quotes.map((quote) => ({ chunkId: chunk.id, quote })),
+      };
+    });
+    const data: SprintExercisesOutput = { exercises };
+    return {
+      data,
+      usage: {
+        inputTokens: input.chunks.reduce((sum, c) => sum + estimateTokens(c.text), 0),
+        outputTokens: estimateTokens(JSON.stringify(data)),
+      },
+      model: FAKE_MODEL,
+      promptVersion: SPRINT_EXERCISES_PROMPT_VERSION,
+    };
+  }
+
+  /**
+   * Extractive stand-in for the explanation feedback: a chunk sentence the student's text covers goes to
+   * `correct`, one it does not goes to `missing`, and `wrong` flags a student sentence unrelated to the
+   * material (or, failing that, asks to recheck a chunk sentence). Quotes are verbatim chunk sentences
+   * by construction. Deterministic.
+   */
+  async gradeExplanation(
+    input: ExplainFeedbackPromptInput,
+    _model: string,
+  ): Promise<GeneratedWithMeta<ExplainFeedbackOutput>> {
+    if (input.chunks.length === 0) {
+      throw new Error('gradeExplanation needs at least one chunk');
+    }
+    const pool = input.chunks.flatMap((chunk) =>
+      splitSentences(chunk.text).map((sentence) => ({ chunk, sentence })),
+    );
+    if (pool.length === 0) {
+      pool.push({ chunk: input.chunks[0]!, sentence: input.chunks[0]!.text.trim() });
+    }
+    const point = (entry: (typeof pool)[number], text: string): ExplainFeedbackPoint => ({
+      text,
+      chunkId: entry.chunk.id,
+      quote: entry.sentence,
+    });
+    const covered = pool.filter((e) => keywordCoverage(e.sentence, input.studentText) >= 0.3);
+    const uncovered = pool.filter((e) => !covered.includes(e));
+
+    const correct = (covered.length > 0 ? covered : [pool[0]!])
+      .slice(0, 2)
+      .map((e) =>
+        point(
+          e,
+          covered.length > 0
+            ? `Hai spiegato bene questo punto: "${truncate(e.sentence, 80)}".`
+            : `Hai provato a spiegare l'argomento: ripartiamo da "${truncate(e.sentence, 80)}".`,
+        ),
+      );
+    const missing = (uncovered.length > 0 ? uncovered : [pool[pool.length - 1]!])
+      .slice(0, 2)
+      .map((e) => point(e, `Ti manca questo punto: "${truncate(e.sentence, 80)}".`));
+
+    const offTopic = splitSentences(input.studentText).find(
+      (s) => keywords(s).length > 0 && pool.every((e) => keywordCoverage(e.sentence, s) < 0.15),
+    );
+    const wrongEntry = uncovered[0] ?? pool[0]!;
+    const wrong = [
+      point(
+        wrongEntry,
+        offTopic
+          ? `Attento: "${truncate(offTopic, 60)}" non trova riscontro nel materiale. Rileggi: "${truncate(wrongEntry.sentence, 80)}".`
+          : `Attento a non confondere questo passaggio: "${truncate(wrongEntry.sentence, 80)}". Ricontrolla come lo hai espresso.`,
+      ),
+    ];
+
+    const data: ExplainFeedbackOutput = { correct, missing, wrong };
+    return {
+      data,
+      usage: {
+        inputTokens:
+          input.chunks.reduce((sum, c) => sum + estimateTokens(c.text), 0) +
+          estimateTokens(input.studentText),
+        outputTokens: estimateTokens(JSON.stringify(data)),
+      },
+      model: FAKE_MODEL,
+      promptVersion: EXPLAIN_FEEDBACK_PROMPT_VERSION,
     };
   }
 
@@ -453,6 +731,7 @@ export class FakeProvider implements AiProvider {
       // a real model would weigh centrality, not just size (see docs/fasi/F6 "Stato").
       examWeight: Math.round((u.pages / totalPages) * 100) / 100,
       prerequisites: [], // no ordering signal available without real judgment
+      lessons: fakeLessons(u),
     }));
 
     const inputTokens = input.units.reduce((sum, u) => sum + estimateTokens(u.excerpt), 0);

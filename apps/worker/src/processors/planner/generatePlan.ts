@@ -24,7 +24,10 @@ import {
   diffDays,
   forecastDueCounts,
   schedulePlan,
+  splitTopicIntoLessons,
+  type MaterialRef,
   type PlannedTask,
+  type PlannerLesson,
   type PlannerInput,
   type PlannerTopic,
 } from '@studyhub/core';
@@ -43,6 +46,74 @@ import { checkBudget } from '../generation/shared.js';
 const MODEL_ROUTING_PLAN = 'claude-opus-5-5'; // docs/04-planner.md §3: "Fase A — Analisi AI (1 chiamata, opus)"
 const EXCERPT_MAX_CHARS = 2000;
 const EXCERPT_CHUNK_SAMPLE = 3; // first N chunks per document, not the whole text — keeps the call cheap
+
+/** Pages [start, end) (0-based) of the topic's concatenated material, mapped back to real doc pages. */
+function sliceMaterial(material: MaterialRef[], start: number, end: number): MaterialRef[] {
+  const out: MaterialRef[] = [];
+  let offset = 0;
+  for (const m of material) {
+    const len = m.pageTo - m.pageFrom + 1;
+    const lo = Math.max(start, offset);
+    const hi = Math.min(end, offset + len);
+    if (hi > lo)
+      out.push({
+        docId: m.docId,
+        pageFrom: m.pageFrom + (lo - offset),
+        pageTo: m.pageFrom + (hi - offset) - 1,
+      });
+    offset += len;
+  }
+  return out;
+}
+
+/**
+ * The topic's lessons: the AI split when it gave one, else the deterministic page-based split.
+ * A lesson points to `{docId, pageFrom, pageTo}` only when `docId` is one of the unit's real documents
+ * and the pages are integers, in order and within that document; otherwise it takes its even share of
+ * the unit's pages, in order. `factor` is the student's estimate-vs-real bias.
+ */
+function buildLessons(
+  topic: PlannerTopic,
+  aiLessons: TopicEstimate['lessons'],
+  factor: number,
+): PlannerLesson[] {
+  if (aiLessons.length === 0) return splitTopicIntoLessons(topic);
+  const total = topic.material.reduce((s, m) => s + (m.pageTo - m.pageFrom + 1), 0);
+  const n = aiLessons.length;
+  const scale = (min: number) => Math.max(1, Math.round(min * factor));
+  return aiLessons.map((l, i) => {
+    let material: MaterialRef[] = [];
+    const doc = l.docId ? topic.material.find((m) => m.docId === l.docId) : undefined;
+    if (
+      doc &&
+      l.pageFrom !== undefined &&
+      l.pageTo !== undefined &&
+      Number.isInteger(l.pageFrom) &&
+      Number.isInteger(l.pageTo) &&
+      l.pageFrom >= doc.pageFrom &&
+      l.pageTo >= l.pageFrom &&
+      l.pageTo <= doc.pageTo
+    )
+      material = [{ docId: doc.docId, pageFrom: l.pageFrom, pageTo: l.pageTo }];
+    if (material.length === 0) {
+      material =
+        n === 1 || total <= 0
+          ? topic.material
+          : sliceMaterial(
+              topic.material,
+              Math.floor((i * total) / n),
+              Math.floor(((i + 1) * total) / n),
+            );
+    }
+    if (material.length === 0) material = topic.material;
+    return {
+      title: l.title.trim() || topic.name,
+      material,
+      standardMinutes: scale(l.standardMinutes),
+      sprintMinutes: scale(l.sprintMinutes),
+    };
+  });
+}
 
 export interface GeneratePlanResult {
   planId: string;
@@ -84,6 +155,7 @@ export async function processGeneratePlan(
   const eligibleDocs = await loadEligibleDocs(db, input.subjectId);
 
   let plannerTopics: PlannerTopic[] = [];
+  const estimateLessonsByKey = new Map<string, TopicEstimate['lessons']>();
   let usage = { inputTokens: 0, outputTokens: 0 };
   let resultModel = 'none';
   let promptVersion = ESTIMATE_TOPICS_PROMPT_VERSION;
@@ -102,6 +174,7 @@ export async function processGeneratePlan(
       .from(chunks)
       .where(and(inArray(chunks.documentId, docIds), lt(chunks.ord, EXCERPT_CHUNK_SAMPLE)));
 
+    const docNameById = new Map(scopedDocs.map((d) => [d.id, d.originalName]));
     const excerptByDoc = new Map<string, string>();
     for (const doc of scopedDocs) {
       const parts = chunkRows
@@ -127,6 +200,11 @@ export async function processGeneratePlan(
           name: u.name,
           excerpt: excerptByUnit.get(u.key) ?? '',
           pages: u.pages,
+          documents: u.docs.map((d) => ({
+            docId: d.id,
+            name: docNameById.get(d.id),
+            pages: d.pages,
+          })),
         })),
       },
       model,
@@ -136,6 +214,7 @@ export async function processGeneratePlan(
     promptVersion = result.promptVersion;
 
     const estByKey = new Map<string, TopicEstimate>(result.data.topics.map((t) => [t.key, t]));
+    for (const [key, est] of estByKey) estimateLessonsByKey.set(key, est.lessons ?? []);
     plannerTopics = units.map((u) => {
       const est = estByKey.get(u.key);
       return {
@@ -154,7 +233,10 @@ export async function processGeneratePlan(
 
   // The student's own estimate-vs-real bias (docs/06-miglioramenti.md #7): 1 until enough sessions say otherwise.
   const timeFactor = await loadTimeFactor(db);
-  plannerTopics = applyTimeFactor(plannerTopics, timeFactor.factor);
+  plannerTopics = applyTimeFactor(plannerTopics, timeFactor.factor).map((t) => ({
+    ...t,
+    lessons: buildLessons(t, estimateLessonsByKey.get(t.key) ?? [], timeFactor.factor),
+  }));
 
   const costEur = estimateCostEur(resultModel, usage.inputTokens, usage.outputTokens);
   await checkBudget(db, costEur, input.force);

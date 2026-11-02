@@ -74,6 +74,9 @@ export function drillItems<T extends { kind: string; state: string; citations: u
   items: T[],
 ): T[] {
   return items.filter(
-    (i) => i.kind === 'exercise' && i.state === 'wrong' && i.citations.length > 0,
+    (i) =>
+      i.kind === 'exercise' &&
+      (i.state === 'wrong' || i.state === 'unknown') &&
+      i.citations.length > 0,
   );
 }

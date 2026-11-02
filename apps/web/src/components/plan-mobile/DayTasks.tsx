@@ -13,7 +13,6 @@ export function DayTasks({
   plan,
   day,
   today,
-  subjectHex,
   busy,
   triggerRef,
   onOpenTask,
@@ -24,7 +23,6 @@ export function DayTasks({
   plan: PlanDto;
   day: string;
   today: string;
-  subjectHex: string | undefined;
   busy: boolean;
   /** Receives the row that opened the sheet, for the focus return. */
   triggerRef: MutableRefObject<HTMLElement | null>;
@@ -73,7 +71,6 @@ export function DayTasks({
               isDraft={isDraft}
               today={today}
               primary={task.id === firstOpenId}
-              subjectHex={subjectHex}
               busy={busy}
               onOpen={(trigger) => {
                 triggerRef.current = trigger;

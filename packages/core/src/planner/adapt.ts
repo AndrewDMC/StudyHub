@@ -31,6 +31,11 @@ function lastTwo(targetDate: IsoDate): Set<IsoDate> {
   return new Set([addDays(targetDate, -1), addDays(targetDate, -2)]);
 }
 
+/** New-content tasks: a lesson, or a plain reading in plans made before lessons. */
+function isStudy(kind: string): boolean {
+  return kind === 'read' || kind === 'lesson';
+}
+
 function readSeq(key: string): number {
   return Number(key.split(':').at(-1));
 }
@@ -61,7 +66,7 @@ export function validatePlan(tasks: TaskLike[], window: PlanWindow): Violation[]
 
   const noNewContent = lastTwo(window.targetDate);
   for (const t of tasks) {
-    if (t.kind === 'read' && noNewContent.has(t.date)) {
+    if (isStudy(t.kind) && noNewContent.has(t.date)) {
       out.push({
         date: t.date,
         taskKey: t.key,
@@ -73,8 +78,7 @@ export function validatePlan(tasks: TaskLike[], window: PlanWindow): Violation[]
   // Reading order within a topic, revisits after the reading, prerequisites before dependants.
   const reads = new Map<string, TaskLike[]>();
   for (const t of tasks) {
-    if (t.kind === 'read' && t.topicKey)
-      reads.set(t.topicKey, [...(reads.get(t.topicKey) ?? []), t]);
+    if (isStudy(t.kind) && t.topicKey) reads.set(t.topicKey, [...(reads.get(t.topicKey) ?? []), t]);
   }
   const finishedOn = new Map<string, IsoDate>();
   const startedOn = new Map<string, IsoDate>();
@@ -100,7 +104,7 @@ export function validatePlan(tasks: TaskLike[], window: PlanWindow): Violation[]
   }
   for (const t of tasks) {
     if (
-      (t.kind === 'flashcards' || t.kind === 'review') &&
+      (t.kind === 'flashcards' || t.kind === 'review' || t.kind === 'verify') &&
       t.topicKey &&
       finishedOn.has(t.topicKey)
     ) {
@@ -189,7 +193,7 @@ export function moveTask<T extends TaskLike>(
           (window.capacity.get(d) ?? 0) - loadOf(d) >=
             Math.min(victim.minutes, MIN_CHUNK_MINUTES) &&
           (window.capacity.get(d) ?? 0) - loadOf(d) >= victim.minutes &&
-          !(victim.kind === 'read' && noNewContent.has(d)),
+          !(isStudy(victim.kind) && noNewContent.has(d)),
       );
     if (!target)
       return {

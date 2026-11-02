@@ -91,6 +91,31 @@ describe('processPrepareSession', () => {
     force: false,
   });
 
+  it('guide questions and explanations do not count as an existing briefing', async () => {
+    await db.insert(sessionItems).values([
+      {
+        id: randomUUID(),
+        sessionId,
+        kind: 'guide_question',
+        orderIndex: 0,
+        title: 'Perché?',
+        body: '',
+      },
+      {
+        id: randomUUID(),
+        sessionId,
+        kind: 'explanation',
+        orderIndex: 0,
+        title: 'Spiegazione',
+        body: 'Testo',
+      },
+    ]);
+    const result = await processPrepareSession(db, input(), new FakeProvider());
+    expect(result.keyPointCount).toBeGreaterThan(0);
+    const exercises = await db.select().from(sessionItems).where(eq(sessionItems.kind, 'exercise'));
+    expect(exercises.length).toBeGreaterThan(0);
+  });
+
   it('writes cited key points and exercises, with the topic of the document', async () => {
     const result = await processPrepareSession(db, input(), new FakeProvider());
     expect(result.keyPointCount).toBeGreaterThan(0);
@@ -109,6 +134,61 @@ describe('processPrepareSession', () => {
     expect(items.filter((i) => i.kind === 'exercise').every((i) => i.difficulty !== null)).toBe(
       true,
     );
+  });
+
+  it('writes at most the exercises asked for (a verification only asks for what it lacks)', async () => {
+    const result = await processPrepareSession(
+      db,
+      { ...input('exercises'), exerciseCount: 1 },
+      new FakeProvider(),
+    );
+    expect(result.keyPointCount).toBe(0);
+    expect(result.exerciseCount).toBeLessThanOrEqual(1);
+    const exercises = await db.select().from(sessionItems).where(eq(sessionItems.kind, 'exercise'));
+    expect(exercises.length).toBeLessThanOrEqual(1);
+  });
+
+  it('cuts the exercises to the count asked for, and numbers a verification in one sequence', async () => {
+    await db.update(studySessions).set({ kind: 'verify' }).where(eq(studySessions.id, sessionId));
+    await db.insert(sessionItems).values(
+      [0, 1, 2].map((i) => ({
+        id: randomUUID(),
+        sessionId,
+        kind: i === 1 ? ('guide_question' as const) : ('exercise' as const),
+        orderIndex: i,
+        title: `Copiata ${i}`,
+        body: 'x',
+      })),
+    );
+    const many: AiProvider = Object.assign(Object.create(new FakeProvider()), {
+      async generateSessionBriefing() {
+        const data: SessionBriefingOutput = {
+          keyPoints: [],
+          exercises: [1, 2, 3].map((n) => ({
+            prompt: `Nuovo ${n}`,
+            solution: 'Soluzione',
+            difficulty: 1,
+            sourceRef: { docId, page: 1, quote: 'non diminuisce mai nel tempo' },
+          })),
+        };
+        return {
+          data,
+          usage: { inputTokens: 1, outputTokens: 1 },
+          model: 'fake',
+          promptVersion: 'v',
+        };
+      },
+    });
+    const result = await processPrepareSession(
+      db,
+      { ...input('exercises'), exerciseCount: 2 },
+      many,
+    );
+    expect(result.exerciseCount).toBe(2);
+    const created = (
+      await db.select().from(sessionItems).where(eq(sessionItems.sessionId, sessionId))
+    ).filter((i) => i.title.startsWith('Nuovo'));
+    expect(created.map((i) => i.orderIndex).sort()).toEqual([3, 4]);
   });
 
   it('refuses to generate everything twice, and never repeats an exercise on "more"', async () => {
