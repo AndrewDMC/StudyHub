@@ -1,7 +1,7 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   BulkPlanActionRequest,
@@ -11,16 +11,24 @@ import type {
   Intensity,
   PlanDiffDto,
   PlanDto,
-  PlanPreviewDto,
   TaskDto,
   TopicDto,
 } from '@studyhub/contracts';
 import { useIsMobile } from '@/lib/useIsMobile';
 import type { LessonMethodChoice } from '@/lib/taskMethod';
+import {
+  BTN_GHOST,
+  BTN_PRIMARY,
+  BTN_SECONDARY,
+  CARD_BOX,
+  FOCUS,
+  ICON_BTN,
+} from '@/components/flashcards/shared/styles';
 import { FitCard } from './plan/FitCard';
 import { IntensityCard } from './plan/IntensityCard';
 import { PlanSchedule } from './plan/PlanSchedule';
 import { PlanTopicsList } from './plan/PlanTopicsList';
+import { WizardForm } from './plan/PlanWizard';
 import { todayIso, topicName } from './plan/planModel';
 import { PlanChangeBox } from './PlanChangeBox';
 import { PlanMobile } from './plan-mobile/PlanMobile';
@@ -43,363 +51,6 @@ async function send(url: string, method: string, payload?: unknown) {
   const body = await res.json().catch(() => null);
   if (!res.ok) throw new Error(body?.error?.message ?? 'Operazione fallita');
   return body;
-}
-
-// perWeekday index 0 = Sunday … 6 = Saturday (packages/core/src/planner/dates.ts convention).
-const WEEKDAY_LABELS = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
-
-export function WizardForm({
-  slug,
-  exams,
-  onGenerated,
-  defaultIntensity = 'standard',
-}: {
-  slug: string;
-  exams: ExamDto[];
-  onGenerated: () => void;
-  /** Intensity preselected when the form opens (e.g. from the plan's intensity card). */
-  defaultIntensity?: Intensity | undefined;
-}) {
-  const [startDate, setStartDate] = useState(todayIso());
-  const [targetDate, setTargetDate] = useState('');
-  const [examId, setExamId] = useState('');
-  const [perWeekday, setPerWeekday] = useState<number[]>([0, 90, 90, 90, 90, 90, 60]);
-  const [sessionLength, setSessionLength] = useState(50);
-  const [intensity, setIntensity] = useState<Intensity>(defaultIntensity);
-  const [simulationCount, setSimulationCount] = useState('auto');
-  const [blackoutText, setBlackoutText] = useState('');
-  // A partial covers only some topics; `scoped` off = the whole subject.
-  const [scoped, setScoped] = useState(false);
-  const [pickedTopics, setPickedTopics] = useState<string[]>([]);
-  const [notes, setNotes] = useState('');
-  const topicsQuery = useQuery({
-    queryKey: ['topics', slug],
-    queryFn: () => getJson<TopicDto[]>(`/api/subjects/${slug}/topics`, 'topics'),
-  });
-  const topicList = topicsQuery.data ?? [];
-  const togglePicked = (id: string) =>
-    setPickedTopics((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
-
-  // Comma/space separated YYYY-MM-DD; anything else is flagged, not silently dropped.
-  const blackoutTokens = blackoutText.split(/[\s,;]+/).filter(Boolean);
-  const isIso = (t: string) => /^\d{4}-\d{2}-\d{2}$/.test(t);
-  const blackoutDates = blackoutTokens.filter(isIso);
-  const blackoutInvalid = blackoutTokens.filter((t) => !isIso(t));
-
-  const requestBody = {
-    startDate,
-    targetDate,
-    examId: examId || undefined,
-    topicIds: scoped && pickedTopics.length > 0 ? pickedTopics : undefined,
-    // With an exam linked an emptied box clears its description too; without one, empty means "no notes".
-    notes: notes.trim() === '' && !examId ? undefined : notes.trim(),
-    availability: { perWeekday, blackoutDates },
-    prefs: {
-      sessionLength,
-      intensity,
-      simulationCount: simulationCount === 'auto' ? 'auto' : Number(simulationCount),
-      simulationMinutes: 90,
-      reviewMinutesPerCard: 0.5,
-    },
-    force: false,
-  };
-
-  const generate = useMutation({
-    mutationFn: () => send(`/api/subjects/${slug}/plan`, 'POST', requestBody),
-    onSuccess: onGenerated,
-  });
-
-  // Free pre-flight (no AI call): re-run shortly after the form settles.
-  const previewKey = JSON.stringify(requestBody);
-  const [settledKey, setSettledKey] = useState(previewKey);
-  useEffect(() => {
-    const t = setTimeout(() => setSettledKey(previewKey), 500);
-    return () => clearTimeout(t);
-  }, [previewKey]);
-  // An exam on or before the start (e.g. a linked exam already past) leaves the plan no days.
-  const dateInvalid = !!targetDate && targetDate <= startDate;
-  const previewReady = !!targetDate && !dateInvalid && blackoutInvalid.length === 0;
-  const previewQuery = useQuery({
-    queryKey: ['plan-preview', slug, settledKey],
-    queryFn: async () => {
-      const body = await send(`/api/subjects/${slug}/plan/preview`, 'POST', JSON.parse(settledKey));
-      return body.preview as PlanPreviewDto;
-    },
-    enabled: previewReady,
-    retry: false,
-  });
-
-  const setDay = (i: number, minutes: number) =>
-    setPerWeekday((prev) => prev.map((v, idx) => (idx === i ? minutes : v)));
-
-  return (
-    <form
-      id="piano-wizard"
-      onSubmit={(e) => {
-        e.preventDefault();
-        generate.mutate();
-      }}
-      className="space-y-4 rounded-[var(--radius-card)] border border-border bg-bg-surface p-4"
-    >
-      <div className="grid grid-cols-2 gap-3">
-        <label className="flex flex-col gap-1 text-xs text-fg-secondary">
-          Inizio studio
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            required
-            className="rounded-[var(--radius-control)] border border-border bg-bg-inset px-2 py-1 text-sm text-fg-primary"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-fg-secondary">
-          Data esame
-          <input
-            type="date"
-            value={targetDate}
-            onChange={(e) => setTargetDate(e.target.value)}
-            required
-            className="rounded-[var(--radius-control)] border border-border bg-bg-inset px-2 py-1 text-sm text-fg-primary"
-          />
-        </label>
-      </div>
-      {dateInvalid && (
-        <p role="alert" className="text-xs text-danger">
-          La data dell&apos;esame deve venire dopo l&apos;inizio dello studio: scegline una nuova.
-        </p>
-      )}
-
-      {exams.length > 0 && (
-        <label className="flex flex-col gap-1 text-xs text-fg-secondary">
-          Esame o parziale collegato (opzionale)
-          <select
-            value={examId}
-            onChange={(e) => {
-              setExamId(e.target.value);
-              const exam = exams.find((x) => x.id === e.target.value);
-              if (exam) {
-                setTargetDate(exam.date.slice(0, 10));
-                setNotes(exam.description ?? '');
-              }
-            }}
-            className="rounded-[var(--radius-control)] border border-border bg-bg-inset px-2 py-1 text-sm text-fg-primary"
-          >
-            <option value="">Nessuno</option>
-            {exams.map((x) => (
-              <option key={x.id} value={x.id}>
-                {x.title} — {x.date.slice(0, 10)}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-
-      <label className="flex flex-col gap-1 text-xs text-fg-secondary">
-        Note sull&apos;esame (le legge l&apos;AI)
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          maxLength={2000}
-          rows={3}
-          placeholder="Es. Primo parziale: capitoli 1–4, scritto con 3 esercizi sugli integrali, niente formulario."
-          className="rounded-[var(--radius-control)] border border-border bg-bg-inset px-2 py-1 text-sm text-fg-primary"
-        />
-        <span className="text-fg-muted">
-          Cosa copre, com&apos;è fatto, su cosa insiste il docente.
-          {examId ? ' Resta salvata sull’esame.' : ' Collega un esame per salvarle.'}
-        </span>
-      </label>
-
-      <div>
-        <label className="flex items-center gap-2 text-xs text-fg-secondary">
-          <input
-            type="checkbox"
-            checked={scoped}
-            onChange={(e) => setScoped(e.target.checked)}
-            disabled={topicList.length === 0}
-          />
-          Solo alcuni argomenti (parziale)
-          {topicList.length === 0 && (
-            <span className="text-fg-muted">— la materia non ha ancora argomenti</span>
-          )}
-        </label>
-        {scoped && (
-          <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto rounded-[var(--radius-control)] border border-border bg-bg-inset p-2">
-            {topicList.map((t) => (
-              <li key={t.id}>
-                <label className="flex items-center gap-2 text-sm text-fg-primary">
-                  <input
-                    type="checkbox"
-                    checked={pickedTopics.includes(t.id)}
-                    onChange={() => togglePicked(t.id)}
-                  />
-                  {t.name}
-                </label>
-              </li>
-            ))}
-          </ul>
-        )}
-        {scoped && pickedTopics.length === 0 && (
-          <p className="mt-1 text-xs text-warn">Scegli almeno un argomento.</p>
-        )}
-      </div>
-
-      <div>
-        <p className="mb-1 text-xs text-fg-secondary">Minuti disponibili per giorno</p>
-        <div className="grid grid-cols-7 gap-1.5">
-          {WEEKDAY_LABELS.map((label, i) => (
-            <label
-              key={label}
-              className="flex flex-col items-center gap-1 text-[11px] text-fg-muted"
-            >
-              {label}
-              <input
-                type="number"
-                min={0}
-                max={1440}
-                step={15}
-                value={perWeekday[i]}
-                onChange={(e) => setDay(i, Number(e.target.value))}
-                className="w-full rounded-[var(--radius-control)] border border-border bg-bg-inset px-1 py-1 text-center font-mono text-xs text-fg-primary"
-              />
-            </label>
-          ))}
-        </div>
-      </div>
-
-      <label className="flex flex-col gap-1 text-xs text-fg-secondary">
-        Giorni non disponibili (YYYY-MM-DD, separati da virgola)
-        <input
-          value={blackoutText}
-          onChange={(e) => setBlackoutText(e.target.value)}
-          placeholder="2026-04-25, 2026-05-01"
-          aria-invalid={blackoutInvalid.length > 0}
-          className="rounded-[var(--radius-control)] border border-border bg-bg-inset px-2 py-1 text-sm text-fg-primary"
-        />
-        {blackoutInvalid.length > 0 && (
-          <span className="text-danger">Data non valida: {blackoutInvalid.join(', ')}</span>
-        )}
-      </label>
-
-      <div className="grid grid-cols-3 gap-3">
-        <label className="flex flex-col gap-1 text-xs text-fg-secondary">
-          Sessione (min)
-          <input
-            type="number"
-            min={10}
-            max={180}
-            value={sessionLength}
-            onChange={(e) => setSessionLength(Number(e.target.value))}
-            className="rounded-[var(--radius-control)] border border-border bg-bg-inset px-2 py-1 text-sm text-fg-primary"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-fg-secondary">
-          Intensità
-          <select
-            value={intensity}
-            onChange={(e) => setIntensity(e.target.value as Intensity)}
-            className="rounded-[var(--radius-control)] border border-border bg-bg-inset px-2 py-1 text-sm text-fg-primary"
-          >
-            <option value="sostenibile">Sostenibile</option>
-            <option value="standard">Standard</option>
-            <option value="sprint">Sprint</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-fg-secondary">
-          Simulazioni
-          <input
-            value={simulationCount}
-            onChange={(e) => setSimulationCount(e.target.value)}
-            placeholder="auto"
-            className="rounded-[var(--radius-control)] border border-border bg-bg-inset px-2 py-1 text-sm text-fg-primary"
-          />
-        </label>
-      </div>
-
-      {previewReady && previewQuery.data && <PreviewPanel preview={previewQuery.data} />}
-      {previewReady && previewQuery.isError && (
-        <p role="alert" className="text-xs text-danger">
-          Anteprima non disponibile: {(previewQuery.error as Error).message}
-        </p>
-      )}
-
-      <button
-        type="submit"
-        disabled={generate.isPending || dateInvalid || (scoped && pickedTopics.length === 0)}
-        className="rounded-[var(--radius-control)] bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
-      >
-        {generate.isPending ? 'Generazione…' : 'Genera piano'}
-      </button>
-      {generate.isSuccess && (
-        <p className="text-xs text-ok">Piano in generazione — la bozza appare a breve.</p>
-      )}
-      {generate.isError && (
-        <p role="alert" className="text-xs text-danger">
-          {(generate.error as Error).message}
-        </p>
-      )}
-    </form>
-  );
-}
-
-/** What the wizard tells you before it spends the AI call: is there enough time, week by week. */
-function PreviewPanel({ preview }: { preview: PlanPreviewDto }) {
-  const { feasibility } = preview;
-  const peak = Math.max(1, ...preview.loadPerWeek.map((w) => Math.max(w.available, w.planned)));
-  return (
-    <div
-      data-testid="plan-preview"
-      className={`space-y-2 rounded-[var(--radius-card)] border p-3 text-xs ${feasibility.feasible ? 'border-ok' : 'border-warn'}`}
-    >
-      <p className={`font-medium ${feasibility.feasible ? 'text-ok' : 'text-warn'}`}>
-        {feasibility.feasible
-          ? 'Tempo sufficiente'
-          : `Tempo insufficiente: mancano ~${feasibility.shortfallMinutes} min su ${feasibility.requiredMinutes} richiesti`}
-      </p>
-      <p className="text-fg-muted">
-        {preview.topicCount} argomenti · ~{preview.taskCount} task · stima dalle pagine (non ancora
-        dall&apos;AI)
-        {preview.busyMinutes > 0 && ` · ${preview.busyMinutes} min già occupati da altri impegni`}
-      </p>
-      {preview.timeFactor.note && (
-        <p className="text-fg-muted">
-          Tempi corretti sui tuoi dati: {preview.timeFactor.note} (×{preview.timeFactor.factor}, da{' '}
-          {preview.timeFactor.sampleCount} sessioni).
-        </p>
-      )}
-      <ul className="space-y-1">
-        {preview.loadPerWeek.map((w) => (
-          <li key={w.weekStart} className="flex items-center gap-2">
-            <span className="w-20 shrink-0 font-mono tabular-nums text-fg-muted">
-              {w.weekStart}
-            </span>
-            <span className="relative h-2 flex-1 rounded-full bg-bg-inset">
-              <span
-                className="absolute inset-y-0 left-0 rounded-full bg-border"
-                style={{ width: `${(w.available / peak) * 100}%` }}
-              />
-              <span
-                className={`absolute inset-y-0 left-0 rounded-full ${w.planned > w.available ? 'bg-danger' : 'bg-accent'}`}
-                style={{ width: `${(Math.min(w.planned, w.available) / peak) * 100}%` }}
-              />
-            </span>
-            <span className="w-24 shrink-0 text-right font-mono tabular-nums text-fg-secondary">
-              {w.planned}/{w.available} min
-            </span>
-          </li>
-        ))}
-      </ul>
-      {!feasibility.feasible && (
-        <ul className="space-y-1 text-fg-secondary">
-          {feasibility.strategies.map((st) => (
-            <li key={st.id}>
-              <span className="font-medium text-fg-primary">{st.label}:</span> {st.description}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
 }
 
 /** Bulk edits on the draft (docs/fasi/F6 "Azioni bulk"); a refused action shows why and changes nothing. */
@@ -534,10 +185,11 @@ function DiffPanel({ diff }: { diff: PlanDiffDto }) {
 
 /**
  * Planner wizard + review + committed-plan view in one screen (docs/04-planner.md
- * §9). This is a day-grouped list, not a calendar grid; moves go through a button, not a
- * pointer gesture (docs/fasi/F6-planner-calendario.md "Stato").
+ * §9), rendered as the subject page's Piano tab: no page of its own on desktop. This is a
+ * day-grouped list, not a calendar grid; moves go through a button, not a pointer gesture
+ * (docs/fasi/F6-planner-calendario.md "Stato").
  */
-function PlanDesktop({ slug }: { slug: string }) {
+export function PlanDesktop({ slug }: { slug: string }) {
   const queryClient = useQueryClient();
   const [wizardOpen, setWizardOpen] = useState(false);
   // Set when the wizard is opened from the intensity card: the form starts on that intensity.
@@ -639,7 +291,7 @@ function PlanDesktop({ slug }: { slug: string }) {
   const plan = plans.find((p) => p.id === selectedId) ?? plans[0] ?? null;
   const planLabel = (p: PlanDto) => {
     const exam = p.examId ? (examsQuery.data ?? []).find((x) => x.id === p.examId) : null;
-    return `${exam ? exam.title : 'Generale'}${p.status === 'draft' ? ' (bozza)' : ''}`;
+    return exam ? exam.title : 'Generale';
   };
   const today = todayIso();
   const nameOf = (key: string) => topicName(key, topicsQuery.data ?? [], documentsQuery.data ?? []);
@@ -661,54 +313,147 @@ function PlanDesktop({ slug }: { slug: string }) {
   };
 
   return (
-    <div className="mx-auto max-w-[1120px] p-4 md:p-6">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <Link
-            href={`/materie/${slug}`}
-            className="text-xs text-fg-secondary underline-offset-2 hover:underline"
-          >
-            ← {slug}
-          </Link>
-          <h1 className="text-xl font-semibold tracking-[-0.02em]">Piano di studio</h1>
+    <div className="flex min-w-0 flex-col gap-5">
+      {planQuery.isLoading && (
+        <div aria-hidden="true" className="flex flex-col gap-5">
+          <div className="h-10 w-72 animate-pulse rounded-lg bg-bg-raised motion-reduce:animate-none" />
+          <div className="h-64 animate-pulse rounded-[var(--radius-card)] bg-bg-raised motion-reduce:animate-none" />
         </div>
-        {plan && (
-          <button
-            type="button"
-            onClick={() => {
-              setWizardIntensity(null);
-              setWizardOpen((v) => !v);
-            }}
-            className="rounded-[var(--radius-control)] border border-border px-2.5 py-1 text-xs text-fg-secondary hover:text-fg-primary"
-          >
-            {wizardOpen
-              ? 'Annulla'
-              : plan.status === 'draft'
-                ? 'Rigenera bozza'
-                : 'Nuovo piano / parziale'}
-          </button>
-        )}
-      </div>
-
-      {planQuery.isLoading && <p className="text-sm text-fg-muted">Caricamento…</p>}
+      )}
       {planQuery.isError && (
         <p role="alert" className="text-sm text-danger">
           {(planQuery.error as Error).message}
         </p>
       )}
 
-      {awaitingDraft && (
-        <p role="status" className="mb-4 text-sm text-fg-secondary">
-          Sto preparando la bozza…
-        </p>
+      {planQuery.isSuccess && !plan && !awaitingDraft && (
+        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-base font-semibold text-fg-primary">Nuovo piano</h2>
+            <p className="text-[13px] text-fg-secondary">
+              Servono solo la data dell&apos;esame e il tempo che hai. Tutto il resto ha già un
+              valore sensato.
+            </p>
+          </div>
+          <span className="text-xs text-fg-muted">Nessun piano per questa materia</span>
+        </div>
       )}
 
-      {(!plan || wizardOpen) && (
-        <div className="mb-6">
-          {wizardIntensity && (
-            <p role="status" className="mb-2 text-xs text-fg-muted">
-              Per cambiare intensità si prepara una nuova bozza: scegli le date e conferma.
-            </p>
+      {plan && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div
+            role="tablist"
+            aria-label="Piani della materia"
+            className="flex flex-wrap gap-0.5 rounded-lg border border-border bg-bg-inset p-[3px]"
+          >
+            {plans.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                role="tab"
+                aria-selected={p.id === plan.id}
+                onClick={() => setSelectedId(p.id)}
+                className={`inline-flex h-9 items-center gap-2 rounded-[var(--radius-control)] px-3.5 text-[13px] font-medium transition-colors duration-120 ${FOCUS} ${
+                  p.id === plan.id
+                    ? 'bg-bg-raised text-fg-primary'
+                    : 'text-fg-secondary hover:text-fg-primary'
+                }`}
+              >
+                {planLabel(p)}
+                {p.status === 'draft' && (
+                  <span className="inline-flex h-5 items-center rounded bg-warn/10 px-1.5 text-[11px] text-warn">
+                    bozza
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            aria-expanded={wizardOpen}
+            aria-controls="piano-nuovo"
+            onClick={() => {
+              setWizardIntensity(null);
+              setWizardOpen((v) => !v);
+            }}
+            className={`${BTN_SECONDARY} h-9 ${wizardOpen ? 'bg-bg-raised' : ''}`}
+          >
+            <svg
+              aria-hidden="true"
+              width="14"
+              height="14"
+              viewBox="0 0 20 20"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            >
+              <path d="M10 4v12M4 10h12" />
+            </svg>
+            {plan.status === 'draft' ? 'Rigenera bozza' : 'Nuovo piano'}
+          </button>
+        </div>
+      )}
+
+      {awaitingDraft && (
+        <section
+          role="status"
+          aria-busy="true"
+          className={`${CARD_BOX} flex flex-col gap-2.5 px-6 py-5`}
+        >
+          <h2 className="text-sm font-semibold text-fg-primary">Sto preparando la bozza…</h2>
+          <span aria-hidden="true" className="block h-1 overflow-hidden rounded-sm bg-border">
+            <span className="block h-1 w-1/3 animate-pulse rounded-sm bg-accent motion-reduce:animate-none" />
+          </span>
+          <p className="text-[13px] text-fg-secondary">
+            Circa un minuto. La trovi qui appena è pronta, da controllare e approvare.
+          </p>
+        </section>
+      )}
+
+      {planQuery.isSuccess && ((!plan && !awaitingDraft) || wizardOpen) && (
+        <section
+          id="piano-nuovo"
+          aria-label="Nuovo piano"
+          className={
+            plan
+              ? 'flex flex-col gap-4 rounded-[var(--radius-card)] border border-accent/40 p-5'
+              : undefined
+          }
+        >
+          {plan && (
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex flex-col gap-0.5">
+                <h2 className="text-sm font-semibold text-fg-primary">Nuovo piano</h2>
+                <p className="text-[13px] text-fg-secondary">
+                  {wizardIntensity
+                    ? 'Per cambiare intensità si prepara una nuova bozza: scegli le date e genera.'
+                    : 'Il piano attivo resta finché non approvi la nuova bozza.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Chiudi"
+                onClick={() => {
+                  setWizardOpen(false);
+                  setWizardIntensity(null);
+                }}
+                className={ICON_BTN}
+              >
+                <svg
+                  aria-hidden="true"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 20 20"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                >
+                  <path d="M5 5l10 10M15 5L5 15" />
+                </svg>
+              </button>
+            </div>
           )}
           <WizardForm
             key={wizardIntensity ?? 'default'}
@@ -723,36 +468,73 @@ function PlanDesktop({ slug }: { slug: string }) {
               invalidatePlan();
             }}
           />
-        </div>
-      )}
-
-      {plans.length > 1 && !wizardOpen && (
-        <div
-          role="tablist"
-          aria-label="Piani della materia"
-          className="mb-4 flex flex-wrap gap-1.5"
-        >
-          {plans.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              role="tab"
-              aria-selected={p.id === plan?.id}
-              onClick={() => setSelectedId(p.id)}
-              className={`rounded-full border px-3 py-1 text-xs ${
-                p.id === plan?.id
-                  ? 'border-accent bg-accent/10 text-fg-primary'
-                  : 'border-border text-fg-secondary hover:text-fg-primary'
-              }`}
-            >
-              {planLabel(p)}
-            </button>
-          ))}
-        </div>
+        </section>
       )}
 
       {plan && !wizardOpen && (
         <div className="space-y-5">
+          {plan.status === 'draft' ? (
+            <section
+              aria-labelledby="piano-bozza"
+              className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-[var(--radius-card)] border border-warn/40 bg-warn/5 px-5 py-4"
+            >
+              <span
+                aria-hidden="true"
+                className="inline-flex size-8 items-center justify-center rounded-[var(--radius-control)] bg-bg-base/40 text-warn"
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 20 20"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinejoin="round"
+                >
+                  <path d="M5 3h7l3 3v11H5z M8 10h4M8 13h4" />
+                </svg>
+              </span>
+              <div className="flex min-w-0 flex-[1_1_360px] flex-col gap-0.5">
+                <h2 id="piano-bozza" className="text-sm font-semibold text-fg-primary">
+                  Bozza pronta · controllala e approvala
+                </h2>
+                <span className="text-[13px] text-fg-secondary">
+                  {plan.startDate} → {plan.targetDate} · {plan.tasks.length} attività. Non è ancora
+                  nel calendario.
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => commit.mutate(plan.id)}
+                  disabled={commit.isPending || plan.tasks.length === 0}
+                  title={plan.tasks.length === 0 ? 'La bozza non ha task: rigenerala.' : undefined}
+                  className={BTN_PRIMARY}
+                >
+                  {commit.isPending ? 'Approvo…' : 'Approva'}
+                </button>
+                <button type="button" onClick={() => openWizard(null)} className={BTN_SECONDARY}>
+                  Cambia impostazioni
+                </button>
+                <button
+                  type="button"
+                  onClick={() => discard.mutate()}
+                  disabled={discard.isPending}
+                  className={BTN_GHOST}
+                >
+                  Scarta
+                </button>
+              </div>
+            </section>
+          ) : (
+            <p className="text-xs text-fg-muted">
+              <span className="mr-2 inline-flex h-5 items-center rounded bg-ok/10 px-1.5 text-[11px] text-ok">
+                attivo
+              </span>
+              {plan.startDate} → {plan.targetDate} · {plan.tasks.length} attività
+            </p>
+          )}
+
           <PlanChangeBox
             key={plan.id}
             slug={slug}
@@ -765,16 +547,6 @@ function PlanDesktop({ slug }: { slug: string }) {
               {(generateFromChange.error as Error).message}
             </p>
           )}
-          <div className="flex items-center gap-2 text-xs">
-            <span
-              className={`rounded-full border px-2 py-0.5 ${plan.status === 'draft' ? 'border-warn text-warn' : 'border-ok text-ok'}`}
-            >
-              {plan.status === 'draft' ? 'Bozza — non ancora nel calendario' : 'Attivo'}
-            </span>
-            <span className="text-fg-muted">
-              {plan.startDate} → {plan.targetDate} · {plan.tasks.length} task
-            </span>
-          </div>
 
           <IntensityCard
             intensity={plan.prefs.intensity}
@@ -795,27 +567,6 @@ function PlanDesktop({ slug }: { slug: string }) {
           />
           {diffQuery.data && <DiffPanel diff={diffQuery.data} />}
 
-          {plan.status === 'draft' && (
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => commit.mutate(plan.id)}
-                disabled={commit.isPending || plan.tasks.length === 0}
-                title={plan.tasks.length === 0 ? 'La bozza non ha task: rigenerala.' : undefined}
-                className="rounded-[var(--radius-control)] bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
-              >
-                Conferma piano
-              </button>
-              <button
-                type="button"
-                onClick={() => discard.mutate()}
-                disabled={discard.isPending}
-                className="rounded-[var(--radius-control)] border border-border px-3 py-1.5 text-sm text-fg-secondary hover:text-fg-primary"
-              >
-                Scarta bozza
-              </button>
-            </div>
-          )}
           {plan.status === 'draft' && <BulkBar slug={slug} plan={plan} onDone={invalidatePlan} />}
           <div className="flex items-center gap-2">
             <button
@@ -874,14 +625,19 @@ function PlanDesktop({ slug }: { slug: string }) {
   );
 }
 
+/** `/materie/[slug]/piano`: its own screen on mobile; on desktop the plan is the subject's Piano tab. */
 export function PlanClient({ slug }: { slug: string }) {
   const isMobile = useIsMobile();
-  if (isMobile === null) {
+  const router = useRouter();
+  useEffect(() => {
+    if (isMobile === false) router.replace(`/materie/${slug}?tab=piano`);
+  }, [isMobile, router, slug]);
+  if (!isMobile) {
     return (
       <p role="status" className="p-4 text-sm text-fg-muted">
         Caricamento…
       </p>
     );
   }
-  return isMobile ? <PlanMobile slug={slug} /> : <PlanDesktop slug={slug} />;
+  return <PlanMobile slug={slug} />;
 }

@@ -23,6 +23,7 @@ import { parseSubjectTab } from '@/lib/subjectTabs';
 import { FLASHCARD_PARAMS } from '@/lib/flashcardsView';
 import { FlashcardsTab } from './flashcards/FlashcardsTab';
 import { useIsMobile } from '@/lib/useIsMobile';
+import { PlanDesktop } from './PlanClient';
 
 const TABS = [
   { key: 'panoramica', label: 'Panoramica' },
@@ -33,6 +34,7 @@ const TABS = [
   { key: 'flashcard', label: 'Flashcard' },
   { key: 'simulazioni', label: 'Simulazioni' },
   { key: 'lacune', label: 'Lacune' },
+  { key: 'piano', label: 'Piano' },
 ] as const;
 type TabKey = (typeof TABS)[number]['key'];
 
@@ -253,98 +255,99 @@ function SubjectDetailClientInner({ slug }: { slug: string }) {
                 {tab.label}
               </button>
             ))}
-            <Link
-              href={`/materie/${slug}/piano`}
-              className="-mb-px shrink-0 whitespace-nowrap border-b-[1.5px] border-transparent px-1 py-2.5 text-sm font-medium text-fg-secondary transition-colors duration-120 hover:text-fg-primary max-md:flex max-md:min-h-11 max-md:items-center max-md:px-2"
-            >
-              Piano
-            </Link>
-            <button
-              type="button"
-              onClick={toggleAiPanel}
-              className="-mb-px ml-auto shrink-0 whitespace-nowrap border-b-[1.5px] border-transparent px-1 py-2.5 text-xs font-medium text-fg-muted transition-colors duration-120 hover:text-fg-primary max-md:min-h-11"
-            >
-              {aiPanelOpen ? 'Nascondi pannello AI ▸' : '◂ Mostra pannello AI'}
-            </button>
-          </div>
-
-          <div
-            className={`grid grid-cols-1 gap-6 ${
-              aiPanelOpen ? 'lg:grid-cols-[240px_1fr_320px]' : 'lg:grid-cols-[240px_1fr]'
-            }`}
-          >
-            <aside className="lg:sticky lg:top-6 lg:h-fit">
-              <TopicsPanel
-                subjectSlug={slug}
-                documents={documents}
-                selectedDocIds={selectedDocIds}
-                selectedTopicIds={selectedTopicIds}
-                onToggleTopic={toggleTopic}
-              />
-            </aside>
-
-            <main className="min-w-0">
-              {activeTab === 'panoramica' && (
-                <div className="space-y-4">
-                  <OverviewTab
-                    slug={slug}
-                    topics={topics}
-                    documents={documents}
-                    nextExam={nextExam}
-                  />
-                  {aiProviderQuery.data === 'fake' && (
-                    <div className="rounded-[var(--radius-card)] border border-dashed border-border bg-bg-surface p-3 text-xs text-fg-muted">
-                      Generazione simulata (nessun provider AI configurato): le flashcard/riassunti
-                      sono creati per estrazione deterministica dal testo, non da un modello reale —
-                      vedi docs/fasi/F3-ai-core.md &quot;Stato&quot;.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {activeTab === 'appunti' && (
-                <DocumentTypeTab subjectSlug={slug} type="appunti" documents={documents} />
-              )}
-
-              {activeTab === 'schemi' && (
-                <DocumentTypeTab subjectSlug={slug} type="schemi" documents={documents} />
-              )}
-
-              {activeTab === 'altro' && (
-                <DocumentTypeTab
-                  subjectSlug={slug}
-                  type="altro"
-                  includeTypes={['altro', 'slide']}
-                  documents={documents}
-                />
-              )}
-
-              {activeTab === 'esami' && (
-                <DocumentTypeTab
-                  subjectSlug={slug}
-                  type="esami"
-                  documents={documents}
-                  extra={<ExamsPanel subjectSlug={slug} />}
-                />
-              )}
-
-              {activeTab === 'flashcard' && (
-                <FlashcardsTab slug={slug} topics={topics} documents={documents} />
-              )}
-
-              {activeTab === 'lacune' && <CoveragePanel subjectSlug={slug} />}
-
-              {activeTab === 'simulazioni' && (
-                <ExamPrepPanel subjectSlug={slug} documents={documents} />
-              )}
-            </main>
-
-            {aiPanelOpen && (
-              <aside className="lg:sticky lg:top-6 lg:h-fit">
-                <AiPanel subjectSlug={slug} documents={documents} topics={topics} />
-              </aside>
+            {/* The Piano tab is full width: no side panels to toggle. */}
+            {activeTab !== 'piano' && (
+              <button
+                type="button"
+                onClick={toggleAiPanel}
+                className="-mb-px ml-auto shrink-0 whitespace-nowrap border-b-[1.5px] border-transparent px-1 py-2.5 text-xs font-medium text-fg-muted transition-colors duration-120 hover:text-fg-primary max-md:min-h-11"
+              >
+                {aiPanelOpen ? 'Nascondi pannello AI ▸' : '◂ Mostra pannello AI'}
+              </button>
             )}
           </div>
+
+          {activeTab === 'piano' ? (
+            <PlanDesktop slug={slug} />
+          ) : (
+            <div
+              className={`grid grid-cols-1 gap-6 ${
+                aiPanelOpen ? 'lg:grid-cols-[240px_1fr_320px]' : 'lg:grid-cols-[240px_1fr]'
+              }`}
+            >
+              <aside className="lg:sticky lg:top-6 lg:h-fit">
+                <TopicsPanel
+                  subjectSlug={slug}
+                  documents={documents}
+                  selectedDocIds={selectedDocIds}
+                  selectedTopicIds={selectedTopicIds}
+                  onToggleTopic={toggleTopic}
+                />
+              </aside>
+
+              <main className="min-w-0">
+                {activeTab === 'panoramica' && (
+                  <div className="space-y-4">
+                    <OverviewTab
+                      slug={slug}
+                      topics={topics}
+                      documents={documents}
+                      nextExam={nextExam}
+                    />
+                    {aiProviderQuery.data === 'fake' && (
+                      <div className="rounded-[var(--radius-card)] border border-dashed border-border bg-bg-surface p-3 text-xs text-fg-muted">
+                        Generazione simulata (nessun provider AI configurato): le
+                        flashcard/riassunti sono creati per estrazione deterministica dal testo, non
+                        da un modello reale — vedi docs/fasi/F3-ai-core.md &quot;Stato&quot;.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {activeTab === 'appunti' && (
+                  <DocumentTypeTab subjectSlug={slug} type="appunti" documents={documents} />
+                )}
+
+                {activeTab === 'schemi' && (
+                  <DocumentTypeTab subjectSlug={slug} type="schemi" documents={documents} />
+                )}
+
+                {activeTab === 'altro' && (
+                  <DocumentTypeTab
+                    subjectSlug={slug}
+                    type="altro"
+                    includeTypes={['altro', 'slide']}
+                    documents={documents}
+                  />
+                )}
+
+                {activeTab === 'esami' && (
+                  <DocumentTypeTab
+                    subjectSlug={slug}
+                    type="esami"
+                    documents={documents}
+                    extra={<ExamsPanel subjectSlug={slug} />}
+                  />
+                )}
+
+                {activeTab === 'flashcard' && (
+                  <FlashcardsTab slug={slug} topics={topics} documents={documents} />
+                )}
+
+                {activeTab === 'lacune' && <CoveragePanel subjectSlug={slug} />}
+
+                {activeTab === 'simulazioni' && (
+                  <ExamPrepPanel subjectSlug={slug} documents={documents} />
+                )}
+              </main>
+
+              {aiPanelOpen && (
+                <aside className="lg:sticky lg:top-6 lg:h-fit">
+                  <AiPanel subjectSlug={slug} documents={documents} topics={topics} />
+                </aside>
+              )}
+            </div>
+          )}
         </div>
       )}
     </>
