@@ -97,7 +97,7 @@ describe('Fase B — scenario tests', () => {
     expect(r.tasks.filter((t) => t.kind === 'lesson').reduce((s, t) => s + t.minutes, 0)).toBe(120);
     // "ogni argomento rivisto ≥3 volte a intervalli crescenti"
     const revisits = r.tasks.filter(
-      (t) => t.topicKey === 'a' && (t.kind === 'flashcards' || t.kind === 'verify'),
+      (t) => t.topicKey === 'a' && t.key.startsWith('rev:'), // the consolidation drills are not spaced revisits
     );
     expect(revisits.length).toBeGreaterThanOrEqual(3);
     const gaps = revisits
@@ -581,5 +581,199 @@ describe('Fase B — scenario tests', () => {
       expect(l.payload.minutesByMethod).toEqual({ standard: 45, sprint: 30 });
       expect(l.minutes).toBe(l.payload.minutesByMethod!.standard);
     }
+  });
+
+  describe('18. due fasi: studio a ritmo, consolidamento pieno', () => {
+    const longInput = (overrides: Partial<PlannerInput> = {}) =>
+      input({
+        targetDate: addDays(START, 56),
+        availability: { perWeekday: [150, 150, 150, 150, 150, 0, 0], blackoutDates: [] },
+        topics: ['a', 'b', 'c', 'd'].map((k) =>
+          topic(k, { lessons: lessonsOf(k, 5, 50, 35), examWeight: 0.5 }),
+        ),
+        ...overrides,
+      });
+    const availDays = (i: PlannerInput) =>
+      [...buildCapacity(i).entries()].filter(([, c]) => c > 0).map(([d]) => d);
+
+    it('lessons are spread over the study phase, none in a week is empty, the last near its end', () => {
+      const i = longInput();
+      const r = schedulePlan(i);
+      assertHardConstraints(i, r.tasks);
+      expect(r.feasibility.feasible).toBe(true);
+      const avail = availDays(i);
+      const consolidation = avail.slice(-Math.round(0.2 * avail.length));
+      const studyDays = avail.filter((d) => d < consolidation[0]!);
+      const lessons = r.tasks.filter((t) => t.kind === 'lesson');
+      expect(lessons).toHaveLength(20);
+      const last = lessons
+        .map((t) => t.date)
+        .sort()
+        .at(-1)!;
+      expect(studyDays.indexOf(last)).toBeGreaterThanOrEqual(Math.floor(studyDays.length * 0.75));
+      for (let w = 0; w + 5 <= studyDays.length; w += 5) {
+        const week = new Set(studyDays.slice(w, w + 5));
+        expect(
+          lessons.some((t) => week.has(t.date)),
+          `week of ${studyDays[w]} has no lessons`,
+        ).toBe(true);
+      }
+    });
+
+    it('consolidation days are at least 40% planned, with no new lessons and 2+ simulations', () => {
+      const i = longInput();
+      const r = schedulePlan(i);
+      const avail = availDays(i);
+      const consolidation = avail.slice(-Math.round(0.2 * avail.length));
+      const load = new Map(r.loadPerDay.map((d) => [d.date, d]));
+      for (const d of consolidation) {
+        const l = load.get(d)!;
+        expect(l.planned, `day ${d}`).toBeGreaterThanOrEqual(0.4 * l.available);
+        expect(r.tasks.some((t) => t.date === d && t.kind === 'lesson')).toBe(false);
+      }
+      const sims = r.tasks.filter((t) => t.kind === 'simulation');
+      expect(sims.filter((t) => t.date >= consolidation[0]!).length).toBeGreaterThanOrEqual(2);
+      expect(r.tasks.some((t) => t.title.startsWith('Esercitazione · '))).toBe(true);
+    });
+
+    it('tight capacity: same lessons placed and same feasibility as the one-phase plan', () => {
+      const i = longInput({
+        targetDate: addDays(START, 20),
+        availability: { perWeekday: [125, 125, 125, 125, 125, 0, 0], blackoutDates: [] },
+      });
+      const r = schedulePlan(i);
+      assertHardConstraints(i, r.tasks);
+      expect(r.feasibility.feasible).toBe(true);
+      expect(r.tasks.filter((t) => t.kind === 'lesson')).toHaveLength(20);
+    });
+
+    it('heavy busy minutes on half the days: still feasible and spread', () => {
+      const busy: Record<string, number> = {};
+      for (let n = 0; n < 56; n += 1) if (n % 2 === 0) busy[addDays(START, n)] = 110;
+      const i = longInput({ busyMinutesByDate: busy });
+      const r = schedulePlan(i);
+      assertHardConstraints(i, r.tasks);
+      expect(r.feasibility.feasible).toBe(true);
+      const lessons = r.tasks.filter((t) => t.kind === 'lesson');
+      expect(lessons).toHaveLength(20);
+      const dates = lessons.map((t) => t.date).sort();
+      expect(dates.at(-1)! > addDays(START, 28)).toBe(true);
+    });
+
+    it('under 10 available days nothing changes: no drills', () => {
+      const i = input({
+        targetDate: addDays(START, 8),
+        topics: [topic('a', { lessons: lessonsOf('a', 3, 60, 40) })],
+      });
+      const r = schedulePlan(i);
+      assertHardConstraints(i, r.tasks);
+      expect(r.tasks.some((t) => t.key.startsWith('drill:'))).toBe(false);
+    });
+
+    it('drills come strictly after the last lesson of their topic', () => {
+      const i = longInput();
+      const r = schedulePlan(i);
+      for (const d of r.tasks.filter((t) => t.key.startsWith('drill:'))) {
+        const last = r.tasks
+          .filter((t) => t.kind === 'lesson' && t.topicKey === d.topicKey)
+          .map((t) => t.date)
+          .sort()
+          .at(-1)!;
+        expect(d.date > last, `${d.key} on ${d.date}`).toBe(true);
+      }
+    });
+
+    it('drills rotate from the lowest mastery, then the most lesson minutes', () => {
+      // 40 minutes a day: one drill per day, so the date order is the rotation order.
+      const i = longInput({
+        targetDate: addDays(START, 28),
+        availability: { perWeekday: [45, 45, 45, 45, 45, 45, 45], blackoutDates: [] },
+        prefs: { ...longInput().prefs, simulationCount: 0 },
+        topics: [
+          topic('a', { lessons: lessonsOf('a', 2, 50, 35), mastery: 0.5 }),
+          topic('b', { lessons: lessonsOf('b', 2, 50, 35), mastery: 0 }),
+          topic('c', { lessons: lessonsOf('c', 3, 50, 35), mastery: 0 }),
+        ],
+      });
+      const r = schedulePlan(i);
+      const order = r.tasks.filter((t) => t.key.startsWith('drill:')).map((t) => t.topicKey);
+      expect(order.length).toBeGreaterThanOrEqual(3);
+      // c (mastery 0, the most minutes) before b (mastery 0), then a (mastery .5), round-robin.
+      expect(order.slice(0, 3)).toEqual(['c', 'b', 'a']);
+    });
+
+    it('10 available days make two phases, 9 do not', () => {
+      const make = (n: number) =>
+        input({
+          targetDate: addDays(START, n),
+          availability: { perWeekday: [180, 180, 180, 180, 180, 180, 180], blackoutDates: [] },
+          prefs: { ...input().prefs, simulationCount: 0 },
+          topics: [topic('a', { lessons: lessonsOf('a', 1, 50, 35) })],
+        });
+      expect(schedulePlan(make(10)).tasks.some((t) => t.key.startsWith('drill:'))).toBe(true);
+      expect(schedulePlan(make(9)).tasks.some((t) => t.key.startsWith('drill:'))).toBe(false);
+    });
+
+    it('no spaced revisit is lost with 11 to 20 available days (10 loses one, as the one-phase plan does)', () => {
+      for (let n = 11; n <= 20; n += 1) {
+        const i = input({
+          targetDate: addDays(START, n),
+          availability: { perWeekday: [150, 150, 150, 150, 150, 150, 150], blackoutDates: [] },
+          topics: [
+            topic('a', { lessons: lessonsOf('a', 3, 50, 35) }),
+            topic('b', { lessons: lessonsOf('b', 3, 50, 35) }),
+          ],
+        });
+        const r = schedulePlan(i);
+        expect(
+          r.warnings.filter((w) => w.includes('ripassi a intervallo')),
+          `${n} days`,
+        ).toEqual([]);
+      }
+    });
+
+    it('tight capacity picks the plan that places everything; roomy capacity keeps the phases', () => {
+      const tight = longInput({
+        targetDate: addDays(START, 20),
+        availability: { perWeekday: [125, 125, 125, 125, 125, 0, 0], blackoutDates: [] },
+      });
+      const r = schedulePlan(tight);
+      expect(r.tasks.filter((t) => t.kind === 'lesson')).toHaveLength(20);
+      // Same outcome as the one-phase plan: runBest never takes a plan that places less.
+      expect(r.feasibility.feasible).toBe(true);
+      expect(r.warnings.filter((w) => w.includes('ripassi a intervallo'))).toHaveLength(1);
+      expect(schedulePlan(longInput()).tasks.some((t) => t.key.startsWith('drill:'))).toBe(true);
+    });
+
+    it("another plan's drills do not take time from lessons, only from drills", () => {
+      const a = longInput();
+      const ra = schedulePlan(a);
+      const busy: Record<string, number> = {};
+      const flex: Record<string, number> = {};
+      for (const t of ra.tasks) {
+        const m = t.key.startsWith('drill:') ? flex : busy;
+        m[t.date] = (m[t.date] ?? 0) + t.minutes;
+      }
+      const b = longInput({
+        targetDate: addDays(START, 63),
+        busyMinutesByDate: busy,
+        flexibleBusyMinutesByDate: flex,
+      });
+      const withFlex = schedulePlan(b);
+      const noFlex = schedulePlan({ ...b, flexibleBusyMinutesByDate: undefined });
+      expect(withFlex.feasibility.feasible).toBe(true);
+      expect(withFlex.tasks.filter((t) => t.kind === 'lesson')).toHaveLength(20);
+      const lessonDays = (r: typeof withFlex) =>
+        r.tasks.filter((t) => t.kind === 'lesson').map((t) => `${t.date}:${t.key}`);
+      expect(lessonDays(withFlex)).toEqual(lessonDays(noFlex));
+      // On every day the two plans' drills together stay within the day.
+      const cap = buildCapacity(b);
+      for (const d of withFlex.tasks.filter((t) => t.key.startsWith('drill:'))) {
+        const own = withFlex.tasks
+          .filter((t) => t.date === d.date)
+          .reduce((s, t) => s + t.minutes, 0);
+        expect(own + (flex[d.date] ?? 0)).toBeLessThanOrEqual(cap.get(d.date)!);
+      }
+    });
   });
 });
