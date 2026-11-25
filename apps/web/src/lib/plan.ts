@@ -9,6 +9,7 @@ import {
   filterUnitsByScope,
   heuristicPlannerTopics,
   loadBusyMinutesByDate,
+  loadFlexibleBusyMinutesByDate,
   loadEligibleDocs,
   loadTimeFactor,
   recomputeTopicMastery,
@@ -289,6 +290,11 @@ export async function getPlanPreview(
     input.topicIds,
   );
   const busyMinutesByDate = await loadBusyMinutesByDate(db, subject.id, input.examId);
+  const flexibleBusyMinutesByDate = await loadFlexibleBusyMinutesByDate(
+    db,
+    subject.id,
+    input.examId,
+  );
   const timeFactor = await loadTimeFactor(db);
 
   const plannerInput: PlannerInput = {
@@ -301,6 +307,7 @@ export async function getPlanPreview(
     })),
     prefs: input.prefs,
     busyMinutesByDate,
+    flexibleBusyMinutesByDate,
     pinned: [],
   };
   const result = schedulePlan(plannerInput);
@@ -729,7 +736,10 @@ export async function applyBulk(
     availability: plan.availability,
     topics: [],
     prefs: plan.prefs,
-    busyMinutesByDate: await loadBusyMinutesByDate(db, subject.id, plan.examId),
+    busyMinutesByDate: mergeBusy(
+      await loadBusyMinutesByDate(db, subject.id, plan.examId),
+      await loadFlexibleBusyMinutesByDate(db, subject.id, plan.examId),
+    ),
   } as PlannerInput);
   const result = applyBulkAction(
     planTasks.map((t) => ({
@@ -1019,4 +1029,11 @@ export async function discardDraft(db: AnyDb, subjectSlug: string): Promise<void
   await db
     .delete(studyPlans)
     .where(and(eq(studyPlans.subjectId, subject.id), eq(studyPlans.status, 'draft')));
+}
+
+/** Both kinds of busy minutes per day, for a ceiling that must not be overbooked. */
+function mergeBusy(a: Record<string, number>, b: Record<string, number>): Record<string, number> {
+  const out = { ...a };
+  for (const [d, m] of Object.entries(b)) out[d] = (out[d] ?? 0) + m;
+  return out;
 }

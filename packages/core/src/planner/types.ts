@@ -134,6 +134,11 @@ export interface PlannerInput {
   dueCardsByDate?: Record<IsoDate, number>;
   /** Minutes already taken per day: other subjects' active tasks, blocking calendar events. */
   busyMinutesByDate?: Record<IsoDate, number>;
+  /**
+   * Minutes taken per day by other plans' consolidation drills: filler, not a hard constraint.
+   * Lessons, revisits and simulations ignore them; the drills of this plan fill what they leave.
+   */
+  flexibleBusyMinutesByDate?: Record<IsoDate, number>;
   /** Tasks the user pinned: kept exactly where they are, their minutes consumed first. */
   pinned?: PlannedTask[];
 }

@@ -10,6 +10,7 @@ import {
   heuristicMinutes,
   filterUnitsByScope,
   loadBusyMinutesByDate,
+  loadFlexibleBusyMinutesByDate,
   loadEligibleDocs,
   loadTimeFactor,
   studyPlans,
@@ -263,6 +264,11 @@ export async function processGeneratePlan(
   // Other subjects' active tasks and imported calendar events compete for the same daily
   // minutes (docs/04-planner.md §7, §9.4).
   const busyMinutesByDate = await loadBusyMinutesByDate(db, input.subjectId, input.examId);
+  const flexibleBusyMinutesByDate = await loadFlexibleBusyMinutesByDate(
+    db,
+    input.subjectId,
+    input.examId,
+  );
 
   // Open tasks the student pinned on the plan this draft will replace stay where they are
   // ("Fissa" on an active plan). Their key (`pin:<task id>:<seq>`) is unique and can't collide with a generated one.
@@ -317,6 +323,7 @@ export async function processGeneratePlan(
     prefs: input.prefs,
     dueCardsByDate,
     busyMinutesByDate,
+    flexibleBusyMinutesByDate,
     pinned,
   };
   const result = schedulePlan(plannerInput);

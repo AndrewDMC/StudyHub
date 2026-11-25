@@ -43,6 +43,17 @@ export const MIN_CHUNK_MINUTES = 15;
 const MAX_NEW_TOPICS_PER_DAY = 2;
 const REVISIT_OFFSETS_DAYS = [1, 3, 7];
 const SIMULATION_POSITIONS = [0.6, 0.85, 0.95];
+/** Below this many available days the plan is a single phase, as it always was. */
+const MIN_DAYS_FOR_PHASES = 10;
+/** Share of the available days given to consolidation, with its bounds (days). */
+const CONSOLIDATION_SHARE = 0.2;
+const MIN_CONSOLIDATION_DAYS = 2;
+const MAX_CONSOLIDATION_DAYS = 14;
+/** Slack on the lesson pacing: absorbs the rounding of lessons to whole sessions. */
+const PACING_SLACK = 1.15;
+/** Consolidation days are filled with useful work up to this share of their capacity. */
+const CONSOLIDATION_FILL = 0.65;
+const DRILL_MINUTES = 30;
 const FINAL_REVIEW_MINUTES = 60;
 /** Fixed length of the +3 / +7 day verifications. */
 export const VERIFY_MINUTES = 15;
@@ -147,7 +158,12 @@ function orderTopics(topics: PlannerTopic[], warnings: string[]): PlannerTopic[]
   return ordered;
 }
 
-function simulationDayIndexes(dayCount: number, requested: number | 'auto'): number[] {
+function simulationDayIndexes(
+  dayCount: number,
+  requested: number | 'auto',
+  /** Index of the first consolidation day, when the plan has two phases. */
+  consolidationStart: number | null = null,
+): number[] {
   const count =
     requested === 'auto'
       ? dayCount >= 10
@@ -158,7 +174,19 @@ function simulationDayIndexes(dayCount: number, requested: number | 'auto'): num
             ? 1
             : 0
       : Math.max(0, requested);
-  return SIMULATION_POSITIONS.slice(0, Math.min(count, SIMULATION_POSITIONS.length)).map((f) =>
+  const n = Math.min(count, SIMULATION_POSITIONS.length);
+  if (consolidationStart !== null) {
+    // The first one closes the study phase; the others fall inside consolidation.
+    const span = dayCount - consolidationStart;
+    return [
+      consolidationStart - 1,
+      consolidationStart + Math.round(0.4 * span),
+      consolidationStart + Math.round(0.75 * span),
+    ]
+      .slice(0, n)
+      .map((i) => Math.max(0, Math.min(dayCount - 1, i)));
+  }
+  return SIMULATION_POSITIONS.slice(0, n).map((f) =>
     Math.min(dayCount - 1, Math.floor(f * dayCount)),
   );
 }
@@ -197,12 +225,16 @@ interface RunConfig {
   excluded: Set<string>;
   /** Cap of new topics per day: lifted when time is short. */
   cap: boolean;
+  /** Two phases (study paced over the whole period, then consolidation). Off: the old ASAP greedy. */
+  phases: boolean;
 }
 
 interface RunOutput {
   result: PlanResult;
   /** Included topics whose lessons did not all find a place. */
   unscheduled: string[];
+  /** Spaced revisits that found no day before the exam. */
+  lostRevisits: number;
   /** Most free minutes on any day that takes new content: the longest lesson that can be placed. */
   bestRoom: number;
 }
@@ -278,13 +310,18 @@ function names(list: string[]): string {
  * strategies, so the student knows.
  */
 export function schedulePlan(input: PlannerInput): PlanResult {
-  const config: RunConfig = { sprintTopics: new Set(), excluded: new Set(), cap: true };
-  let out = run(input, config);
+  const config: RunConfig = {
+    sprintTopics: new Set(),
+    excluded: new Set(),
+    cap: true,
+    phases: true,
+  };
+  let out = runBest(input, config);
   if (out.unscheduled.length === 0) return out.result;
 
   const availableMinutes = out.result.feasibility.availableMinutes;
   config.cap = false;
-  out = run(input, config);
+  out = runBest(input, config);
   if (out.unscheduled.length === 0 || availableMinutes <= 0) return out.result;
 
   const byWeight = input.topics
@@ -295,16 +332,31 @@ export function schedulePlan(input: PlannerInput): PlanResult {
     for (const t of byWeight) {
       if (config.sprintTopics.has(t.key)) continue;
       config.sprintTopics.add(t.key);
-      out = run(input, config);
+      out = runBest(input, config);
       if (out.unscheduled.length === 0) return out.result;
     }
   }
   for (const t of byWeight) {
     config.excluded.add(t.key);
-    out = run(input, config);
+    out = runBest(input, config);
     if (out.unscheduled.length === 0) return out.result;
   }
   return out.result;
+}
+
+/** The two-phase plan, unless the old greedy one places more: feasibility never gets worse. */
+function runBest(input: PlannerInput, config: RunConfig): RunOutput {
+  const phased = run(input, { ...config, phases: true });
+  if (phased.unscheduled.length === 0 && phased.lostRevisits === 0) return phased;
+  const legacy = run(input, { ...config, phases: false });
+  // Fewest topics left out, then fewest lost revisits, then fewest warnings; ties keep the phased plan.
+  const score = (o: RunOutput) => [o.unscheduled.length, o.lostRevisits, o.result.warnings.length];
+  const a = score(legacy);
+  const b = score(phased);
+  for (let k = 0; k < a.length; k += 1) {
+    if (a[k]! !== b[k]!) return a[k]! < b[k]! ? legacy : phased;
+  }
+  return phased;
 }
 
 function run(input: PlannerInput, config: RunConfig): RunOutput {
@@ -327,6 +379,20 @@ function run(input: PlannerInput, config: RunConfig): RunOutput {
   const tasks: PlannedTask[] = [];
   const lastTwo = new Set(days.slice(-2));
   const { sessionLength } = input.prefs;
+
+  // Phases: study (lessons paced over it) then consolidation (the last ~20% of the available days).
+  const availableDays = days.filter((d) => (capacity.get(d) ?? 0) > 0);
+  const twoPhases = config.phases && availableDays.length >= MIN_DAYS_FOR_PHASES;
+  const consolidationDays = twoPhases
+    ? availableDays.slice(
+        -Math.min(
+          MAX_CONSOLIDATION_DAYS,
+          Math.max(MIN_CONSOLIDATION_DAYS, Math.round(CONSOLIDATION_SHARE * availableDays.length)),
+        ),
+      )
+    : [];
+  const consolidationStartDay = consolidationDays[0] ?? null;
+  const consolidationSet = new Set(consolidationDays);
 
   const place = (task: PlannedTask) => {
     tasks.push(task);
@@ -369,7 +435,13 @@ function run(input: PlannerInput, config: RunConfig): RunOutput {
 
   // 3. Simulations at ~60/85/95% of the way (never split; nearest day with room otherwise).
   const simIndexes =
-    days.length > 0 ? simulationDayIndexes(days.length, input.prefs.simulationCount) : [];
+    days.length > 0
+      ? simulationDayIndexes(
+          days.length,
+          input.prefs.simulationCount,
+          consolidationStartDay !== null ? days.indexOf(consolidationStartDay) : null,
+        )
+      : [];
   const simMinutes = input.prefs.simulationMinutes;
   let simN = 0;
   for (const idx of simIndexes) {
@@ -394,10 +466,7 @@ function run(input: PlannerInput, config: RunConfig): RunOutput {
       topicId: null,
       minutes: simMinutes,
       title: `Simulazione d'esame ${simN}`,
-      description:
-        simN === 1
-          ? "La prima simulazione arriva presto: serve a calibrare l'autovalutazione."
-          : 'Simulazione a tempo, poi correzione formativa.',
+      description: simulationDescription(simN, consolidationStartDay !== null),
       payload: { action: 'simulation' },
       pinned: false,
       origin: 'planner',
@@ -443,6 +512,23 @@ function run(input: PlannerInput, config: RunConfig): RunOutput {
     });
   }
 
+  // Pacing: lessons follow the cumulative share of the study phase's free time, with a little slack.
+  // The cumulative form is the "remaining minutes / remaining days" budget recomputed each day:
+  // a day that placed less leaves the next ones a bigger share. Free time is the rest, for other subjects.
+  const studyWeights = new Map<IsoDate, number>();
+  if (twoPhases) {
+    for (const d of days) {
+      if (lastTwo.has(d) || consolidationSet.has(d)) continue;
+      const w = remaining.get(d) ?? 0;
+      if (w > 0) studyWeights.set(d, w);
+    }
+  }
+  const weightTotal = [...studyWeights.values()].reduce((a, b) => a + b, 0);
+  const lessonTotal = [...state.values()].reduce((sum, st) => sum + st.total, 0);
+  const paced = twoPhases && weightTotal > 0;
+  let weightSoFar = 0;
+  let lessonPlaced = 0;
+
   const pending: PendingRevisit[] = [];
   const maxNewPerDay = config.cap ? MAX_NEW_TOPICS_PER_DAY : Infinity;
 
@@ -477,6 +563,10 @@ function run(input: PlannerInput, config: RunConfig): RunOutput {
 
     // 5. New lessons — never in the last two days.
     if (lastTwo.has(day)) continue;
+    // In the study phase only up to the pace; in consolidation, only what is left over (fallback).
+    const pacing = paced && studyWeights.has(day);
+    weightSoFar += studyWeights.get(day) ?? 0;
+    const paceLimit = pacing ? (lessonTotal * PACING_SLACK * weightSoFar) / weightTotal : Infinity;
     let startedToday = 0;
     for (;;) {
       const room = remaining.get(day) ?? 0;
@@ -491,6 +581,7 @@ function run(input: PlannerInput, config: RunConfig): RunOutput {
           return !ps || (ps.finishedOn !== null && ps.finishedOn <= day);
         });
         if (!ready) return false;
+        if (lessonPlaced >= paceLimit) return false; // a whole lesson may overshoot the pace; the next days absorb it
         const oversized = unit.minutes > bestRoom && bestRoom > 0;
         return unit.minutes <= room || (oversized && baseRoom.get(day) === bestRoom);
       });
@@ -532,6 +623,7 @@ function run(input: PlannerInput, config: RunConfig): RunOutput {
         origin: 'planner',
       });
       s.next += 1;
+      lessonPlaced += unit.minutes;
       if (s.next >= s.units.length) {
         s.finishedOn = day;
         REVISIT_OFFSETS_DAYS.forEach((offset, i) =>
@@ -563,6 +655,57 @@ function run(input: PlannerInput, config: RunConfig): RunOutput {
       pinned: false,
       origin: 'planner',
     });
+  }
+
+  // Consolidation: fill the days with practice, weakest and heaviest topics first, in rotation.
+  if (consolidationDays.length > 0) {
+    const weight = (t: PlannerTopic) => state.get(t.key)!.total;
+    const rotation = order
+      .filter((t) => state.get(t.key)!.finishedOn !== null)
+      .sort(
+        (a, b) =>
+          (a.mastery ?? 0) - (b.mastery ?? 0) ||
+          weight(b) - weight(a) ||
+          a.key.localeCompare(b.key),
+      );
+    const used = new Map<string, number>();
+    let cursor = 0;
+    for (const day of consolidationDays) {
+      // Other plans' drills share this day: together they stay within the same share of it.
+      const flex = input.flexibleBusyMinutesByDate?.[day] ?? 0;
+      const target = Math.floor(CONSOLIDATION_FILL * Math.max(0, (capacity.get(day) ?? 0) - flex));
+      for (;;) {
+        const room = (remaining.get(day) ?? 0) - flex;
+        const need = target - ((capacity.get(day) ?? 0) - (remaining.get(day) ?? 0));
+        const minutes = Math.min(DRILL_MINUTES, Math.floor(Math.min(need, room) / 5) * 5);
+        if (minutes < MIN_CHUNK_MINUTES || rotation.length === 0) break;
+        let pick: PlannerTopic | null = null;
+        for (let k = 0; k < rotation.length && !pick; k += 1) {
+          const t = rotation[(cursor + k) % rotation.length]!;
+          if (state.get(t.key)!.finishedOn! < day) {
+            pick = t;
+            cursor = (cursor + k + 1) % rotation.length;
+          }
+        }
+        if (!pick) break;
+        const n = (used.get(pick.key) ?? 0) + 1;
+        used.set(pick.key, n);
+        place({
+          key: `drill:${pick.key}:${pad(n)}`,
+          date: day,
+          kind: 'verify',
+          topicKey: pick.key,
+          topicId: pick.topicId,
+          minutes,
+          title: `Esercitazione · ${pick.name}`,
+          description:
+            "Consolidamento: esercizi e richiamo a materiale chiuso sull'argomento, partendo dai punti più deboli.",
+          payload: { action: 'verify', topicId: pick.topicId, material: pick.material },
+          pinned: false,
+          origin: 'planner',
+        });
+      }
+    }
   }
 
   if (pending.length > 0) {
@@ -648,10 +791,11 @@ function run(input: PlannerInput, config: RunConfig): RunOutput {
   };
 
   tasks.sort((a, b) => a.date.localeCompare(b.date) || a.key.localeCompare(b.key));
-  renumberSimulations(tasks);
+  renumberSimulations(tasks, consolidationStartDay !== null);
   return {
     result: { tasks, loadPerDay: computeLoadPerDay(capacity, tasks), feasibility, warnings },
     unscheduled,
+    lostRevisits: pending.length,
     bestRoom,
   };
 }
@@ -661,15 +805,19 @@ function run(input: PlannerInput, config: RunConfig): RunOutput {
  * end up before the previous one; keys and titles follow calendar order so
  * "Simulazione 2" always comes after "Simulazione 1". Expects `tasks` sorted by date.
  */
-function renumberSimulations(tasks: PlannedTask[]): void {
+function simulationDescription(n: number, phased: boolean): string {
+  if (n !== 1) return 'Simulazione a tempo, poi correzione formativa.';
+  return phased
+    ? 'La prima simulazione chiude la fase di studio: misura cosa è già solido prima del consolidamento.'
+    : "La prima simulazione arriva presto: serve a calibrare l'autovalutazione.";
+}
+
+function renumberSimulations(tasks: PlannedTask[], phased: boolean): void {
   const sims = tasks.filter((t) => t.kind === 'simulation' && t.origin === 'planner' && !t.pinned);
   sims.forEach((t, i) => {
     t.key = `sim:${pad(i + 1)}`;
     t.title = `Simulazione d'esame ${i + 1}`;
-    t.description =
-      i === 0
-        ? "La prima simulazione arriva presto: serve a calibrare l'autovalutazione."
-        : 'Simulazione a tempo, poi correzione formativa.';
+    t.description = simulationDescription(i + 1, phased);
   });
 }
 

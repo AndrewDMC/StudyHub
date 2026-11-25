@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray, isNotNull, isNull, ne, or } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNotNull, isNull, like, ne, not, or } from 'drizzle-orm';
 import {
   computeTimeFactor,
   TIME_FACTOR_MAX_SAMPLES,
@@ -137,26 +137,56 @@ export async function loadBusyMinutesByDate(
   /** The exam the plan being made is for (null/absent = the subject's general plan): the active plan it will replace is not "other". */
   examId?: string | null,
 ): Promise<Record<string, number>> {
+  const busy = await loadTaskMinutes(db, subjectId, examId, false);
+  const eventRows: { date: string }[] = await db
+    .select({ date: calendarEvents.date })
+    .from(calendarEvents);
+  for (const row of eventRows) busy[row.date] = (busy[row.date] ?? 0) + IMPORTED_EVENT_MINUTES;
+  return busy;
+}
+
+/**
+ * Minutes of other plans' consolidation drills (`drill:` tasks) per day. They are filler: they don't
+ * take time from lessons, revisits or simulations of another subject (so they are left out of
+ * `loadBusyMinutesByDate`), only from the filler of the plan being made.
+ */
+export async function loadFlexibleBusyMinutesByDate(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  subjectId: string,
+  examId?: string | null,
+): Promise<Record<string, number>> {
+  return loadTaskMinutes(db, subjectId, examId, true);
+}
+
+async function loadTaskMinutes(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  subjectId: string,
+  examId: string | null | undefined,
+  drills: boolean,
+): Promise<Record<string, number>> {
   const busy: Record<string, number> = {};
   // Another subject's tasks always count; so do the same subject's tasks of a *different* exam's plan
   // (a partial and the final share the same hours). Only the plan about to be replaced is left out.
   const notReplaced = examId
     ? or(ne(tasks.subjectId, subjectId), isNull(studyPlans.examId), ne(studyPlans.examId, examId))
     : or(ne(tasks.subjectId, subjectId), isNotNull(studyPlans.examId));
+  const isDrill = like(tasks.taskKey, 'drill:%');
   const taskRows: { date: string; minutes: number }[] = await db
     .select({ date: tasks.date, minutes: tasks.minutes })
     .from(tasks)
     // Only the active plan's tasks count: a superseded plan keeps its `todo` rows, but they are no longer in the calendar.
     .innerJoin(studyPlans, eq(tasks.planId, studyPlans.id))
     .where(
-      and(notReplaced, inArray(tasks.status, ['todo', 'doing']), eq(studyPlans.status, 'active')),
+      and(
+        notReplaced,
+        drills ? isDrill : not(isDrill),
+        inArray(tasks.status, ['todo', 'doing']),
+        eq(studyPlans.status, 'active'),
+      ),
     );
   for (const row of taskRows) busy[row.date] = (busy[row.date] ?? 0) + row.minutes;
-
-  const eventRows: { date: string }[] = await db
-    .select({ date: calendarEvents.date })
-    .from(calendarEvents);
-  for (const row of eventRows) busy[row.date] = (busy[row.date] ?? 0) + IMPORTED_EVENT_MINUTES;
   return busy;
 }
 
